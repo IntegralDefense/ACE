@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block page_content %}
+
+<style>
+table.dataframe thead {background-color: #eceff1;}
+table.dataframe {border: none;}
+label.form-check-label { margin-right: 10px; font-weight: 100;}
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-8 col-md-push-2">
+        <div class="well">
+            <form id="metric-filter" method="POST" action="{{url_for('analysis.metrics')}}">
+              <div class="form-group row">
+                <label for="exampleFormControlSelect2" class="col-sm-2 col-form-label">Companies</label>
+                <div class="col-sm-10">
+                    <select multiple class="form-control" name="companies" id="exampleFormControlSelect2">
+                        {% for company_id, company_name in target_companies %}
+                          <option value="{{company_id}}">{{company_name}}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+              </div>
+              <div class="form-group row">
+                <label for="daterange" class="col-sm-2 col-form-label">Date Range</label>
+                <div class="col-sm-10">
+                  <input type="text" class="form-control" id="daterange"  name="daterange" value="{{filter_state['daterange']}}"/>
+                </div>
+              </div>
+              <div class="form-group row">
+                <label for="table_choices" class="col-sm-2 col-form-label">Metrics</label>
+                <div class="col-sm-10" id="table_choices">
+                  <div class="form-check form-check-inline">
+                    <label class="form-check-label">
+                      <input class="form-check-input" type="checkbox" id="alertStatCheckbox" name="metric_actions" value="alert_quan" checked> Alert Quantities
+                    </label>
+                    <label class="form-check-label">
+                      <input class="form-check-input" type="checkbox" id="HOP_Checkbox" name="metric_actions" value="HoP" checked> Hours of Operation
+                    </label>
+                    <label class="form-check-label">
+                      <input class="form-check-input" type="checkbox" id="cycleTimeCheckbox" name="metric_actions" value="cycle_time" checked> Alert Cycle Times
+                    </label>
+                    <label class="form-check-label">
+                      <input class="form-check-input" type="checkbox" id="incidentsCheckbox" name="metric_actions" value="incidents" checked> Incidents
+                    </label>
+                    <label class="form-check-label">
+                      <input class="form-check-input" type="checkbox" id="eventsCheckbox" name="metric_actions" value="events" checked> Events
+                    </label>
+                    <label class="form-check-label">
+                      <input class="form-check-input" type="checkbox" id="indicatorCheckbox" name="metric_actions" value="indicator_intel" checked> CRITS Indicator Stats
+                    </label>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group row">
+                <label for="download_xlsx" class="col-sm-2 col-form-label">Download to xlsx</label>
+                <div class="col-sm-10" id="download_xlsx">
+                  <div class="form-check form-check-inline">
+                      <input class="form-check-input" type="checkbox" id="xlsxCheckbox" name="download_results" value="true">
+                  </div>
+                </div>
+              </div>
+              <div class="form-group row">
+                <div class="col-sm-10">
+                  <button type="submit" class="btn btn-primary">Submit</button>
+                </div>
+              </div>
+            </form>
+        </div> <!-- end well -->
+        </div> <!-- end column -->
+    </div> <!-- end row -->
+    {% if not tables and post_bool %}
+        <center><h4>No results</h4></center>
+    {% endif %}
+    <!-- elif post_bool
+         <div class="row">
+            <div class="col-md-8 col-md-push-2">
+                <form id="metric-table-download" method="POST" action="{{url_for('analysis.metrics')}}">
+                  <input type="hidden" id="download_tables"  name="download_results" value="true">
+                  <div class="form-group row">
+                    <div class="col-md-1 col-md-push-10">
+                      <button type="submit" class="btn btn-link">Download Tables</button>
+                    </div>
+                  </div>
+                </form>
+            </div> 
+        </div-->
+    <center>
+    <h4>{{ query }}</h4>
+    {% for table in tables %}
+        <div class="row">
+            <div class="col-md-10 col-md-push-1">
+                {% if selected_companies %}
+                    {% for company_name in selected_companies %}
+                        <img src="{{url_for('static', filename='images/company_icons/{}.png'.format(company_name))}}">
+                    {% endfor %}
+                {% else %}
+                    {% for commpany_id, company_name in target_companies %}
+                        <img src="{{url_for('static', filename='images/company_icons/{}.png'.format(company_name))}}">
+                    {% endfor %}
+                {% endif %}
+                <h4>{{table.name}}</h4>
+                {{table.to_html(classes='table table-hover')|safe}}
+            </div>
+        </div>
+    {% endfor %}
+    </center>
+</div> <!-- end container -->
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/metrics.js') }}"></script>
+{% endblock %}

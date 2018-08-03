@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+export TZ="America/New_York"
+cd $SAQ_HOME
+decrypt=""
+if [ -e etc/FLAG_EXTRACT_ARCHIVES ]
+then
+    decrypt=" -p "
+fi
+
+python3 saq $decrypt --start --daemon -L etc/email_scanner_logging.ini email-scanner

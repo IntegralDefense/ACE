@@ -1,0 +1,245 @@
+{% block alert_summary %}
+<table class="table table-bordered table-condensed">
+    {% if alert.archived %}
+    <tr>
+        <td colspan="2" class="col-md-12"><b><font color=red>This alert has been archived.  Most analysis and files have been deleted.</font></b></td>
+    </tr>
+    {% endif %}
+    {% if alert.company %}
+    <tr>
+        <td class="col-md-2">Company</td>
+        <td class="col-md-10"><img src="{{url_for('static', filename='images/company_icons/{}.png'.format(alert.company.name))}}"> {{alert.company.name | capitalize}} ({{alert.company_id}})</td>
+    </tr>
+    {% endif %}
+    <tr>
+        <td class="col-md-2">Alert Time</td>
+        <td class="col-md-10">{{alert.event_time}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Source</td>
+        <td class="col-md-10">{{alert.tool}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Instance</td>
+        <td class="col-md-10">{{alert.tool_instance}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Alert Type</td>
+        <td class="col-md-10">{{alert.alert_type}}</td>
+    </tr>
+    {% if alert.name %}
+    <tr>
+        <td class="col-md-2">Alert Documentation</td>
+        {% if alert.alert_type == 'carbonblack - watchlist' %}
+            <td class="col-md-10"><a target="_blank" href="{{config['mediawiki']['uri']}}{{config['mediawiki']['alert_suffix']}}{{alert.description | replace('Carbonblack Watchlist Alert - ', '')}}">{{alert.name}}</a></td>
+        {% else %}
+            <td class="col-md-10"><a target="_blank" href="{{config['mediawiki']['uri']}}{{config['mediawiki']['alert_suffix']}}{{alert.name | replace(' ', '_')}}">{{alert.name}}</a></td>
+        {% endif %}
+    </tr>
+    {% endif %}
+    <tr>
+        <td class="col-md-2">Storage</td>
+        <td class="col-md-10">{{alert.storage_dir}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Priority</td>
+        <td class="col-md-10">{{alert.priority}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Status</td>
+        <td class="col-md-10">{{alert.status}}</td>
+    </tr>
+    {% if alert.disposition %}
+    <tr>
+        <td class="col-md-2">Disposition</td>
+        <td class="col-md-10"><b>{{alert.disposition}}</b> by {{alert.disposition_user.username}} @ {{alert.disposition_time}}</td>
+    </tr>
+    {% endif %}
+    {% if alert.owner %}
+    <tr>
+        <td class="col-md-2">Owner</td>
+        <td class="col-md-10">{{alert.owner.username}} @ {{alert.owner_time}}</td>
+    </tr>
+    {% endif %}
+    {% if alert.remover %}
+    <tr>
+        <td class="col-md-2">Removal</td>
+        <td class="col-md-10">{{alert.remover.username}} @ {{alert.removal_time}}</td>
+    </tr>
+    {% endif %}
+
+    {% for comment in alert.comments %}
+    <tr>
+        <td class="col-md-2">Comment</td>
+        <td class="col-md-10">{% if comment.user.id == current_user.id %}<span class="glyphicon glyphicon-remove" onmousedown="delete_comment({{comment.comment_id}})"></span> {% endif %} {{comment.insert_date}} {{comment.user.username}}<br>{{comment.comment}}</td>
+    </tr>
+    {% endfor %}
+
+    <tr>
+        <td class="col-md-2">Detections</td>
+        <td class="col-md-10">{{alert.all_detection_points | length}} detections</td>
+    </tr>
+
+</table>
+{% endblock %}
+
+<div class="row">
+    <div class="col-md-12">
+        <!-- by default we just pretty-print the json -->
+        {% block alert_details %} <pre>{{ analysis.details | pprint }}</pre> {% endblock %}
+    </div>
+</div>
+
+{% macro recurse_tree(tree_node) %}
+    {% if tree_node.obj.observables | count > 0 and not ( prune_display_tree and not tree_node.visible ) %}
+        <ul>
+        {% for observable_node in tree_node.children %}
+            {% if not prune_display_tree or observable_node.visible %}
+                {# this is used by the various display templates #}
+                {% set _observable = observable_node.obj %}
+                <li><b>{{observable_node.obj.type}}</b> : 
+                {% for dp in observable_node.obj.detections %}
+                    {# TODO escape JS strings #}
+                    <button type="button" class="btn btn-danger btn-xs" data-toggle="tooltip" data-placement="right" title="{{dp.display_description | e}}">
+                        <span class="glyphicon glyphicon-fire" aria-hidden="true"></span>
+                    </button>
+                {% endfor %}
+                <span class="observable_display {{observable_node.obj.type}}" title="">{% include observable_node.obj.jinja_template_path %}</span> 
+                {% for tag in observable_node.obj.tags %}{% if tag.level != 'hidden' %}<span class="label {{tag.css_class}}">{{ tag }}</span>{% endif %}{% endfor %}
+                {# XXX hack to refactor out #}
+                {% for tag in observable_node.obj.mapped_tags %}<span class="label {{tag.css_class}}">{{ tag }}</span>{% endfor %}</li>
+                {% if observable_node.reference_node is not none %} 
+                    <ul><li><a href="#{{observable_node.reference_node.uuid}}">Jump To Analysis</a></li></ul>
+                {% else %}
+                    <a name="{{observable_node.uuid}}"></a>
+                    {% for observable_analysis_node in observable_node.children %}
+                        {% if observable_analysis_node.obj.jinja_should_render %}
+                            <ul>
+                            {% if observable_analysis_node.obj.summary is not none %}
+                                <li>
+                                {% for dp in observable_analysis_node.obj.detections %}
+                                    {# TODO escape JS strings #}
+                                    <button type="button" class="btn btn-danger btn-xs" data-toggle="tooltip" data-placement="right" title="{{dp.display_description | e}}">
+                                        <span class="glyphicon glyphicon-fire" aria-hidden="true"></span>
+                                    </button>
+                                {% endfor %}
+                                {# if an alert has been archived then we do not create links because the analysis has been deleted #}
+                                {% if observable_analysis_node.obj.jinja_is_drillable and not alert.archived %}
+                                    <a href="{{ url_for('analysis.index', alert_uuid=alert.uuid, observable_uuid=observable_node.obj.id, module_path=observable_analysis_node.obj.module_path) }}" title="{{observable_analysis_node.obj.__doc__}}">
+                                        {{observable_analysis_node.obj.jinja_display_name}}
+                                    </a>
+                                {% else %}
+                                        {{observable_analysis_node.obj.jinja_display_name}}
+                                {% endif %}
+                            {% else %}
+                                {# if no summary is available then we just display the str rep of the analysis #}
+                                <li>{{observable_analysis_node.obj}}
+                            {% endif %}
+                            {% for tag in observable_analysis_node.obj.tags %}
+                                <span class="label {{tag.css_class}}">{{ tag }}</span>
+                            {% endfor %}
+                                </li>
+                            {# then recurse into this tree node #}
+                            {{ recurse_tree(observable_analysis_node) }}
+                            </ul>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endif %}
+        {% endfor %}
+        </ul>
+    {% endif %}
+{% endmacro %}
+
+{% for entry in email_remediations %}
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <h3 class="panel-title">Email Remediation History - {{entry.message_id}}</h3>
+    </div>
+    <div class="panel-body">
+        <h6>From: <font color="red">{{entry.sender}}</font> 
+            To: <font color="blue">{{entry.recipient}}</font>
+            Subject: <font color="green">{{entry.subject}}</font>
+        </h6>
+        {% if entry.remediation_history | length == 0 %}
+            <tr>
+                <td colspan="4"><i>No remediations have been attempted.</i></td>
+            </tr>
+        {% else %}
+            <table class="table">
+            <tr>
+                <td>Action</td>
+                <td>Date</td>
+                <td>User</td>
+                <td>Result</td>
+            </tr>
+            {#{% for entry in email_remediations %}#}
+                {% for history in entry.remediation_history %}
+                    <tr>
+                        <td style="white-space: nowrap">{{history['insert_date']}}</td>
+                        <td>{{history['action']}}</td>
+                        <td>{{history['user']}}</td>
+                        <td>{{history['result']}}</td>
+                    </tr>
+                {% endfor %}
+            {#{% endfor %}#}
+            </table>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <h3 class="panel-title">
+        {% if prune_display_tree %}
+            Critical Analysis Overview <a href="#" title="This is a subset of the available analysis.">*</a>
+        {% else %}
+            Analysis Overview
+        {% endif %}
+        </h3>
+    </div>
+    <div class="panel-body">
+        {{ recurse_tree(display_tree) }}
+    </div>
+</div>
+
+{% if profile_points | length > 0 %}
+<div class="panel-group" id="pp_accordion" role="tablist" aria-multiselectable="true">
+    <div class="panel panel-default">
+        <div class="panel-heading" role="tab" id="heading_pp_all">
+            <h4 class="panel-title">
+                <a role="button" data-toggle="collapse" data-parent="#pp_accordion" href="#collapse_pp_all" aria-expanded="true" aria-controls="collapse_pp_all">Profile Points</a>
+            </h4>
+        </div>
+        <div id="collapse_pp_all" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="heading_pp_all">
+            <div class="panel-body">
+                {% for profile_point in profile_points %}
+                <li><a target="_blank" href="{{config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% for pp_tag in pp_tags %}
+    <div class="panel panel-default">
+        <div class="panel-heading" role="tab" id="heading_pp_{{pp_tag}}">
+            <h4 class="panel-title">
+                <a class="collapsed" role="button" data-toggle="collapse" data-parent="#pp_accordion" href="#collapse_pp_{{pp_tag}}" aria-expanded="false" aria-controls="collapse_pp_{{pp_tag}}">{{pp_tag}} ({{pp_scores[pp_tag]}}/{{pp_counts[pp_tag]}})</a>
+            </h4>
+        </div>
+        <div id="collapse_pp_{{pp_tag}}" class="panel-collapse collapse" role="tabpanel" aria-labelledby="heading_pp_{{pp_tag}}">
+            <div class="panel-body">
+                <ul class="list-group">
+                {% for profile_point in pp_full[pp_tag]['yes'] %}
+                    <li class="list-group-item"><a target="_blank" href="{{config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
+                {% endfor %}
+                {% for profile_point in pp_full[pp_tag]['no'] %}
+                    <li class="list-group-item"><font color="red"><a target="_blank" href="{{config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</font></li>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+{% endfor %}
+</div>
+{% endif %}
+

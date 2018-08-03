@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+cd /opt/saq || exit 1
+source load_environment
+./saq cleanup-alerts

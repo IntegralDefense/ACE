@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block page_content %}
+<div class="container">
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <h3 class="panel-title">Alert Filtering</h3>
+        </div>
+        <div class="panel-body">
+            <div class="btn-group-vertical" role="group" aria-label="...">
+                <button type="button" class="btn btn-default active">Show Alerts Assigned to Me</button>
+                <button type="button" class="btn btn-default">Show All Alerts</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{% endblock %}

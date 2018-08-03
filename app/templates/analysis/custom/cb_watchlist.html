@@ -1,0 +1,15 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+<div class="panel panel-default">
+    <div class="panel-heading">CB Alert Summary</div>
+    <div class="panel-body">
+        {% for row in analysis.details %}
+        <div class="well">{% if row['cb_link'] %}<a target="_blank" href="{{row['cb_link']}}" title="Go to alert in CarbonBlack interface."><span class="glyphicon glyphicon-link"></span></a> - {% endif %} {{row['_time']}} - <b>{{row['docs{}.path']}} <span style="color: #008000">{{row['docs{}.cmdline']}}</span></b> - <span style="color: #0000FF">host <b>{{row['docs{}.computer_name']}}</b></span> - <span style="color: #FF0000">user <b>{{row['docs{}.username']}}</b></div>
+        {% endfor %}
+    </div>
+    <div class="panel-heading">CB Alert Details</div>
+    <div class="panel-body">
+        <pre>{{analysis.jinja_details | pprint}}</pre>
+    </div>
+</div>
+{% endblock %}

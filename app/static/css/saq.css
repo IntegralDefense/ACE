@@ -1,0 +1,187 @@
+html, body {
+    height; 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+#flex_wrapper {
+    display: flex; 
+    min-height: 100%;
+    height: 100vh;
+    flex-direction: column;
+}
+
+#navbar {
+    width: 100%;
+}
+
+#control_panel {
+    width: 100%;
+}
+
+#content_area {
+    overflow: scroll; 
+    flex: 1;
+}
+
+.voffset5 { margin-top : 5px; }
+.voffset10 { margin-top : 10px; }
+
+/* observable type highlights */
+
+.observable_display {
+    font-weight: bold;
+    text-shadow: 1px 1px 1px lightgray;
+}
+
+/* user-related (blue) */
+.user {
+    color: #0000ff; 
+}
+
+.email_address {
+    color: #6666ff; 
+}
+
+.email_address {
+    color: #8888ff; 
+}
+
+
+/* ipv4-related (cyan) */
+
+.ipv4 {
+    color: #005050;
+}
+
+.ipv4_conversation {
+    color: #006060;
+}
+
+.asset {
+    color: #008080;
+}
+
+/* dns related */
+
+.fqdn {
+    color: #cc8500;
+}
+
+.hostname {
+    color: #805300;
+}
+
+/* file related */
+
+.file {
+    color: #ff0000;
+}
+
+.file_path {
+    color: #b30000;
+}
+
+.file_name {
+    color: #660000;
+}
+
+/* others */
+
+.yara_rule {
+    color: #008000;
+}
+
+.indicator {
+    color: #FFD700;
+}
+
+.url {
+    color: #808000;
+}
+
+/* non-colored */
+
+.md5, .sha1, .sha256, .snort_sig {
+    color: #000000;
+}
+
+/* custom labels */
+.label-interesting {
+    background-color : #ffffe6;
+    color : black;
+}
+
+.label-special {
+    background-color : #ffffff;
+    color : gray;
+    border : 1px solid black;
+}
+
+.sim-table {
+    display:table;
+    width:auto;
+}
+
+.sim-table-row {
+    display:table-row;
+    width:auto;
+    clear:both;
+}
+
+.sim-table-column {
+    float:left;
+    display:table-column;
+    width:auto;
+    font-size:x-small;
+    padding-right:5px;
+}
+
+.event-cell {
+    width:1%;
+    white-space:nowrap;
+}
+
+/* from https://codepen.io/uimax/pen/ZpENPG */
+
+.label.label-outlined {
+  border-width: 1px;
+  border-style: solid;
+  background-color: transparent
+}
+
+.label.label-outlined.label-default {
+  border-color: #B0BEC5;
+  color: #B0BEC5
+}
+
+.label.label-outlined.label-primary {
+  border-color: #2196F3;
+  color: #2196F3
+}
+
+.label.label-outlined.label-secondary {
+  border-color: #323a45;
+  color: #323a45
+}
+
+.label.label-outlined.label-info {
+  border-color: #29B6F6;
+  color: #29B6F6
+}
+
+.label.label-outlined.label-success {
+  border-color: #64DD17;
+  color: #64DD17
+}
+
+.label.label-outlined.label-warning {
+  border-color: #FFD600;
+  color: #FFD600
+}
+
+.label.label-outlined.label-danger {
+  border-color: #ef1c1c;
+  color: #ef1c1c
+}

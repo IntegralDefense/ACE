@@ -1,0 +1,12 @@
+<script type="text/javascript">
+    $('#action_{{action.name}}_{{unique_reference}}').on('click', function() {
+        $.post("{{ url_for('analysis.observable_action') }}",
+                {"observable_uuid":"{{_observable.id}}","alert_uuid":"{{_observable.root.uuid}}", "action_id": "{{action.name}}"},
+                function(data) {
+                    window.location = '{{url_for('analysis.index', direct=_observable.root.uuid)}}';
+                }
+        ).fail(function(data, textStatus, jqXHR) {
+            alert("Action failed: " + textStatus);
+        });
+    });
+</script>

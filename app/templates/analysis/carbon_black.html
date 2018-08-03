@@ -1,0 +1,8 @@
+<div class="panel panel-default">
+    <div class="panel-heading">Total Results: <b>{{analysis.details['total_results']}}</b></div>
+    <div class="panel-body">
+        {% for result in analysis.details['results'] %}
+        <div class="well"><a href="{{config['carbon_black']['gui_url']}}/#analyze/{{result['id']}}/1/cb.urlver=1" target="_blank">{{result['start']}} UTC <b>{{result['username']}}@{{result['hostname']}}</b> <span style="color: #0000FF">{{result['path']}}</span> <span style="color: #FF0000">{{result['cmdline']}}</span> <span style="color: #008000">{{result['process_md5']}}</span></a></div>
+        {% endfor %}
+    </div>
+</div>

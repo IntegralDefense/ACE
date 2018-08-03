@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block page_content %}
+<form enctype=multipart/form-data method="POST" action="{{url_for('analysis.new_alert')}}">
+  <div style="width:66%;margin:0 auto;">
+    <h4>Alert Info</h4>
+    <table style="width:100%;table-layout:auto;">
+      <tr><th style="padding-right:10px;">Insert Date</th><td style="width:100%;"><input type="text" class="form-control" id="new_alert_insert_date" name="new_alert_insert_date" value="{{date}}"/></td></tr>
+      <tr><th style="padding-right:10px;">Description</th><td style="width:100%;"><input type="text" class="form-control" name="new_alert_description" value="Manual Correlation"/></td></tr>
+      <tr><th style="padding-right:10px;">Target Company</th><td style="width:100%;"><select class="form-control" name="target_company">
+        <option value="-1" selected>default</option>
+      {% for company_id, company_name in target_companies %}
+        <option value="{{company_id}}">{{company_name}}</option>
+      {% endfor %}
+      </select></td></tr>
+    </table>
+    <br><br>
+    <h4>Observables
+        <button onclick="new_alert_observable()" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-plus-sign"></span> Add</button>
+    </h4>
+    <table style="width:100%;table-layout:auto;" id="new_alert_observables">
+      <tr><th>Time (Optional)</th><th>Type</th><th>Value</th><th></th></tr>
+      <tr id="new_alert_observable_0">
+        <td style="padding-right:10px;"><input type="text" class="form-control" style="width:auto;" name="observables_times_0" id="observables_times_0" value=""/></td>
+        <td style="padding-right:10px;">
+          <select class="form-control" style="width:auto;" name="observables_types_0" id="observables_types_0" onchange="new_alert_observable_type_changed('0')">
+            {% for observable_type in observable_types %}
+            <option value="{{observable_type}}" {% if observable_type == "file" %}SELECTED{% endif %}>{{observable_type}}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td id="new_alert_observable_value_0" style="width:100%;padding-right:10px;">
+          <input class="form-control" type="file" name="observables_values_0" id="observables_values_0" value="">
+        </td>
+        <td>
+          <button onclick="new_alert_remove_observable('0')" type="button" class="close"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+        </td>
+      </tr>
+    </table>
+  </div>
+  <br><br>
+  <div style="width:66%;margin:0 auto;text-align:right;">
+    <button type="submit" class="btn btn-primary">Submit</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/new_alert.js') }}"></script>
+{% endblock %}

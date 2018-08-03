@@ -1,0 +1,62 @@
+<table class="table table-bordered table-condensed">
+    <tr>
+        <td class="col-md-3"><b>Time</b></td>
+        <td class="col-md-5"><b>Application</b></td>
+        <td class="col-md-2"><b>Version</b></td>
+        <td class="col-md-1"><b>Local Baseline</b></td>
+        <td class="col-md-1"><b>Global Baseline</b></td>
+    </tr>
+    {% for e in analysis.jinja_details %}
+    <tr>
+        <td class="col-md-3">{{e['_time']}}</td>
+        <td class="col-md-6"><a href="#" data-toggle="modal" data-target="#summary_{{e['id']}}">{{e['Application_Directory']}}{{e['Application']}}</a></td>
+        <td class="col-md-2">{{e['Product_Version']}}</td>
+        <td class="col-md-1">{{e['baseline_score']}}</td>
+        <td class="col-md-1">{{e['global_baseline_score']}}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% for e in analysis.jinja_details %}
+<div class="modal fade" id="summary_{{e['id']}}" tabindex="-1" role="dialog" aria-labelledby="summary_{{e['id']}}Label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="summary_{{e['id']}}Label">{{e['Application_Directory']}}{{e['Application']}}</h4>
+            </div>
+            <div class="modal-body">
+                <table class="table table-bordered table-condensed">
+                    <tr>
+                        <td class="col-md-3">Time</td>
+                        <td class="col-md-9">{{e['_time']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-3">MD5</td>
+                        <td class="col-md-9">{{e['MD5_Checksum']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-3">Company Name</td>
+                        <td class="col-md-9">{{e['Company_Name']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-3">Product Name</td>
+                        <td class="col-md-9">{{e['Product_Name']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-3">Product Version</td>
+                        <td class="col-md-9">{{e['Product_Version']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-3">User</td>
+                        <td class="col-md-9">{{e['User_Name']}}</td>
+                    </tr>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">woah</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}

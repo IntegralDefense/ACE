@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+cd $SAQ_HOME
+echo "stopping email scanning engine"
+python3 saq --stop email-scanner

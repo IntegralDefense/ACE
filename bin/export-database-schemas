@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+if [ -z "$SAQ_HOME" ]
+then
+    echo "you must set your SAQ_HOME environment variable"
+    exit 1
+fi
+
+read -s -p "enter mysql password: " password
+mysql -u root --password=$password >/dev/null <<EOF
+SELECT 1
+EOF
+
+if [ "$?" -eq "1" ]
+then
+    echo "invalid mysql password"
+    exit 1
+fi
+
+( cd $SAQ_HOME && mysqldump -u root --password=$password --no-data --skip-add-drop-table email-archive-dev > sql/email_archive_schema.sql )
+( cd $SAQ_HOME && mysqldump -u root --password=$password --no-data --skip-add-drop-table saq-dev > sql/ace_schema.sql )
+( cd $SAQ_HOME && mysqldump -u root --password=$password --no-data --skip-add-drop-table ace-workload-dev > sql/ace_workload_schema.sql )
+#( cd $SAQ_HOME && mysqldump -u root --password=$password --no-data --skip-add-drop-table hal9000 > sql/hal9000_schema.sql )

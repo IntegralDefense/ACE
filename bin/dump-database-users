@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+mysqldump saq-production users --user root -p --skip-add-drop-table --no-create-info

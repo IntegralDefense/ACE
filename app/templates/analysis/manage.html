@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block control_panel %}
+<div class="container-fluid">
+    <!-- control panel -->
+    <div class="row">
+        <div class="col-md-12">
+            <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#disposition_modal"><span class="glyphicon glyphicon-thumbs-up"></span> Set Disposition</button>
+            <button id="btn-add-comment" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#comment_modal" uuid=""><span class="glyphicon glyphicon-comment"></span> Add Comment</button>
+            <button id="btn-take-ownership" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-lock"></span> Take Ownership</button>
+            <button id="btn-assign-ownership-dialog" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#assign_ownership_modal"><span class="glyphicon glyphicon-user"></span> Assign Ownership</button>
+            <button id="btn-show-add-tag" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#tag_modal" uuid=""><span class="glyphicon glyphicon-tags"></span> Add Tag(s)</button>
+            <button id="btn-remediate-alerts" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-envelope"></span> Email Remediation</button>
+            <!--<button id="btn-unremediate-alerts" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-ok"></span> Un-Remediate Email(s)</button>-->
+            <button id="btn-add-to-event" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#event_modal"><span class="glyphicon glyphicon-plus-sign"></span> Add To Event</button>
+        </div>
+    </div>
+</div>
+<div class="row" style="margin-top:5px;margin-left:0px;">
+    <div class="col-md-12">
+        <div class="row">
+            <div class="col-md-4">
+                <button type="button" id="btn-search">Search</button>
+                <button type="button" id="btn-edit-filter" data-toggle="modal" data-target="#filter_modal">Edit Filters</button>
+                <button type="button" id="btn-reset-filters">Reset Filters</button>
+            </div>
+            <div class="col-md-4">
+                {% if filter_english %}filter: {{filter_english}}{% endif %}
+            </div>
+            <div style="white-space: nowrap;" class="col-md-4"><span class="pull-right">
+                <button onclick="navigate('start')" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-step-backward"></span></button>
+                <button onclick="navigate('prev')" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-backward"></span></button>
+                <button onclick="change_limit({{user_limit}})">{{alert_offset + 1}} to {{alert_offset + alert_limit}} of {{total_alerts}}</button>
+                <button onclick="navigate('next')" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-forward"></span></button>
+                <button onclick="navigate('last')" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-step-forward"></span></button>
+            </span></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <table class="table table-hover table-condensed">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="master_checkbox"></th>
+                        <th></th>
+                        <th><span id="sort_by_date" style="cursor:pointer;white-space: nowrap;">Date{{sort_arrow_html['date'] | safe}}</span></th>
+                        <th><span id="sort_by_alert" style="cursor:pointer">Alert{{sort_arrow_html['alert'] | safe}}</span></th>
+                        <th><span id="sort_by_owner" style="cursor:pointer">Owner{{sort_arrow_html['owner'] | safe}}</span></th>
+                        {% if display_disposition %}
+                            <th><span id="sort_by_disposition" style="cursor:pointer">Disposition{{sort_arrow_html['disposition'] | safe}}</span></th>
+                        {% endif %}
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for alert in alerts %}
+                    {# we can use this ID to modify an alert row #}
+                    <tr id="alert_row_{{alert.uuid}}" 
+                        {% if alert.is_over_sla %} class="danger"
+                        {% elif alert.is_approaching_sla %} class="warning"
+                        {% endif %}>
+                        <td>
+                            <button onclick="load_alert_observables('{{alert.uuid}}')" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-triangle-right"></span></button>
+                        </td>
+                        <td>
+                            <label><input type="checkbox" name="detail_{{alert.uuid}}" {% if alert.uuid in checked %}checked{% endif %}></input></label>
+                        </td>
+                        <td style="white-space: nowrap;">{{alert.insert_date}}</td>
+                        <td>
+                            {% if alert.company %}<img src="{{url_for('static', filename='images/company_icons/{}.png'.format(alert.company.name))}}">{% endif %}
+                            <a href="{{ url_for('analysis.index', direct=alert.uuid) }}">({{alert.detection_count}}) {{alert.description}}</a>
+                            {% if alert.event_mapping %}
+                                {% for em in alert.event_mapping %}
+                                    <span class="label label-primary"><span class="glyphicon glyphicon-flash"></span> <b>{{em.event.name}}</b></span>
+                                {% endfor %}
+                            {% endif %}
+                            {% if alert.uuid in profile_point_scores and profile_point_scores[alert.uuid]|length != 0 %}
+                                {% for profile_point_name, score in profile_point_scores[alert.uuid] %}
+                                    <span class="label label-secondary label-outlined" style="cursor:pointer">{{profile_point_name}} {{score}}%</span>
+                                {% endfor %}
+                            {% endif %}
+                            {% if alert_tags[alert.uuid]|length != 0 %}
+                                {% for tag in alert_tags[alert.uuid] %}
+                                    <span class="label {{tag.css_class}}" style="cursor:pointer" onmousedown="tag_link_clicked({{tag.id}})">{{tag.name}}</span>
+                                {% endfor %}
+                            {% endif %}
+                            {% if comments[alert.uuid]|length != 0 %}
+                                {% for comment in comments[alert.uuid] %}
+                                    <br />
+                                    <span style="font-size: x-small;">
+                                        ({{ comment.user.username }}) {{ comment.comment }}
+                                    </span>
+                                {% endfor %}
+                            {% endif %}
+                        </td>
+                        <td>{{alert.owner}}</td>
+                        {% if display_disposition %}<td>{{alert.disposition}}</td>{% endif %}
+                        <td style="white-space: nowrap;">{% if alert.is_over_sla %}SLA Danger: {{alert.business_time_str}}
+                            {% elif alert.is_approaching_sla %}SLA Warning: {{alert.business_time_str}}
+                            {% else %}{{alert.status}}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div> <!-- end column -->
+    </div> <!-- end row -->
+</div> <!-- end container -->
+
+<!-- filter dialog -->
+<div class="modal fade" id="filter_modal" tabindex="-1" role="dialog" aria-labelledby="filter_modal_label" aria-hidden="true">
+    <form id="frm-filter" method="POST" action="{{url_for('analysis.manage')}}">
+    <!-- navigation -->
+    <input type="hidden" id="nav_move" name="nav_move" value=""/>
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="filter_modal_label">Edit Filter</h4>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-xs-12"><input type="checkbox" name="filter_open" {{filter_state['filter_open']}}> Open Alerts</div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12"><input type="checkbox" name="filter_unowned" {{filter_state['filter_unowned']}}> Not Owned By Others</div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12"><input type="checkbox" name="filter_sla" {{filter_state['filter_sla']}}> Only Alerts Past SLA</div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">
+                        <input type="checkbox" name="use_daterange" {{filter_state['use_daterange']}}> Alert Date
+                        <input type="text" class="form-control" id="daterange" name="daterange" value="{{filter_state['daterange']}}"/>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">
+                        <input type="checkbox" name="use_search_observable" id="use_search_observable" {{filter_state['use_search_observable']}}> Search By Observable
+                        <div class="row">
+                            <div class="col-xs-6">
+                            <select class="form-control" name="search_observable_type" id="search_observable_type">
+                                <option value="ANY" {% if filter_state['search_observable_type'] == 'ANY' %}SELECTED{% endif %}>ANY</option>
+                                {% for observable_type in observable_types %}
+                                <option value="{{observable_type}}" {% if filter_state['search_observable_type'] == observable_type %}SELECTED{% endif %}>{{observable_type}}</option>
+                                {% endfor %}
+                            </select>
+                            </div>
+                            <div class="col-xs-6">
+                                <input type="text" class="form-control" id="search_observable_value" name="search_observable_value" value="{{filter_state['search_observable_value']}}"/>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">
+                        <input type="checkbox" name="use_display_text" {{filter_state['use_display_text']}}> Use Display Text 
+                        <input type="text" class="form-control" name="display_text" value="{{filter_state['display_text']}}"></div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">Selected Dispositions
+                        <ul class="list-unstyled">
+                            <li><input type="checkbox" name="dis_none" {{filter_state['dis_none']}}> NONE</li>
+                            <li><input type="checkbox" name="dis_false_positive" {{filter_state['dis_false_positive']}}> FALSE_POSTIVIE</li>
+                            <li><input type="checkbox" name="dis_unknown" {{filter_state['dis_unknown']}}> UNKNOWN</li>
+                            <li><input type="checkbox" name="dis_grayware" {{filter_state['dis_grayware']}}> GRAYWARE</li>
+                            <li><input type="checkbox" name="dis_policy_violation" {{filter_state['dis_policy_violation']}}> POLICY_VIOLATION</li>
+                            <li><input type="checkbox" name="dis_reconnaissance" {{filter_state['dis_reconnaissance']}}> RECONNAISSANCE</li>
+                            <li><input type="checkbox" name="dis_weaponization" {{filter_state['dis_weaponization']}}> WEAPONIZATION</li>
+                            <li><input type="checkbox" name="dis_delivery" {{filter_state['dis_delivery']}}> DELIVERY</li>
+                            <li><input type="checkbox" name="dis_exploitation" {{filter_state['dis_exploitation']}}> EXPLOITATION</li>
+                            <li><input type="checkbox" name="dis_installation" {{filter_state['dis_installation']}}> INSTALLATION</li>
+                            <li><input type="checkbox" name="dis_command_and_control" {{filter_state['dis_command_and_control']}}> COMMAND_AND_CONTROL</li>
+                            <li><input type="checkbox" name="dis_exfil" {{filter_state['dis_exfil']}}> EXFIL</li>
+                            <li><input type="checkbox" name="dis_damage" {{filter_state['dis_damage']}}> DAMAGE</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">
+                        <input type="checkbox" name="use_search_company" id="use_search_company" {{filter_state['use_search_company']}}> Search By Company
+                        <div class="row">
+                            <div class="col-xs-12">
+                            <select class="form-control" name="search_company" id="search_company">
+                                <option value="All" {% if filter_state['search_company'] == '' %}SELECTED{% endif %}>All</option>
+                                <option value="Core" {% if filter_state['search_company'] == 'Core' %}SELECTED{% endif %}>Core</option>
+                                {% for company in companies %}
+                                <option value="{{company.id}}" {% if filter_state['search_company'] == (company.id | string) %}SELECTED{% endif %}>{{company.name | capitalize}}</option>
+                                {% endfor %}
+                            </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">Reviewed By Selected Analysts
+                        <ul class="list-unstyled">
+                            <li><input type="checkbox" name="analyst_none" {{filter_state['analyst_none']}}> nobody</li>
+                            {% for user in all_users %}
+                            <li><input type="checkbox" name="analyst_{{user.id}}" {{filter_state['analyst_{0}'.format(user.id)]}}> {{user.username}}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">
+                        <input type="checkbox" name="use_disposition_daterange" {{filter_state['use_disposition_daterange']}}> Disposition Date
+                        <input type="text" class="form-control" id="disposition_daterange" name="disposition_daterange" value="{{filter_state['disposition_daterange']}}"/>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">Owned By Selected Analysts
+                        <ul class="list-unstyled">
+                            <li><input type="checkbox" name="owner_none" {{filter_state['owner_none']}}> nobody</li>
+                            {% for user in all_users %}
+                            <li><input type="checkbox" name="owner_{{user.id}}" {{filter_state['owner_{0}'.format(user.id)]}}> {{user.username}}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-6">Min Priority <input type="text" class="form-control" name="min_priority" value="{{filter_state['min_priority']}}"></div>
+                    <div class="col-xs-6">Max Priority <input type="text" class="form-control" name="max_priority" value="{{filter_state['max_priority']}}"></div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12"><input type="checkbox" name="filter_only_remediated" {{filter_state['filter_only_remediated']}}> Remediated Alerts</div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12"><input type="checkbox" name="filter_only_unremediated" {{filter_state['filter_only_unremediated']}}> Unremediated Alerts</div>
+                </div>
+
+                <div class="row">
+                    <div class="col-xs-12">
+                        <input type="checkbox" name="remediate_date" {{filter_state['remediate_date']}}> Remediation Date
+                        <input type="text" class="form-control" id="daterange" name="remediate_daterange" value="{{filter_state['remediate_daterange']}}"/>
+                    </div>
+                </div>
+
+                {# do we have any observables loaded as filter items #}
+                {% if observables | count > 0 %}
+                <div class="row">
+                    <div class="col-xs-12">
+                        <ul class="list-unstyled">
+                            {% for observable in observables %}
+                                <li><input type="checkbox" name="observable_{{observable.id}}" checked> observable {{observable.type}}:{{observable.display_value}}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# do we have any tags loaded as filter items #}
+                {% if tags | count > 0 %}
+                <div class="row">
+                    <div class="col-xs-12">
+                        <ul class="list-unstyled">
+                            {% for tag in tags %}
+                                <li><input type="checkbox" name="tag_{{tag.id}}" checked> tag {{tag.name}}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+                {% endif %}
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Nevermind</button>
+                <button type="submit" class="btn btn-primary" id="btn-apply-filter">Apply</button>
+            </div>
+        </div>
+    </div>
+    </form>
+</div>
+
+<form id="frm-sla_hours" method="PUT" action="{{url_for('analysis.manage')}}">
+</form>
+<form id="ownership-form" action="{{url_for('analysis.take_ownership')}}" method="POST">
+</form>
+<form id="remediation-form" action="{{url_for('analysis.remediate')}}" method="POST">
+</form>
+<form id="unremediation-form" action="{{url_for('analysis.unremediate')}}" method="POST">
+</form>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/manage_alerts.js') }}"></script>
+{% endblock %}

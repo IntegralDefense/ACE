@@ -1,0 +1,104 @@
+<table class="table table-bordered table-condensed">
+    {% if 'ldap' in analysis.jinja_details %}
+        {% if 'displayName' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Name</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['displayName']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'mail' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Email</td>
+            <td class="col-md-10"><a href="mailto:{{analysis.jinja_details['ldap']['mail']}}">{{analysis.jinja_details['ldap']['mail']}}</a></td>
+        </tr>
+        {% endif %}
+        {% if 'company' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Company</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['company']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'department' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Department</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['department']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'wWWHomePage' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Group</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['wWWHomePage']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'title' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Title</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['title']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'streetAddress' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Address</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['streetAddress']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'l' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Location</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['l']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'st' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">State/Province</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['st']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'co' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Country</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['co']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'telephoneNumber' in analysis.jinja_details['ldap'] %}
+        <tr>
+            <td class="col-md-2">Phone</td>
+            <td class="col-md-10">{{analysis.jinja_details['ldap']['telephoneNumber']}}</td>
+        </tr>
+        {% endif %}
+    {% endif %}
+    {% if 'manager_ldap' in analysis.jinja_details and analysis.jinja_details['manager_ldap'] %}
+        {% if 'displayName' in analysis.jinja_details['manager_ldap'] %}
+        <tr>
+            <td class="col-md-2">Manager</td>
+            <td class="col-md-10">{{analysis.jinja_details['manager_ldap']['displayName']}}</td>
+        </tr>
+        {% endif %}
+        {% if 'mail' in analysis.jinja_details['manager_ldap'] %}
+        <tr>
+            <td class="col-md-2">Manager Email</td>
+            <td class="col-md-10"><a href="mailto:{{analysis.jinja_details['manager_ldap']['mail']}}">{{analysis.jinja_details['manager_ldap']['mail']}}</a></td>
+        </tr>
+        {% endif %}
+        {% if 'telephoneNumber' in analysis.jinja_details['manager_ldap'] %}
+        <tr>
+            <td class="col-md-2">Manager Phone</td>
+            <td class="col-md-10">{{analysis.jinja_details['manager_ldap']['telephoneNumber']}}</td>
+        </tr>
+        {% endif %}
+    {% endif %}
+</table>
+
+<p><b>Group Membership</b></p>
+
+<table class="table table-bordered table-condensed">
+    {% if 'ldap' in analysis.jinja_details %}
+        {% if 'memberOf' in analysis.jinja_details['ldap'] %}
+            {% for group in analysis.jinja_details['ldap']['memberOf'] %}
+            <tr>
+                <td class="col-md-12">{{group}}</td>
+            </tr>
+            {% endfor %}
+        {% endif %}
+    {% endif %}
+</table>

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block page_content %}
+
+<script type="text/javascript">
+$(document).ready(function() {
+    if ($('input[name="daterange"]').val() == '') {
+        $('input[name="daterange"]').val(
+            moment().subtract(6, "days").format("MM-DD-YYYY HH:mm") + ' - ' + 
+            moment().format("MM-DD-YYYY HH:mm"));
+    }
+
+    $('input[name="daterange"]').daterangepicker({
+        timePicker: true,
+        format: 'MM-DD-YYYY HH:mm',
+        startDate:  moment().subtract(7, "days"),
+        endDate: moment(),
+        ranges: {
+           'Today': [moment(), moment()],
+           'Yesterday': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+           'Last 7 Days': [moment().subtract(6, 'days'), moment()],
+           'Last 30 Days': [moment().subtract(29, 'days'), moment()],
+           'This Month': [moment().startOf('month'), moment().endOf('month')],
+           'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+        }
+    });
+});
+</script>
+
+<form class="form-horizontal" role="form" method="POST" action={{url_for('analysis.search')}}>
+<div class="form-group" style="margin-left:15px;">
+    <div class="form-group">
+        <label for="search">Search ACE</label>
+        <input type="search" class="form-control" style="width:90%;" id="search" name="search" placeholder="Search ACE" {% if query %}value="{{query}}"{% endif %}>
+        <br>
+        <label for="search">Date Range</label>
+        <input type="text" class="form-control" style="width:90%;" id="daterange" name="daterange" value="{{search_daterange}}"/>
+    </div>
+    <div class="checkbox">
+        <label><input {{search_comments_checked}} type="checkbox" id="search_comments" name="search_comments">Search Analyst Comments</label>
+    </div>
+    <div class="checkbox">
+        <label><input {{search_details_checked}} type="checkbox" id="search_details" name="search_details">Search Alert Details</label>
+    </div>
+    <div class="checkbox">
+        <label><input {{search_all_checked}} type="checkbox" id="search_all" name="search_all">Search Alert Files (takes a LONG time)</label>
+    </div>
+    <button type="submit" class="btn btn-primary">Search</button>
+</div>
+</form>
+
+{% if not query %}
+<h3>How To Search ACE</h3>
+<h4>Observable Searches</h4>
+<p>Observable searching is the fastest type searching you can do in ACE.  ACE indexes every observable is discoveres and records it in a hash map.  This lets you search that hash map.  Prefix the search string with a valid observable type and a colon.  Example: ipv4:69.45.55.67.  Valid observable types are as folllows.</p>
+<ul>
+{% for o_type in observable_types %}
+    <li>{{o_type}}</li>
+{% endfor %}
+</ul>
+<p><b>Note that observable searching searches the entire database regardless of the time specified.</b></p>
+<h4>Open String Searches</h4>
+<p>Just enter the text you wish to search for.  Searching is case sensitive.  Alerts that have the search string will be displayed.  By default ACE will only search the metadata of the alert, which includes some contextual information and the obervable values.  You must specify a more detailed search by selecting one or more of the checkboxes.</p>
+<h4>Date Range</h4>
+<p>For open string searches you must specify a date range.  All alerts that occured during this time will be searched.  The larger you make this range the longer your search will take to execute.</p>
+<h4>Search Analysts Comments</h4>
+<p>Searches the comments in the analysts dispositions.  <b>Comment searching also searches all alerts regardless of the time specified.</b></p>
+<h4>Search Alert Details <font color="red">warning: slow</font></h4>
+<p>Searches the details of the analysis.  This can take a long time depending on the time range specified.</p>
+<h4>Search Alert Files <font color="red">warning: very slow</font></h4>
+<p>Searches <i>all</i> files of the alerts specified during the time range.  This operation will take a long time to complete.</p>
+{% endif %}
+
+{% if query %}
+{% if results | count < 1 %}<h3 style="color: red">No search results for {{query}}</h3>
+{% else %}
+<h3>Search Results for {{query}}</h3>
+<table class="table">
+    <tr>
+        <td>Description</td>
+        <td>Priority</td>
+        <td>Insert Date</td>
+        <td>Storage</td>
+    </tr>
+    {% for result in results %}
+    <tr>
+        <td><a href="{{ url_for('analysis.index', direct=result.uuid) }}">{{result.description}}</a></td>
+        <td>{{result.priority}}</td>
+        <td>{{result.event_time}}</td>
+        <td>{{result.storage_dir}}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,40 @@
+{% for email in analysis.emails | reverse %}
+<div class="panel panel-default">
+    <div class="panel-body">
+        <table class="table-condensed">
+        <tr>
+            <td><b>Subject</b></td>
+            <td><b>{{email['subject']}}</b></td>
+        </tr>
+        <tr>
+            <td>From</td>
+            <td>{{email['mail_from']}}</td>
+        </tr>
+        <tr>
+            <td>Time</td>
+            <td>{{email['_time']}}</td>
+        </tr>
+        <tr>
+            <td>Archive</td>
+            <td>{{email.archive_path}} <button id="file_download_{{email.md5}}" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-download-alt"></span></button></td>
+        </tr>
+        {% for index in range(email['attachment_count'] | int) %}
+        <tr>
+            <td colspan="2">{{email['attachment_names_mv'][index]}} ({{email['attachment_types_mv'][index]}})
+                <a href="https://www.virustotal.com/en/file/{{email['attachment_hashes_mv'][index]}}/analysis/" target="_blank"><img src="{{url_for('static', filename='images/vt.png')}}" width="12" height="12"></img></a>
+            </td>
+        </tr>
+        {% endfor %}
+        </table>
+    </div>
+</div>
+{% autoescape false %}
+<script type="text/javascript">
+$('#file_download_{{email.md5}}').on('click', function() {
+    download_url("{{url_for('analysis.download_archive', md5=email.md5, mode='raw')}}");
+});
+</script>
+{% endautoescape %}
+{% endfor %}
+</table>
+

@@ -1,0 +1,38 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+{% if analysis.details['email'] %}
+<ul class="list-group">
+    {% if 'env_mail_from' in analysis.details['email'] %}
+    <li class="list-group-item">MAIL FROM: {{ analysis.details['email']['env_mail_from'] }}</li>
+    {% endif %}
+    {% if 'env_rcpt_to' in analysis.details['email'] %}
+    <li class="list-group-item">RCPT TO: {{ analysis.details['email']['env_rcpt_to'] | join(', ')}}</li>
+    {% endif %}
+    <li class="list-group-item">From: {{ analysis.details['email']['from']}}</li>
+    <li class="list-group-item">To: {{ analysis.details['email']['to'] | join(', ')}}</li>
+    <li class="list-group-item">Subject: {{ analysis.details['email']['subject']}}</li>
+    {% if 'decoded_subject' in analysis.details['email'] %}
+    <li class="list-group-item">Decoded Subject: {{ analysis.details['email']['decoded_subject']}}</li>
+    {% endif %}
+    {% if 'connection_id' in analysis.details['email'] %}
+    <li class="list-group-item">Connection ID: {{ analysis.details['email']['connection_id'] }}</li>
+    {% endif %}
+    {% if 'message-id' in analysis.details['email'] %}
+    <li class="list-group-item">Message-ID: {{ analysis.details['email']['message-id'] }}</li>
+    {% endif %}
+    {% if 'originating-_p' in analysis.details['email'] %}
+    <li class="list-group-item">Originating IP: {{ analysis.details['email']['originating_ip'] }}</li>
+    {% endif %}
+</ul>
+    
+<div class="panel panel-default">
+    <div class="panel-heading"><a role="button" data-toggle="collapse" data-target="#collapseHeaders" aria-expanded="false" aria-controls="collapseHeaders">Headers</a> (click to expand)</div>
+    <div class="panel-body collapse" id="collapseHeaders">
+        <pre>{% for header, value in analysis.details['email']['headers'] %}{{header}}: {{value}}
+{% endfor %}
+        </pre>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

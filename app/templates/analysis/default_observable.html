@@ -1,0 +1,34 @@
+{% block observable_display %}
+{% if _observable.time %}
+{{_observable.display_value}} @ {{_observable.time}}
+{% else %}
+{{_observable.display_value}}
+{% endif %}
+{% endblock %}
+
+{% set unique_reference = generate_unique_reference() %}
+
+{% if _observable.jinja_available_actions %}
+
+<span class="dropdown">
+    <button class="btn btn-default btn-xs dropdown-toggle" type="button" id="action_{{unique_reference}}" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
+    <span class="caret"></span>
+    </button>
+    <ul class="dropdown-menu" aria-labelledby="action_{{unique_reference}}">
+        {% for action in _observable.jinja_available_actions %}
+            {% if action.name is none %}
+                <li role="separator" class="divider"></li>
+            {% else %}
+                <li><a style="cursor: pointer" id="action_{{action.name}}_{{unique_reference}}"><span class="glyphicon glyphicon-{{action.icon}}"></span>  {{action.description}}</a></li>
+            {% endif %}
+        {% endfor %}
+    </ul>
+</span>
+
+{% for action in _observable.jinja_available_actions %}
+    {% if action.jinja_action_path %}
+        {% include action.jinja_action_path %}
+    {% endif %}
+{% endfor %}
+
+{% endif %}

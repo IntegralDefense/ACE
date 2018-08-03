@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+cd /opt/saq && source load_environment && ./saq update-crits-cache

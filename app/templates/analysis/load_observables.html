@@ -1,0 +1,10 @@
+<ul>
+    {% for type_ in types %}
+    <li>{{type_}}</li>
+    <ul>
+        {% for o in data[type_] %}
+        <li><span style="cursor:pointer" onmousedown="observable_link_clicked({{o.id}})">{{o.value.decode(errors='ignore')}} ({{o.count}})</a></li>
+        {% endfor %}
+    </ul>
+    {% endfor %}
+</ul>

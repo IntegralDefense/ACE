@@ -1,0 +1,80 @@
+<table class="table table-bordered table-condensed">
+    <tr>
+        <td class="col-md-4"><b>Time</b></td>
+        <td class="col-md-8"><b>URL</b></td>
+    </tr>
+    {% for e in analysis.jinja_details %}
+    <tr>
+        <td class="col-md-4">{{e['Time']}}</td>
+        <td class="col-md-8"><a href="#" data-toggle="modal" data-target="#summary_{{e['id']}}">{{e['URL'] | truncate(70, True, ' (...snippped...)')}}</a></td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% for e in analysis.jinja_details %}
+<div class="modal fade" id="summary_{{e['id']}}" tabindex="-1" role="dialog" aria-labelledby="summary_{{e['id']}}Label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="summary_{{e['id']}}Label">{{e['URL']}}</h4>
+            </div>
+            <div class="modal-body">
+                <table class="table table-bordered table-condensed">
+                    <tr>
+                        <td class="col-md-2">Time</td>
+                        <td class="col-md-10">{{e['Time']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">Username</td>
+                        <td class="col-md-10">{{e['Username']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">Categories</td>
+                        <td class="col-md-10">{{e['Categories']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">DNS</td>
+                        <td class="col-md-10">{{e['DNS']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">IPv4</td>
+                        <td class="col-md-10">{{e['IPv4']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">Proxy Action</td>
+                        <td class="col-md-10">{{e['Proxy Action']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">Result</td>
+                        <td class="col-md-10">{{e['Result']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">Method</td>
+                        <td class="col-md-10">{{e['Method']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">Content Type</td>
+                        <td class="col-md-10">{{e['Content Type']}}</td>
+                    </tr>
+                    <tr>
+                        <td class="col-md-2">Referrer</td>
+                        <td class="col-md-10">{{e['Referrer']}}</td>
+                    </tr>
+                </table>
+                <div class="panel-body">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h4 class="panel-title">Raw</h4>
+                        </div>
+                        <div class="panel-body">{{e['Raw']}}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">woah</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}

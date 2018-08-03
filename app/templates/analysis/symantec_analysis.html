@@ -1,0 +1,31 @@
+{% if analysis.details %}
+<table class="table">
+<tr>
+    <td>Time</td>
+    <td>Host</td>
+    <td>Action</td>
+    <td>User</td>
+    <td>Signature</td>
+    <td>Event Time</td>
+</tr>
+{% for row in analysis.details %}
+<tr>
+    <td>{{row['_time']}}</td>
+    <td>{{row['dest_nt_domain']}}\{{row['dest_nt_host']}}</td>
+    <td>{{row['actual_action']}}</td>
+    <td>{{row['user']}}</td>
+    <td>{{row['signature']}}</td>
+    <td>{{row['event_time']}}</td>
+</tr>
+<tr>
+    <td colspan="6">Downloaded By <b>{{row['downloaded_by']}}</b></td>
+</tr>
+<tr>
+    <td colspan="6">Process <b>{{row['process']}}</b></td>
+</tr>
+<tr>
+    <td colspan="6">Hash <b>{{row['hash_value']}}</b></td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}

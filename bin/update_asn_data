@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+if [ -z "$SAQ_HOME" ]
+then
+    echo "you are missing SAQ_HOME environment variable"
+    exit 1
+fi
+
+env_path="/$SAQ_HOME/load_environment"
+proxy_path="/$SAQ_HOME/load_proxy"
+
+if [ -e "$env_path" ]
+then
+    source /$SAQ_HOME/load_environment
+fi
+
+if [ -e "$proxy_path" ]
+then
+    source /$SAQ_HOME/load_proxy
+fi
+
+cd $SAQ_HOME || { echo "cannot cd to $SAQ_HOME" ; exit 1;  }
+
+if [ ! -d etc/asn ]
+then
+    mkdir etc/asn
+fi
+
+if [ -e etc/asn/data-raw-table ]
+then
+    cp etc/asn/data-raw-table etc/asn/data-raw-table.old
+fi
+
+if [ -e etc/asn/data-used-autnums ]
+then
+    cp etc/asn/data-used-autnums etc/asn/data-used-autnums.old
+fi
+
+curl -s 'http://thyme.apnic.net/current/data-raw-table' > etc/asn/data-raw-table.new && mv etc/asn/data-raw-table.new etc/asn/data-raw-table
+curl -s 'http://thyme.apnic.net/current/data-used-autnums' > etc/asn/data-used-autnums.new && mv etc/asn/data-used-autnums.new etc/asn/data-used-autnums

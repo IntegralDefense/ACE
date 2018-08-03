@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+find stats/modules -type f -name '*.stats' | while read f
+do
+    result=$(tail -n 1000000 "$f" | bin/compute_stats.py)
+    b=$(basename "$f")
+    echo "$b:$result"
+done

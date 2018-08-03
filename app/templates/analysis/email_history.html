@@ -1,0 +1,95 @@
+<table class="table">
+<tr>
+    <td>Time</td>
+    <td>From</td>
+    <td>Subject</td>
+</tr>
+{% for email in analysis.emails %}
+<tr>
+    <td>{{email['_time']}}</td>
+    <td>{{email['mailfrom']}}</td>
+    <td><a href="#" data-toggle="modal" data-target="#email_{{email['flow_id']}}">{{email['subject']}}</a></td>
+</tr>
+{% endfor %}
+</table>
+
+{% for email in analysis.emails %}
+<div class="modal fade" id="email_{{email['flow_id']}}" tabindex="-1" role="dialog" aria-labelledby="email_{{email['flow_id']}}Label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="email_{{email['flow_id']}}Label">{{email['subject']}}</h4>
+            </div>
+            <div class="modal-body">
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">Summary</h3>
+                    </div>
+                    <div class="panel-body">
+                        <table class="table">
+                        <tr>
+                            <td>CID</td>
+                            <td>{{email['flow_id']}}</td>
+                        </tr>
+                        <tr>
+                            <td>MAIL FROM</td>
+                            <td>{{email['mailfrom']}}</td>
+                        </tr>
+                        <tr>
+                            <td>RCPT TO</td>
+                            <td>{{email['rcptto']}}</td>
+                        </tr>
+                        <tr>
+                            <td>FROM</td>
+                            <td>{{email['from']}}</td>
+                        </tr>
+                        <tr>
+                            <td>TO</td>
+                            <td>{{email['to']}}</td>
+                        </tr>
+                        <tr>
+                            <td>Subject</td>
+                            <td>{{email['subject']}}</td>
+                        </tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">Attachments</h3>
+                    </div>
+                    <div class="panel-body">
+                    </div>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading" id="heading_{{email['flow_id']}}">
+                        <h3 class="panel-title">
+                            <a role="button" data-toggle="collapse" data-parent="#email_{{email['flow_id']}}" href="#collapse_{{email['flow_id']}}" aria-expanded="true" aria-controls="collapse_{{email['flow_id']}}">Details</a> (Click to expand)
+                        </h3>
+                    </div>
+                    <div id="collapse_{{email['flow_id']}}" class="panel-collapse collapse" role="tabpanel" aria-labelledby="heading_{{email['flow_id']}}">
+                        <div class="panel-body">
+                            <table class="table">
+                            <tr>
+                                <td><b>field</b></td>
+                                <td><b>value</b></td>
+                            </tr>
+                            {% for field in email.keys()%}
+                            <tr>
+                                <td>{{field}}</td>
+                                <td>{{email[field]}}</td>
+                            </tr>
+                            {% endfor %}
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">crazy</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}

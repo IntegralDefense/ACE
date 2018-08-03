@@ -1,0 +1,18 @@
+{% autoescape false %}
+{% if _observable.exists %}
+<script type="text/javascript">
+$('#action_{{action.name}}_{{unique_reference}}').on('click', function() {
+    debugger;
+    if (! confirm("WARNING: Are you sure you want to upload this file to Virus Total?")) { return; }
+    $.post("{{ url_for('analysis.download_file') }}",
+            {"file_uuid":"{{_observable.id}}","alert_uuid":"{{_observable.root.uuid}}", "mode": "virustotal"},
+            function(data) {
+                window.open(data,"_blank");
+            }
+    ).fail(function(data, textStatus, jqXHR) {
+        alert("VT upload failed: " + textStatus);
+    });
+});
+</script>
+{% endif %}
+{% endautoescape %}

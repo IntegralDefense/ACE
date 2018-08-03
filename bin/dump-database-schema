@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+mysqldump saq-production --comments --no-data --no-create-db --user root -p
+

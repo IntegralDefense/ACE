@@ -1,0 +1,16 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+
+<div class="panel panel-default">
+    <div class="panel-heading">Request Details</div>
+    <div class="panel-body">
+        {# the context is mostly freeform #}
+        <pre>{{ analysis.jinja_details | pprint }}</pre>
+        {% if 'context' in analysis.details and 'c' in analysis.details['context'] %}
+        {% endif %}
+    </div>
+</div>
+
+<div class="alert alert-info" role="alert">This may have been related to <a href="{{ url_for('analysis.index', direct=analysis.details['context']['c']) }}">another alert.</a></div>
+
+{% endblock %}
