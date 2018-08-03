@@ -1,0 +1,9 @@
+{% if analysis.dns_requests %}
+{% for row in analysis.dns_requests %}
+<div class="panel panel-default">
+    <div class="panel-body">
+        {{row['_raw']}}
+    </div>
+</div>
+{% endfor %}
+{% endif %}

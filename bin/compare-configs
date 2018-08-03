@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+
+import argparse
+import configparser
+
+parser = argparse.ArgumentParser(description="Compare two configuration files and show the differences.")
+parser.add_argument('config_file', nargs=2, help="The configuration files to compare.")
+args = parser.parse_args()
+
+other = lambda x: 1 if x == 0 else 1
+
+configs = []
+configs.append(configparser.ConfigParser(allow_no_value=True))
+configs.append(configparser.ConfigParser(allow_no_value=True))
+
+sections = []
+
+for i in range(2):
+    configs[i].read(args.config_file[i])
+    sections.append(set(configs[i].sections()))
+
+section_diff = []
+section_diff.append(sections[0] - sections[1])
+section_diff.append(sections[1] - sections[0])
+
+option_diffs = []
+option_diffs.append({}) # key = section, value = set(option)
+option_diffs.append({})
+
+value_diffs = []
+value_diffs.append({}) # key = section, value = set(option)
+value_diffs.append({}) 
+
+
+for i in range(2):
+    for section in configs[i].sections():
+        if section in configs[other(i)]:
+            # get the values in this one not in the other one
+            options = set(configs[i].options(section))
+            other_options = set(configs[other(i)].options(section))
+            option_diff = options - other_options
+
+            if option_diff:
+                option_diffs[i][section] = option_diff
+
+            # get the values that are different from the other one
+            for option in options:
+                if option in configs[other(i)][section]:
+                    if configs[i][section][option] != configs[other(i)][section][option]:
+                        if section not in value_diffs:
+                            value_diffs[i][section] = {}
+
+                        value_diffs[i][section][option] = ( configs[i][section][option], configs[other(i)][section][option] )
+
+for i in range(2):
+    if section_diff[i]:
+        print(args.config_file[i])
+        for section in section_diff[i]:
+            print("[+] section {}".format(section))
+
+    for section in option_diffs[i]:
+        for option in option_diffs[i][section]:
+            print("[+] option [{}] <{}>".format(section, option))
+
+    if i == 0:
+        for section in value_diffs[i]:
+            for option in value_diffs[i][section]:
+                print("[=] value [{}] <{}> {} <--> {}".format(section, option, value_diffs[i][section][option][0], value_diffs[i][section][option][1]))

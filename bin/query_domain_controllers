@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+if [ -z "$SAQ_HOME" ]
+then
+    echo "missing env var SAQ_HOME"
+    exit 1
+fi
+
+cd $SAQ_HOME || { echo "cannot cd into $SAQ_HOME"; exit 1; }
+
+result=$(ldap_query.py '&(objectCategory=computer)(userAccountControl:1.2.840.113556.1.4.803:=8192)' | jq -r '.[].dn' | sed -e 's/CN=\([^,]*\).*/\1/' | tr '[:lower:]' '[:upper:]' | sort )
+
+# exit if query fails and maintain current DC list
+if [ -z "$result" ]
+then
+    echo "ldap query failed"
+    exit 1
+else
+    echo "$result" > etc/domain_controllers.tmp
+fi
+
+# has something changed?
+if [ -e etc/domain_controllers ]
+then
+    if ! cmp etc/domain_controllers.tmp etc/domain_controllers 2> /dev/null
+    then
+        diff etc/domain_controllers etc/domain_controllers.tmp
+        hostname_list=$(diff etc/domain_controllers etc/domain_controllers.tmp | sed -n '/^[<>]/ p' | sed -e 's/^..//' | paste -sd ',' - | sed -e 's/,/ hostname /g')
+        hostname_list="hostname $hostname_list"
+        if [ -n "$hostname_list" ]
+        then
+            if [ -d ace.domain_controllers ]
+            then
+                rm -rf ace.domain_controllers
+            fi
+
+            echo "sending alert"
+            ./saq --force-alerts correlate -d ace.domain_controllers --description 'Domain Controller Machine Added Or Deleted' --comment 'A Domain Controller machine has been added or deleted from active directory.' --alert ${hostname_list} --disable-all
+
+            if [ -d ace.domain_controllers ]
+            then
+                rm -rf ace.domain_controllers
+            fi
+        fi
+        mv etc/domain_controllers.tmp etc/domain_controllers
+    fi
+else
+    mv etc/domain_controllers.tmp etc/domain_controllers
+fi
+
+if [ -e etc/domain_controllers.tmp ]
+then
+    rm etc/domain_controllers.tmp
+fi

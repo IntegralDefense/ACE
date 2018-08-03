@@ -1,0 +1,50 @@
+<b>Email Summary</b>
+<table class="table table-bordered table-condensed">
+    {% if analysis.email.env_mail_from %}
+    <tr>
+        <td class="col-md-2">Env Mail From</td>
+        <td class="col-md-10">{{analysis.env_mail_from}}</td>
+    </tr>
+    {% endif %}
+    {% if analysis.env_rcpt_to %}
+    <tr>
+        <td class="col-md-2">Env Rcpt To</td>
+        <td class="col-md-10">{{analysis.env_rcpt_to}}</td>
+    </tr>
+    {% endif %}
+    {% if analysis.mail_from %}
+    <tr>
+        <td class="col-md-2">From</td>
+        <td class="col-md-10">{{analysis.mail_from}}</td>
+    </tr>
+    {% endif %}
+    {% if analysis.mail_to %}
+    <tr>
+        <td class="col-md-2">To</td>
+        <td class="col-md-10">{{analysis.mail_to}}</td>
+    </tr>
+    {% endif %}
+    {% if analysis.decoded_subject %}
+    <tr>
+        <td class="col-md-2">Subject (Decoded)</td>
+        <td class="col-md-10">{{analysis.decode_subject}}</td>
+    </tr>
+    {% elif analysis.subject %}
+    <tr>
+        <td class="col-md-2">Subject</td>
+        <td class="col-md-10">{{analysis.subject}}</td>
+    </tr>
+    {% endif %}
+    {% if analysis.message_id is not none %}
+    <tr>
+        <td class="col-md-2">Message ID</td>
+        <td class="col-md-10">{{analysis.message_id}}</td>
+    </tr>
+    {% endif %}
+</table>
+
+{% if analysis.headers %}
+<b>Raw Email Headers</b>
+<pre>{% for header, value in analysis.email.headers %}{{header}}: {{value}}
+{% endfor %}</pre>
+{% endif %}

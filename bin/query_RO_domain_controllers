@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+export SAQ_HOME=/opt/saq
+
+if [ -z "$SAQ_HOME" ]
+then
+    echo "missing env var SAQ_HOME"
+    exit 1
+fi
+
+cd $SAQ_HOME || { echo "cannot cd into $SAQ_HOME"; exit 1; }
+
+result=$(ldap_query.py '&(objectCategory=computer)(userAccountControl:1.2.840.113556.1.4.803:=83890176)' | jq -r '.[].dn' | sed -e 's/CN=\([^,]*\).*/\1/' | tr '[:lower:]' '[:upper:]' | sort )
+
+# exit if query fails and maintain current DC list
+if [ -z "$result" ]
+then
+    echo "ldap query failed"
+    exit 1
+else
+    echo "$result" > etc/RO_domain_controllers
+fi
+
+
+

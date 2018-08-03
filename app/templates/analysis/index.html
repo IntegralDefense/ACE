@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+
+{% block disposition_form %}
+<input type="hidden" id="alert_uuid" name="alert_uuid" value="{{alert.uuid}}"></input>
+{% endblock disposition_form %}
+
+{% block control_panel %}
+<div class="col-md-7">
+    <form class="form-horizontal" role="form" method="POST" action={{url_for('analysis.set_disposition')}}>
+        <input type="hidden" name="alert_uuid" value="{{alert.uuid}}"></input>
+        <button type="submit" name="disposition" value="FALSE_POSITIVE" class="btn btn-success btn-sm"><span class="glyphicon glyphicon-ok-sign"></span> FP</button>
+        <button type="submit" name="disposition" value="IGNORE" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-ok-sign"></span> Ignore</button>
+        <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#disposition_modal"><span class="glyphicon glyphicon-thumbs-up"></span> Disposition</button>
+        <button id="add_comment_button_alert" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#comment_modal" uuid="{{alert.uuid}}"><span class="glyphicon glyphicon-comment"></span> Add Comment</button>
+        <button id="btn-take-ownership" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-lock"></span> Take Ownership</button>
+        <button id="btn-assign-ownership-dialog" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#assign_ownership_modal"><span class="glyphicon glyphicon-user"></span> Assign Ownership</button>
+        <button id="btn-add-observable" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#add_observable_modal" {% if alert.is_locked() %}disabled{% endif %}><span class="glyphicon glyphicon-plus-sign"></span> Add Observable</button>
+        <button type="button" name="btn-show-add-tags" class="btn btn-default btn-sm" data-toggle="modal" data-target="#tag_modal"><span class="glyphicon glyphicon-tags"></span> Add Tag(s)</button>
+        <button id="btn-analyze_alert" type="button" class="btn btn-default btn-sm" {% if alert.is_locked() %}disabled{% endif %}><span class="glyphicon glyphicon-lock"></span> Analyze Alert</button>
+        <button id="btn-remediate-alerts" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-envelope"></span> Email Remediation</button>
+        <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#event_modal"><span class="glyphicon glyphicon-plus-sign"></span> Add To Event</button>
+    </form>
+</div>
+<div class="col-md-5">
+    <div class="pull-right">
+        {% if prune_display_tree %}
+            <button id="btn-toggle-prune" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-resize-full"></span> View All Analysis</button>
+        {% else %}
+            <button id="btn-toggle-prune" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-resize-small"></span> View Critical Analysis</button>
+        {% endif %}
+        <button type="button" class="btn btn-default btn-sm" disabled="disabled"><span class="glyphicon glyphicon-time"></span> View Timeline</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_content %}
+<div class="container-fluid">
+    <!-- main content area -->
+    <!-- ======================
+        | content        | tags|
+    -->
+    <div class="row voffset10" style="margin-top:15px;">
+        <div class="col-md-11">
+            <!--
+            we'll come back to this idea...
+            <div class="row">
+                <div class="col-md-12">
+                    <ol id="breadcrumb" class="breadcrumb">
+                        <li><a href="#">alert</a></li>
+                        <li><a href="#">ipv4 (149.55.25.41)</a></li>
+                        <li class="active">asset (149.55.25.41)</li>
+                    </ol>
+                </div>
+            </div>
+            -->
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h4 class="panel-title">
+                                <b><a href="{{ url_for('analysis.index', direct=alert.uuid) }}">{{alert.description}}{% if observable %}- {{analysis}} for {{observable}}{% endif %}</a></b>
+                                <!--{{analysis.jinja_display_name}} details {% if observable %}for {{observable}}{% endif %}-->
+                            </h4>
+                        </div>
+                        <div id="collapseone" class="panel-collapse collapse in">
+                            <!-- main content area for the details of the analysis-based object -->
+                            <div class="panel-body">
+                                {% include analysis.jinja_template_path %}
+                            </div>
+                        </div>
+                    </div>
+
+
+                    {# previous versions of the Alerts had separate Attachment objects for files #}
+                    {% if analysis.attachments | count > 0 %}
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h3 class="panel-title">Attachments</h3>
+                        </div>
+                        <div class="panel-body">
+                            <ul class="list-group">
+                            {% for attachment in analysis.attachments %}
+                                <li class="list-group-item">
+                                    <button id="file_download_{{attachment.uuid}}" type="button" class="btn btn-default"><span class="glyphicon glyphicon-download-alt"></span></button>
+                                    <button id="file_hex_view_{{attachment.uuid}}" type="button" class="btn btn-default"><span class="glyphicon glyphicon-zoom-in"></span></button>
+                                    <button id="file_text_view_{{attachment.uuid}}" type="button" class="btn btn-default"><span class="glyphicon glyphicon-file"></span></button>
+                                    {{attachment.path}}
+                                    {% autoescape false %}
+                                    <script type="text/javascript">
+                                    $('#file_download_{{attachment.uuid}}').on('click', function() {
+                                        download_url("{{url_for('analysis.download_attachment', attachment_uuid=attachment.uuid, alert_uuid=alert.uuid, mode='raw')}}");
+                                    });
+                                    $('#file_hex_view_{{attachment.uuid}}').on('click', function() {
+                                        window.open("{{url_for('analysis.download_attachment', attachment_uuid=attachment.uuid, alert_uuid=alert.uuid, mode='hex')}}");
+                                    });
+                                    $('#file_text_view_{{attachment.uuid}}').on('click', function() {
+                                        window.open("{{url_for('analysis.download_attachment', attachment_uuid=attachment.uuid, alert_uuid=alert.uuid, mode='text')}}");
+                                    });
+                                    </script>
+                                    {% endautoescape %}
+                                </li>
+                            {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    {% endif %}
+
+
+                    <!--<div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h4 class="panel-title">
+                                <a data-toggle="collapse" href="#collapsetwo">
+                                    Visualization
+                                </a>
+                                <button type="button" class="btn btn-default btn-xs" id="btn-stats"><span class="glyphicon glyphicon-stats"></span> Load Graph</button>
+                                <button type="button" class="btn btn-default btn-xs" id="btn-fit-to-window"><span class="glyphicon glyphicon-fullscreen"></span> Fit To Window</button>
+                            </h4>
+                        </div>
+                        <div class="panel-body">
+                            <div class="row">
+                                <div class="col-md-12" id="visualization" style="height: 500px"></div>
+                            </div>
+                        </div>
+                    </div>-->
+                </div>
+            </div>
+        </div>
+        <div class="col-md-1">
+            {# split up tags between ones that came in with the alert and onces that came from analysis #}
+            {% for tag in alert_tags %}
+                {% if tag.level != 'hidden' %}
+                    <div><span class="label {{tag.css_class}}">{{tag}}</span></div>
+                {% endif %}
+            {% endfor %}
+            <hr>
+            {% for sim in alert.similar_alerts() %}
+            <a href="{{ url_for('analysis.index', direct=sim.uuid) }}">
+                <div><span class="label label-{{disposition_css_mapping[sim.disposition]}}"><small>{{sim.disposition}} {{sim.percent}}%</small></span></div>
+            </a>
+            {% endfor %}
+            <!--
+            <div><span class="label label-danger"><span class="glyphicon glyphicon-tag"> vioc</span></span></div>
+            <div><span class="label label-danger"><span class="glyphicon glyphicon-tag"> apt:prince</span></span></div>
+            <div><span class="label label-warning"><span class="glyphicon glyphicon-tag"> treasury</span></span></div>
+            <div><span class="label label-warning"><span class="glyphicon glyphicon-tag"> ip</span></span></div>
+            <div><span class="label label-primary"><span class="glyphicon glyphicon-tag"> windows server</span></span></div>
+            -->
+        </div>
+    </div>
+</div>
+
+<div class="hidden">
+    <form role="form" id="delete_comment_form" method="POST" action={{url_for('analysis.delete_comment')}}>
+        <input type="hidden" name="comment_id" id="comment_id" value=""/>
+        <input type="hidden" name="direct" value="{{alert.uuid}}"/>
+    </form>
+</div>
+
+<form id="ownership-form" action="{{url_for('analysis.take_ownership')}}" method="POST">
+    <input type="hidden" name="alert_uuid" value="{{alert.uuid}}"/>
+</form>
+
+<form id="analyze-alert-form" action="{{url_for('analysis.analyze_alert')}}" method="POST">
+    <input type="hidden" name="alert_uuid" value="{{alert.uuid}}"/>
+</form>
+
+<form id="toggle-prune-form" action={{url_for('analysis.toggle_prune')}} method="POST">
+    <input type="hidden" name="alert_uuid" value="{{alert.uuid}}"/>
+</form>
+
+{# modal to use for adding observables #}
+<div class="modal fade" id="add_observable_modal" tabindex="-1" role="dialog" aria-labelledby="add_observable_modal_label" aria-hidden="true">
+    <div class="modal-dialog">
+        <form id="add-observable-form" class="form-horizontal" role="form" method="POST" action={{url_for('analysis.add_observable')}}>
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="add_observable_modal_label">Add Observable</h4>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-xs-6">
+                    <select class="form-control" name="add_observable_type" id="add_observable_type">
+                        <option value="" SELECTED>Select Type</option>
+                        {% for observable_type in observable_types %}
+                        <option value="{{observable_type}}">{{observable_type}}</option>
+                        {% endfor %}
+                    </select>
+                    </div>
+                    <div class="col-xs-6">
+                        <input type="text" class="form-control" id="add_observable_value" name="add_observable_value" value="" placeholder="Enter Value"/>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-xs-12">
+                    Time: (leave this blank or enter YYYY-MM-DD HH:MM:SS format)
+                    <input type="text" class="form-control" id="add_observable_time" name="add_observable_time" value="" placeholder="YYYY-MM-DD HH:MM:SS"/>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <input type="hidden" name="alert_uuid" value="{{alert.uuid}}"></input>
+                <button type="button" class="btn btn-default" data-dismiss="modal">Forget It</button>
+                <button type="submit" class="btn btn-primary" id="btn-submit-observable">Add It</button>
+            </div>
+        </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="email_modal" tabindex="-1" role="dialog" aria-labelledby="disposition_modal_label" aria-hidden="true">
+    <div class="modal-dialog">
+        <form id="email-form" class="form-horizontal" role="form" method="POST" action="{{url_for('analysis.email_file')}}">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                    <h4 class="modal-title" id="comment_modal_label">Email File</h4>
+                </div>
+                <div class="modal-body">
+                    Send File To<br/>
+                    <select class="form-control" id="emaillist" name="emaillist">
+                        <option value="Select to add">Select to add</option>
+                        {% for user in db.session.query(User).all() %}
+                            <option value="{{user.email}}">{{user.email}}</option>
+                        {% endfor %}
+                    </select>
+                    <br/>(use semicolon ";" to separate email addresses)<br/>
+                    <input class="form-control" type="text" id="toemail" name="toemail"/>
+                    <br/>Subject<br/>
+                    <input class="form-control" type="text" id="subject" name="subject" value="{{alert.description}}"/>
+                    <br/>Message<br/>
+                    <textarea class="form-control" rows="3" id="emailmessage" name="emailmessage"></textarea>
+                    <label><input class="form-control" type="checkbox" id="compress" name="compress" checked/>&nbsp;Compress</label>
+                    <label><input class="form-control" type="checkbox" id="encrypt" name="encrypt" checked/>&nbsp;Encrypt</label>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Meh</button>
+                    <button type="button" class="btn btn-primary" id="btn-submit-email">Send</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="file_modal" tabindex="-1" role="dialog" aria-labelledby="file_modal_label" aria-hidden="true">
+    <div class="modal-dialog">
+        <form class="form-horizontal" role="form" method="POST" action="{{url_for('analysis.upload_file')}}" enctype="multipart/form-data">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                    <h4 class="modal-title" id="comment_modal_label">Upload a file and generate an observable...</h4>
+                </div>
+                <div class="modal-body">
+                    <input type="file" id="file_path" name="file_path"/>
+                    <br/>
+                    <span style="font-weight: bold;">Add Comment:&nbsp;</span><input type="text" class="form-control" id="comment" name="comment" value="" placeholder="Add comment (not required...)"/>
+                    <input type="hidden" value="{{alert.uuid}}" name="alert_uuid" id="alert_uuid"/>
+                </div>
+                <div class="modal-footer">
+                    <input type="submit" value="Upload" style="margin-top: 5px;"/>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/saq_analysis.js') }}"></script>
+{% endblock %}

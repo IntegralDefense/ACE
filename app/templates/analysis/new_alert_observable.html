@@ -1,0 +1,16 @@
+      <tr id="new_alert_observable_{{index}}">
+        <td style="padding-right:10px;"><input type="text" class="form-control" style="width:auto;" name="observables_times_{{index}}" id="observables_times_{{index}}" value=""/></td>
+        <td style="padding-right:10px;">
+          <select class="form-control" style="width:auto;" name="observables_types_{{index}}" id="observables_types_{{index}}" onchange="new_alert_observable_type_changed('{{index}}')">
+            {% for observable_type in observable_types %}
+            <option value="{{observable_type}}" {% if observable_type == "file" %}SELECTED{% endif %}>{{observable_type}}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td id="new_alert_observable_value_{{index}}" style="width:100%;padding-right:10px;">
+          <input class="form-control" type="file" name="observables_values_{{index}}" id="observables_values_{{index}}" value="">
+        </td>
+        <td>
+          <button onclick="new_alert_remove_observable('{{index}}')" type="button" class="close"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+        </td>
+      </tr>

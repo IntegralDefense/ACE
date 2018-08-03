@@ -1,0 +1,24 @@
+{% if analysis.details %}
+<table class="table">
+<tr>
+    <td>Time</td>
+    <td>Name</td>
+    <td>Category</td>
+    <td>Src:Port</td>
+    <td>Dst:Port</td>
+    <td>Proto</td>
+    <td>Signature:Rev</td>
+</tr>
+{% for row in analysis.details %}
+<tr>
+    <td>{{row['_time']}}</td>
+    <td>{{row['name']}}</td>
+    <td>{{row['category']}}</td>
+    <td>{{row['src_ip']}}:{{row['src_port']}}</td>
+    <td>{{row['dest_ip']}}:{{row['dest_port']}}</td>
+    <td>{{row['proto']}}</td>
+    <td>{{row['signature']}}:{{row['signature_rev']}}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}

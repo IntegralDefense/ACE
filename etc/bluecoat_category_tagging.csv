@@ -1,0 +1,5 @@
+suspicious,suspicious_url
+malicious,malicious_url
+botnet,malicious_url
+dynamic dns,dynamic_dns
+remote access tools,rat

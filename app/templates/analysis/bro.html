@@ -1,0 +1,27 @@
+{% if analysis.details %}
+<table class="table">
+<tr>
+    <td><b>Time</b></td>
+    <td><b>FUID</b></td>
+    <td><b>MD5</b></td>
+    <td><b>Mime</b></td>
+    <td><b>Source</b></td>
+</tr>
+{% for entry in analysis.details %}
+<tr>
+    <td>{{entry['_time']}}</td>
+    <td>{{entry['fuid']}}</td>
+    <td>{{entry['md5']}}</td>
+    <td>{{entry['mime_type']}}</td>
+    <td>{{entry['source']}}</td>
+</tr>
+    {% if 'http.log' in entry %}
+        {% for http_entry in entry['http.log'] %}
+<tr>
+    <td colspan="5"><span style="color: blue">{{http_entry['host']}}</span> - {{http_entry['uri'] | truncate(64, True)}}</td>
+</tr>
+        {% endfor %}
+    {% endif %}
+{% endfor %}
+</table>
+{% endif %}

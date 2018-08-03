@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+export TZ="America/New_York"
+cd $SAQ_HOME
+./saq --start --daemon -L etc/network_semaphore_logging.ini network-semaphore

@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block control_panel %}
+<div class="container-fluid">
+    <!-- control panel -->
+    <div class="row">
+        <div class="col-md-12">
+            <button id="btn-remove-alerts" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-remove"></span> Remove Alert(s)</button>
+        </div>
+    </div>
+</div>
+<div class="row" style="margin-top:5px;margin-left:0px;">
+    <div class="col-md-12">
+        <div class="row">
+            <div class="col-md-4">
+                <button type="button" id="btn-search">Search</button>
+                <button type="button" id="btn-edit-filter" data-toggle="modal" data-target="#filter_modal">Edit Filters</button>
+                <button type="button" id="btn-reset-filters">Reset Filters</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-md-12">
+            <table class="table table-hover table-condensed">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th></th>
+                        <th><span id='sort_by_date' style="cursor:pointer">Date{% if sort_by == "date" %}{% if sort_dir %}&darr;{% else %}&uarr;{% endif %}{% endif %}</span></th>
+                        <th><span id='sort_by_event' style="cursor:pointer">Event{% if sort_by == "event" %}{% if sort_dir %}&darr;{% else %}&uarr;{% endif %}{% endif %}</span></th>
+                        <th><span>Threat</span></th>
+                        <th><span>Malware</span></th>
+                        <th><span id='sort_by_campaign' style="cursor:pointer">Campaign{% if sort_by == "campaign" %}{% if sort_dir %}&darr;{% else %}&uarr;{% endif %}{% endif %}</span></th>
+                        <th><span id='sort_by_disposition' style="cursor:pointer">Disposition{% if sort_by == "disposition" %}{% if sort_dir %}&darr;{% else %}&uarr;{% endif %}{% endif %}</span></th>
+                        <th><span id='sort_by_prevention' style="cursor:pointer">Prevention{% if sort_by == "prevention" %}{% if sort_dir %}&darr;{% else %}&uarr;{% endif %}{% endif %}</span></th>
+                        <th><span id='sort_by_remediation' style="cursor:pointer">Remediation{% if sort_by == "remediation" %}{% if sort_dir %}&darr;{% else %}&uarr;{% endif %}{% endif %}</span></th>
+                        <th><span id='sort_by_status' style="cursor:pointer">Status{% if sort_by == "status" %}{% if sort_dir %}&darr;{% else %}&uarr;{% endif %}{% endif %}</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in events %}
+                    <tr id="event_row_{{event.id}}">
+                        <td class="event-cell"><button onclick="load_event_alerts('{{event.id}}')" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-triangle-right"></span></button></td>
+                        <td class="event-cell"><button onclick="edit_event('{{event.id}}')" type="button" class="btn btn-default btn-xs"><span class="glyphicon glyphicon-pencil"></span></button></td>
+                        <td class="event-cell">{{event.creation_date}}</td>
+                        <td>
+                            <a target="_blank" href="{{event.wiki}}">{{event.type}} - {{event.vector}} - {{event.name}}</a>
+                            {% for tag in event.sorted_tags %}
+                            {% if tag.display %}<span class="label {{tag.style}}" style="cursor:pointer">{{tag.name}}</span>{% endif %}
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for t in event.threats %}
+                            <span class="label label-default">{{t}}</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% for mal in event.malware %}
+                            <span class="label label-danger">{{mal.name}}</span>
+                            {% endfor %}
+                        </td>
+                        <td class="event-cell">{{event.campaign.name}}</td>
+                        <td class="event-cell">{{event.disposition}}</td>
+                        <td class="event-cell">{{event.prevention_tool}}</td>
+                        <td class="event-cell">{{event.remediation}}</td>
+                        <td class="event-cell">{{event.status}}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="edit_event_modal" tabindex="-1" role="dialog" aria-labelledby="edit_event_modal_label" aria-hidden="true">
+    <div class="modal-dialog">
+        <form id="edit-event-form" class="form-horizontal" role="form" method="POST" action={{url_for('analysis.edit_event')}}>
+            <div class="modal-content">
+                <div class="modal-header" id="edit_event_insert">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                    <h4 class="modal-title">Edit Event</h4>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Nevermind</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="filter_modal" tabindex="-1" role="dialog" aria-labelledby="filter_modal_label" aria-hidden="true">
+    <form id="frm-filter" method="POST" action="{{url_for('analysis.events')}}">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="filter_modal_label">Edit Filter</h4>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-xs-12"><input type="checkbox" name="filter_event_open" {{filter_state['filter_event_open']}}> Open Events</div>
+                </div>
+                <table style="width:100%;table-layout:auto;">
+                    <tr>
+                      <th>Date Range</th>
+                      <td>
+                        <input type="text" class="form-control" id="event_daterange" name="event_daterange" value="{{filter_state['event_daterange']}}"/>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Type</th>
+                      <td>
+                        <select class="form-control" name="filter_event_type">
+                            <option value="ANY" {% if filter_state['filter_event_type'] == 'ANY' %}SELECTED{% endif %}>ANY</option>
+                            <option value="phish" {% if filter_state['filter_event_type'] == 'phish' %}SELECTED{% endif %}>phish</option>
+                            <option value="recon" {% if filter_state['filter_event_type'] == 'recon' %}SELECTED{% endif %}>recon</option>
+                            <option value="host compromise" {% if filter_state['filter_event_type'] == 'host compromise' %}SELECTED{% endif %}>host compromise</option>
+                            <option value="credential compromise" {% if filter_state['filter_event_type'] == 'credential compromise' %}SELECTED{% endif %}>credential compromise</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                    <tr>
+                      <th>Vector</th>
+                      <td>
+                        <select class="form-control" name="filter_event_vector">
+                            <option value="ANY" {% if filter_state['filter_event_vector'] == 'ANY' %}SELECTED{% endif %}>ANY</option>
+                            <option value="corporate email" {% if filter_state['filter_event_vector'] == 'corporate email' %}SELECTED{% endif %}>corporate email</option>
+                            <option value="webmail" {% if filter_state['filter_event_vector'] == 'webmail' %}SELECTED{% endif %}>webmail</option>
+                            <option value="usb" {% if filter_state['filter_event_vector'] == 'usb' %}SELECTED{% endif %}>usb</option>
+                            <option value="website" {% if filter_state['filter_event_vector'] == 'website' %}SELECTED{% endif %}>website</option>
+                            <option value="unknown" {% if filter_state['filter_event_vector'] == 'unknown' %}SELECTED{% endif %}>unkown</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Prevention Tool</th>
+                      <td>
+                        <select class="form-control" name="filter_event_prevention_tool" >
+                            <option value="ANY" {% if filter_state['filter_event_prevention_tool'] == 'ANY' %}SELECTED{% endif %}>ANY</option>
+                            <option value="response team" {% if filter_state['filter_event_prevention_tool'] == 'response team' %}SELECTED{% endif %}>response team</option>
+                            <option value="ips" {% if filter_state['filter_event_prevention_tool'] == 'ips' %}SELECTED{% endif %}>ips</option>
+                            <option value="fw" {% if filter_state['filter_event_prevention_tool'] == 'fw' %}SELECTED{% endif %}>fw</option>
+                            <option value="proxy" {% if filter_state['filter_event_prevention_tool'] == 'proxy' %}SELECTED{% endif %}>proxy</option>
+                            <option value="antivirus" {% if filter_state['filter_event_prevention_tool'] == 'antivirus' %}SELECTED{% endif %}>antivirus</option>
+                            <option value="email filter" {% if filter_state['filter_event_prevention_tool'] == 'email filter' %}SELECTED{% endif %}>email filter</option>
+                            <option value="application whitelisting" {% if filter_state['filter_event_prevention_tool'] == 'application whitelisting' %}SELECTED{% endif %}>application whitelisting</option>
+                            <option value="user" {% if filter_state['filter_event_prevention_tool'] == 'user' %}SELECTED{% endif %}>user</option>
+                        </select>
+                      </td>
+                    </tr>
+                </table><br>
+                <h4>Companies</h4>
+                <div class="row">
+                    {% for company in companies %}
+                    <div class="col-xs-3"><input type="checkbox" name="company_{{company.id}}" {{filter_state['company_{}'.format(company.id)]}}> {{company.name}}</input></div>
+                    {% endfor %}
+                </div><br>
+                <h4>Campaigns</h4>
+                <div class="row">
+                    {% for campaign in campaigns %}
+                    <div class="col-xs-3"><input type="checkbox" name="campaign_{{campaign.id}}" {{filter_state['campaign_{}'.format(campaign.id)]}}> {{campaign.name}}</input></div>
+                    {% endfor %}
+                </div></br>
+                <h4>Malware</h4>
+                <div class="row">
+                    {% for mal in malware %}
+                    <div class="col-xs-12"><input type="checkbox" name="malz_{{mal.id}}" {{filter_state['malz_{}'.format(mal.id)]}}> {{mal.name}}</input></div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Nevermind</button>
+                <button type="submit" class="btn btn-primary" id="btn-apply-filter">Apply</button>
+            </div>
+        </div>
+    </div>
+    </form>
+</div>
+
+<form id="remove-alerts-form" action="{{url_for('analysis.remove_alerts')}}" method="POST">
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/events.js') }}"></script>
+{% endblock %}

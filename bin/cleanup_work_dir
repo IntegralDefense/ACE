@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+cd /opt/saq && find work -maxdepth 3 -mindepth 3 -type d -mmin +480 -exec rm -rf '{}' \;

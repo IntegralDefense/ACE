@@ -1,0 +1,29 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+{% if analysis.details %}
+<ul class="list-group">
+    {% if 'connection_id' in analysis.details %}
+    <li class="list-group-item">Connection ID: {{ analysis.details['connection_id'] }}</li>
+    {% endif %}
+    <li class="list-group-item">MAIL FROM: {{ analysis.details['envelope mail from'] }}</li>
+    <li class="list-group-item">RCPT TO: {{ analysis.details['envelope rcpt to'] | join(', ')}}</li>
+    <li class="list-group-item">From: {{ analysis.details['from']}}</li>
+    {% if 'decoded_from' in analysis.details %}
+    <li class="list-group-item">Decoded From: {{ analysis.details['decoded_from'] }}</li>
+    {% endif %}
+    <li class="list-group-item">To: {{ analysis.details['to'] | join(', ')}}</li>
+    <li class="list-group-item">Subject: {{ analysis.details['subject']}}</li>
+    {% if 'decoded_subject' in analysis.details %}
+    <li class="list-group-item">Decoded Subject: {{ analysis.details['decoded_subject']}}</li>
+    {% endif %}
+</ul>
+    
+<div class="panel panel-default">
+    <div class="panel-heading">Headers</div>
+    <div class="panel-body">
+        <pre>{{ analysis.details['header'] }}</pre>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}

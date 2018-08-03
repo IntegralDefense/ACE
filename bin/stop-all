@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+cd $SAQ_HOME
+bin/stop-email-scanning-engine
+bin/stop-http-scanning-engine
+bin/stop-brotex-engine
+bin/stop-carbon-black-engine
+bin/stop-orion-engine
+bin/stop-correlation-engine
+bin/stop-network-server
+bin/stop-network-semaphore

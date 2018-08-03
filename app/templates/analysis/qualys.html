@@ -1,0 +1,54 @@
+<table class="table table-bordered table-condensed">
+    <tr>
+        <td class="col-md-1"><b>Severity</b></td>
+        <td class="col-md-11"><b>Title</b></td>
+    </tr>
+    {% for vuln in analysis.jinja_details %}
+    <tr>
+        <td class="col-md-1">{{vuln['vSEVERITY']}}</td>
+        <td class="col-md-11"><a href="#" data-toggle="modal" data-target="#vuln_{{vuln['id']}}">{{vuln['vTITLE']}}</a></td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% for vuln in analysis.jinja_details %}
+<div class="modal fade" id="vuln_{{vuln['id']}}" tabindex="-1" role="dialog" aria-labelledby="vuln_{{vuln['id']}}Label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="vuln_{{vuln['id']}}Label">{{vuln['vTITLE']}}</h4>
+            </div>
+            <div class="modal-body">
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">Threat</h3>
+                    </div>
+                    <div class="panel-body">
+                        {{vuln['vTHREAT'] | safe}}
+                    </div>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">Source</h3>
+                    </div>
+                    <div class="panel-body">
+                        {{vuln['RESULT']}}
+                    </div>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">
+                        <h3 class="panel-title">Solution</h3>
+                    </div>
+                    <div class="panel-body">
+                        {{vuln['vSOLUTION'] | safe}}
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">ok whatever</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}

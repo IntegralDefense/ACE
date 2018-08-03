@@ -1,0 +1,6 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+This is a debugging alert.  The contents below are display as-is.
+
+<pre>{{ analysis.jinja_details | pprint }}</pre>
+{% endblock %}

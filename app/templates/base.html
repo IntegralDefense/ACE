@@ -1,0 +1,415 @@
+{% extends "core.html" %}
+
+{% block head %}
+{{ super() }}
+
+<link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+
+<!-- jqueryUI CSS -->
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/jquery-ui.css') }}" />
+
+<!-- daterange picker -->
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/daterangepicker-bs3.css') }}" />
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/timepicker.css') }}" />
+
+<!-- visualization library -->
+<!--<link href="{{ url_for('static', filename='css/vis.css') }}" rel="stylesheet" type="text/css" />-->
+
+<!-- jsPanel library -->
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/jquery.jspanel.css') }}" />
+
+<!-- jquery and bootstrap -->
+<script src="{{ url_for('static', filename='js/jquery-3.2.1.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+
+<!-- json2 lib (see https://github.com/douglascrockford/JSON-js -->
+<script type="text/javascript" src="{{ url_for('static', filename='js/json2.js') }}"></script>
+
+<!-- jquery ui -->
+<script src="{{ url_for('static', filename='js/jquery-ui.js') }}"></script>
+
+<!-- misc libraries -->
+<script type="text/javascript" src="{{ url_for('static', filename='js/jquery.cookie.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='js/moment.js') }}"></script>
+
+<!-- date range picker -->
+<script type="text/javascript" src="{{ url_for('static', filename='js/daterangepicker.js') }}"></script>
+<script type="text/javascript" src="{{ url_for('static', filename='js/timepicker.js') }}"></script>
+
+<!-- vis.js -->
+<!--<script src="{{ url_for('static', filename='js/vis.js') }}"></script>-->
+
+<!-- jspanel lib -->
+<script src="{{ url_for('static', filename='js/jquery.jspanel.js') }}"></script>
+
+<!-- global ACE javascript code -->
+<script src="{{ url_for('static', filename='js/ace.js') }}"></script>
+<script src="{{ url_for('static', filename='js/remediation.js') }}"></script>
+
+<!-- various URLs used by the javascript libraries -->
+{# we have to set these here because the javascript is stored in static #}
+<script>
+    var query_message_ids_url = '{{ url_for('analysis.query_message_ids') }}';
+    var remediate_emails_url = '{{ url_for('analysis.remediate_emails') }}';
+</script>
+
+<!-- core css -->
+<!-- this needs to come last so we can do our CSS overrides -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/saq.css') }}" type="text/css">
+
+{% block scripts %}
+
+{% endblock %}
+
+{% endblock %}
+
+{% block body %}
+{# navigation bar #}
+<div id="navbar" class="navbar navbar-inverse" role="navigation">
+    <div class="container-fluid">
+        <div class="navbar-header">
+            <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
+            <a class="navbar-brand" href="{{ url_for('main.index') }}">&spades; ACE - {{config.INSTANCE_NAME}}</a>
+        </div>
+        <div class="navbar-collapse collapse">
+            <ul class="nav navbar-nav">
+                {% if current_user.is_authenticated() %}
+                <li><a href="{{ url_for('main.index') }}">Overview</a></li>
+                <li><a href="{{ url_for('analysis.file') }}">Manual Analysis</a></li>
+                <li><a href="{{ url_for('analysis.manage') }}">Manage Alerts</a></li>
+                <li><a href="{{ url_for('analysis.events') }}">Events</a></li>
+                <li><a href="{{ url_for('analysis.metrics') }}">Metrics</a></li>
+                <!--<li><a href="{{ url_for('analysis.search') }}" target="_blank">Search</a></li>-->
+                <li><a href="{{ url_for('auth.logout') }}">Sign Out</a></li>
+                {% else %}
+                <li><a href="{{ url_for('auth.login') }}">Sign In</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div id="control_panel" class="container-fluid">
+{% block control_panel %}
+{% endblock %}
+</div>
+
+<div id="content_area">
+{% block content %}
+    <div class="container-fluid">
+    {% for message in get_flashed_messages() %}
+    <div class="alert alert-warning">
+        <button type="button" class="close" data-dismiss="alert">&times;</button>
+        {{ message }}
+    </div>
+    {% endfor %}
+    <div style="margin-top: 10px">
+    {% block page_content %}{% endblock %}
+    </div>
+    </div>
+
+    {% block event_modal %}
+    <div class="modal fade" id="event_modal" tabindex="-1" role="dialog" aria-labelledby="event_modal_label" aria-hidden="true">
+        <div class="modal-dialog">
+            <form id="event-form" class="form-horizontal" role="form" method="POST" action={{url_for('analysis.add_to_event')}}>
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                        <h4 class="modal-title" id="event_modal_label">Add To Event</h4>
+                    </div>
+                    <div class="modal-body" id="event-primary-container">
+                        {% for event in open_events %}
+                        <div class="radio" id="event_container_div_{{event.id}}"><label><input type="radio" name="event" value="{{event.id}}" id="option_{{event.id}}" onclick="toggleNewEventDialog()"><span id="event_match_{{event.id}}"></span>{{event.creation_date}} - {{event.type}} - {{event.vector}} - {{event.name}}
+                            {% for tag in event.sorted_tags %}
+                            {% if tag.display %}<span class="label {{tag.style}}" style="cursor:pointer">{{tag.name}}</span>{% endif %}
+                            {% endfor %}
+                        </label></div>
+                        {% endfor %}
+                        <div class="radio">
+                            <label><input type="radio" name="event" value="NEW" id="option_NEW" onclick="toggleNewEventDialog()"> New Event </label>
+                            <div id="new_event_dialog" style="display:none;">
+                                <table style="width:100%;table-layout:auto;">
+                                  <tr><th>Name</th><td><input class="form-control" type="text" id="event_name" name="event_name"></input></td></tr>
+                                  <tr>
+                                    <th>Disposition</th>
+                                    <td>
+                                      <select class="form-control" name="event_disposition" id="event_disposition">
+                                        <option value="FALSE_POSITIVE">FALSE_POSITIVE</option>
+                                        <option value="IGNORE">IGNORE</option>
+                                        <option value="UNKNOWN">UNKOWN</option>
+                                        <option value="REVIEWED">REVIEWED</option>
+                                        <option value="GRAYWARE">GRAYWARE</option>
+                                        <option value="POLICY_VIOLATION">POLICY_VIOLATION</option>
+                                        <option value="RECONNAISSANCE">RECONNAISSANCE</option>
+                                        <option value="WEAPONIZATION">WEAPONIZATION</option>
+                                        <option value="DELIVERY" SELECTED>DELIVERY</option>
+                                        <option value="EXPLOITATION">EXPLOITATION</option>
+                                        <option value="INSTALLATION">INSTALLATION</option>
+                                        <option value="COMMAND_AND_CONTROL">COMMAND_AND_CONTROL</option>
+                                        <option value="EXFIL">EXFIL</option>
+                                        <option value="DAMAGE">DAMAGE</option>
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>Status</th>
+                                    <td>
+                                      <select class="form-control" name="event_status" id="event_status">
+                                        <option value="OPEN" SELECTED>OPEN</option>
+                                        <option value="CLOSED">CLOSED</option>
+                                        <option value="IGNORE">IGNORE</option>
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>Remediation</th>
+                                    <td>
+                                      <select class="form-control" name="event_remediation" id="event_remediation">
+                                        <option value="not remediated" SELECTED>not remediated</option>
+                                        <option value="removed from mailbox">removed from mailbox</option>
+                                        <option value="cleaned with antivirus">cleaned with antivirus</option>
+                                        <option value="cleaned manually">cleaned manually</option>
+                                        <option value="reimaged">reimaged</option>
+                                        <option value="credentials reset">credentials reset</option>
+                                        <option value="NA">NA</option>
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>Type</th>
+                                    <td>
+                                      <select class="form-control" name="event_type" id="event_type">
+                                        <option value="phish" SELECTED>phish</option>
+                                        <option value="recon">recon</option>
+                                        <option value="host compromise">host compromise</option>
+                                        <option value="credential compromise">credential compromise</option>
+                                        <option value="web browsing">web browsing</option>
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>Vector</th>
+                                    <td>
+                                      <select class="form-control" name="event_vector" id="event_vector">
+                                        <option value="corporate email" SELECTED>corporate email</option>
+                                        <option value="webmail">webmail</option>
+                                        <option value="usb">usb</option>
+                                        <option value="website">website</option>
+                                        <option value="unknown">unknown</option>
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>Prevention Tool</th>
+                                    <td>
+                                      <select class="form-control" name="event_prevention" id="event_prevention">
+                                        <option value="response team" SELECTED>response team</option>
+                                        <option value="ips">ips</option>
+                                        <option value="fw">fw</option>
+                                        <option value="proxy">proxy</option>
+                                        <option value="antivirus">antivirus</option>
+                                        <option value="email filter">email filter</option>
+                                        <option value="application whitelisting">application whitelisting</option>
+                                        <option value="user">user</option>
+                                      </select>
+                                    </td>
+                                  </tr>
+                                  <tr>
+                                    <th>Campaign</th>
+                                    <td>
+                                      <select class="form-control" name="campaign_id" id="campaign_id" onchange="toggleNewCampaignInput()">
+                                        <option value="NEW">NEW</option>
+                                        <option value="1" SELECTED>unknown</option>
+                                        {% for campaign in campaigns %}
+                                        {% if campaign.name != 'unknown' %}<option value="{{campaign.id}}">{{campaign.name}}</option>{% endif %}
+                                        {% endfor %}
+                                      </select>
+                                      <input class="form-control" type="text" id="new_campaign" name="new_campaign" style="display:none;"></input>
+                                    </td>
+                                  </tr>
+                                  <tr><th>Comment</th><td><input class="form-control" type="text" id="event_comment" name="event_comment"></input></td></tr>
+                                </table><br>
+                                <h4>Malware
+                                  <button onclick="new_malware_option()" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-plus-sign"></span> Add</button>
+                                </h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-default" data-dismiss="modal">Nevermind</button>
+                        <button type="submit" class="btn btn-primary" id="btn-add-to-event">Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endblock event_modal %}
+    
+    {% block disposition_modal %}
+    <div class="modal fade" id="disposition_modal" tabindex="-1" role="dialog" aria-labelledby="disposition_modal_label" aria-hidden="true">
+        <div class="modal-dialog">
+            <form id="disposition-form" class="form-horizontal" role="form" method="POST" action={{url_for('analysis.set_disposition')}}>
+            {% block disposition_form %}{% endblock disposition_form %}
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                    <h4 class="modal-title" id="disposition_modal_label">Set Disposition</h4>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="radio"><label><input type="radio" name="disposition" value="DISMISS" id="option_DISMISS" autocomplete="off"> DISMISS </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="FALSE_POSITIVE" id="option_FALSE_POSITIVE" autocomplete="off"> FALSE_POSITIVE </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="IGNORE" id="option_IGNORE" autocomplete="off"> IGNORE </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="UNKNOWN" id="option_UNKNOWN" autocomplete="off"> UNKNOWN </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="REVIEWED" id="option_REVIEWED" autocomplete="off"> REVIEWED </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="GRAYWARE" id="option_GRAYWARE" autocomplete="off"> GRAYWARE </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="POLICY_VIOLATION" id="option_POLICY_VIOLATION" autocomplete="off"> POLICY_VIOLATION </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="RECONNAISSANCE" id="option_RECONNAISSANCE" autocomplete="off"> RECONNAISSANCE </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="WEAPONIZATION" id="option_WEAPONIZATION" autocomplete="off"> WEAPONIZATION </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="DELIVERY" id="option_DELIVERY" autocomplete="off"> DELIVERY </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="EXPLOITATION" id="option_EXPLOITATION" autocomplete="off"> EXPLOITATION </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="INSTALLATION" id="option_INSTALLATION" autocomplete="off"> INSTALLATION </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="COMMAND_AND_CONTROL" id="option_COMMAND_AND_CONTROL" autocomplete="off"> COMMAND_AND_CONTROL </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="EXFIL" id="option_EXFIL" autocomplete="off"> EXFIL </label></div>
+                            <div class="radio"><label><input type="radio" name="disposition" value="DAMAGE" id="option_DAMAGE" autocomplete="off"> DAMAGE </label></div>
+                        </div>
+                        <div class="col-md-8">
+                            <textarea class="form-control" rows="4" name="comment"></textarea>
+                            <a target="_blank" href="https://wiki/w/index.php/ACE_Dispositions">Click here for help with dispositions.</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Nevermind</button>
+                    <button type="submit" class="btn btn-primary" id="btn-disposition">Save</button>
+                </div>
+            </div>
+            </form>
+        </div>
+    </div>
+    {% endblock disposition_modal %}
+
+    {% block comment_modal %}
+    <div class="modal fade" id="comment_modal" tabindex="-1" role="dialog" aria-labelledby="comment_modal_label" aria-hidden="true">
+        <div class="modal-dialog">
+            <form id="comment-form" class="form-horizontal" role="form" method="POST" action={{url_for('analysis.add_comment')}}>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                    <h4 class="modal-title" id="comment_modal_label">Add Comment</h4>
+                </div>
+                <div class="modal-body">
+                    <textarea class="form-control" rows="3" id="comment" name="comment"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Doh</button>
+                    <button type="button" class="btn btn-primary" id="btn-submit-comment">Sweet</button>
+                </div>
+            </div>
+            </form>
+        </div>
+    </div>
+    {% endblock comment_modal %}
+
+    {% block tag_modal %}
+    <div class="modal fade" id="tag_modal" tabindex="-1" role="dialog" aria-labelledby="tag_modal_label" aria-hidden="true">
+        <div class="modal-dialog">
+            <form id="tag-form" class="form-horizontal" role="form" method="POST" action={{url_for('analysis.add_tag')}}>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                    <h4 class="modal-title" id="tag_modal_label">Add Tag(s)</h4>
+                </div>
+                <div class="modal-body">
+                    Enter one or more tags separated by spaces.
+                    <input class="form-control" type="text" id="tag" name="tag"></input>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Nah</button>
+                    <button type="button" class="btn btn-primary" id="btn-submit-tags">Alright</button>
+                </div>
+            </div>
+            </form>
+        </div>
+    </div>
+    {% endblock tag_modal %}
+</div>
+
+{% endblock content %}
+
+
+<div class="modal fade" id="search_modal" tabindex="-1" role="dialog" aria-labelledby="search_modal_label" aria-hidden="true">
+    <div class="modal-dialog">
+        <form class="form-horizontal" role="form" method="POST" action={{url_for('analysis.index')}}>
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="search_modal_label">Search ACE</h4>
+            </div>
+            <div class="modal-body">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Nevermind</button>
+                <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+        </div>
+        </form>
+    </div>
+</div>
+
+<!-- assign ownership dialog -->
+<div class="modal fade" id="assign_ownership_modal" tabindex="-1" role="dialog" aria-labelledby="assign_ownership_modal_label" aria-hidden="true">
+    <form id="assign-ownership-form" method="POST" action="{{url_for('analysis.assign_ownership')}}">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="assign_ownership_modal_label">Assign Ownership</h4>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-xs-12">
+                        <select name="selected_user_id" class="form-control">
+                            {% for user in all_users %}
+                            <option value="{{user.id}}">{{user.username}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Nevermind</button>
+                <button type="submit" class="btn btn-primary" id="btn-assign-ownership">Assign</button>
+            </div>
+        </div>
+    </div>
+    </form>
+</div>
+
+<!-- email remediation dialog -->
+<div class="modal fade" id="email_remediation_modal" tabindex="-1" role="dialog" aria-labelledby="email_remediation_label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="email_remediation_label">Email Remediation</h4>
+            </div>
+            <div class="modal-body" id="email-remediation-body">
+                loading...
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" id="btn-email-remediation-done" data-dismiss="modal">Chicken Out</button>
+                <button type="submit" class="btn btn-primary" id="btn-email-restore">Restore</button>
+                <button type="submit" class="btn btn-primary" id="btn-email-remediation">Remediate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock body %}

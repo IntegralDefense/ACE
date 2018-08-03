@@ -1,0 +1,24 @@
+{% if analysis.details %}
+<table class="table">
+<tr>
+    <td>Insert Date</td>
+    <td>Type</td>
+    <td>Alert</td>
+    <td>Disposition</td>
+</tr>
+{% for row in analysis.details %}
+<tr>
+    <td>{{row['insert_date']}}</td>
+    <td>{{row['type']}}</td>
+    <td><a href="{{ url_for('analysis.index', direct=row['uuid']) }}">{{row['description']}}</a></td>
+    <td>
+<!--    {% for disposition in row['dispositions'] %}
+        {{disposition['username']}} - {{disposition['disposition']}}
+        {% if disposition['comment'] is not none and disposition['comment'] | count > 0 %}<pre>{{disposition['comment']}}</pre>{% endif %}
+    {% endfor %}
+-->
+        {{row['disposition']}}
+    </td>
+{% endfor %}
+</table>
+{% endif %}

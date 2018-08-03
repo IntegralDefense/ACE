@@ -1,0 +1,284 @@
+<table class="table table-bordered table-condensed">
+
+<p><b>Process Details</b></p>
+    <tr>
+        <td class="col-md-2">Process Name</td>
+        <td class="col-md-10">{{analysis.details['process_name']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Hostname</td>
+        <td class="col-md-10">{{analysis.details['hostname']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Username</td>
+        <td class="col-md-10">{{analysis.details['username']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Start Time</td>
+        <td class="col-md-10">{{analysis.details['start']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Command line</td>
+        <td class="col-md-10">{{analysis.details['cmdline']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Process MD5 Hash</td>
+        <td class="col-md-10">{{analysis.details['process_md5']}}</td>
+    </tr>
+</Table>
+<table class="table table-bordered table-condensed">
+<p><b>Binary Details</b></p>
+    <tr>
+        <td class="col-md-2">Description</td>
+        <td class="col-md-10">{{analysis.details['binary_file_desc']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Legal Copyright</td>
+        <td class="col-md-10">{{analysis.details['binary_legal_copyright']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Original Filename</td>
+        <td class="col-md-10">{{analysis.details['binary_original_filename']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Signature Status</td>
+        <td class="col-md-10">{{analysis.details['binary_sig_status']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Signature Publisher</td>
+        <td class="col-md-10">{{analysis.details['binary_sig_publisher']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Signature Issuer</td>
+        <td class="col-md-10">{{analysis.details['binary_sig_issuer']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">Signature Subject</td>
+        <td class="col-md-10">{{analysis.details['binary_sig_subject']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">VirusTotal Score</td>
+        <td class="col-md-10">{{analysis.details['binary_vt_score']}}</td>
+    </tr>
+    <tr>
+        <td class="col-md-2">VirusTotal Link</td>
+        <td class="col-md-10">{{analysis.details['binary_vt_link']}}</td>
+    </tr>
+</Table>
+
+<div id="accordion" role="tablist" aria-multiselectable="true">
+
+  <div class="card">
+    <div class="card-header" role="tab" id="headingAncestry">
+      <h5 class="mb-0">
+        <a data-toggle="collapse" data-parent="#accordion" href="#collapseAncestry">
+          Ancestry Details (Parent and Grandparent)
+        </a>
+      </h5>
+    </div>
+    <div id="collapseAncestry" class="collapse" role="tabpanel">
+      <div class="card-block">
+        <table class="table table-bordered table-condensed">
+          <tr>
+            <td class="col-md-2">Grand Parent Process Name</td>
+            <td class="col-md-10">{{analysis.details['parent']['parent_name']}}</td>
+          </tr>
+          <tr>
+            <td class="col-md-2">Grand Parent GUID</td>
+            <td class="col-md-10">{{analysis.details['parent']['parent_id']}}</td>
+          </tr>
+        </table>
+        <table class="table table-bordered table-condensed">
+          <tr>
+            <td class="col-md-2">Parent Process Name</td>
+            <td class="col-md-10">{{analysis.details['parent']['process_name']}}</td>
+          </tr>
+          <tr>
+            <td class="col-md-2">Parent Start Time</td>
+            <td class="col-md-10">{{analysis.details['parent']['start']}}</td>
+          </tr>
+          <tr>
+            <td class="col-md-2">Parent Command line</td>
+            <td class="col-md-10">{{analysis.details['parent']['cmdline']}}</td>
+          </tr>
+          <tr>
+            <td class="col-md-2">Parent Process MD5</td>
+            <td class="col-md-10">{{analysis.details['parent']['process_md5']}}</td>
+          </tr>
+          <tr>
+            <td class="col-md-2">Parent GUID</td>
+            <td class="col-md-10">{{analysis.details['parent']['id']}}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" role="tab" id="headingOne">
+      <h5 class="mb-0">
+        <a data-toggle="collapse" data-parent="#accordion" href="#collapseProcessTree" aria-controls="collapseProcessTree">
+          Process Execution Tree
+        </a>
+      </h5>
+    </div>
+    <div id="collapseProcessTree" class="collapse" role="tabpanel" aria-labelledby="headingOne">
+      <div class="card-block">
+        <ul>
+          {% for depth, proc in analysis.details['process_tree'] %}
+            {% for n in range(depth) %}
+                <ul>
+            {% endfor %}
+            <li>{{proc}}</li>
+            {% for n in range(depth) %}
+                </ul>
+            {% endfor %}
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" role="tab" id="headingTwo">
+      <h5 class="mb-0">
+        <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseFileMods" aria-expanded="false" aria-controls="collapseFileMods">
+          File Modifications (Count <~ {{analysis.details['filemod_count']}})
+        </a>
+      </h5>
+    </div>
+    <div id="collapseFileMods" class="collapse" role="tabpanel" aria-labelledby="headingTwo">
+      <div class="card-block">
+        {% if analysis.details['filemod_count'] > 0 %}
+          <table class="table table-bordered table-condensed">
+            {% for fm in analysis.details['filemods'] %}
+                {% if fm['type'] != "CreatedFile" %}
+                  <tr>
+                    <td class="col-md-2">{{fm.timestamp}}</td>
+                    <td class="col-md-1">{{fm.type}}</td>
+                    <td class="col-md-9">{{fm.path}}</td>
+                  </tr>
+                {% endif %}
+            {% endfor %}
+          </table>
+        {% else %}
+          This process performed zero file modifications.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" role="tab" id="headingTwo">
+      <h5 class="mb-0">
+        <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseNetconns" aria-expanded="false" aria-controls="collapseFileMods">
+          Network Connections (Count: {{analysis.details['netconn_count']}})
+        </a>
+      </h5>
+    </div>
+    <div id="collapseNetconns" class="collapse" role="tabpanel" aria-labelledby="headingTwo">
+      <div class="card-block">
+        {% if analysis.details['netconn_count'] > 0 %}
+          <table class="table table-bordered table-condensed">
+            {% for nc in analysis.details['netconns'] %}
+              <tr>
+                <td class="col-md-2">{{nc.timestamp}}</td>
+                <td class="col-md-1">{{nc.direction}}</td>
+                <td class="col-md-1">{{nc.remote_ip}}</td>
+                <td class="col-md-1">{{nc.proto}}/{{nc.remote_port}}</td>
+                <td class="col-md-6">{{nc.domain}}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          This process performed zero network connections.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" role="tab" id="headingFour">
+      <h5 class="mb-0">
+        <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseRegMods" aria-expanded="false" aria-controls="collapseRegMods">
+          Registry Modifications (Count: {{analysis.details['regmod_count']}})
+        </a>
+      </h5>
+    </div> 
+    <div id="collapseRegMods" class="collapse" role="tabpanel">
+      <div class="card-block">
+        {% if analysis.details['regmod_count'] > 0 %}
+          <table class="table table-bordered table-condensed">
+            {% for rm in analysis.details['regmods'] %}
+              <tr>
+                <td class="col-md-2">{{rm.timestamp}}</td>
+                <td class="col-md-1">{{rm.type}}</td>
+                <td class="col-md-9">{{rm.path}}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          This process performed zero registry modifications.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" role="tab" id="headingFour">
+      <h5 class="mb-0">
+        <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseUnModLoads" aria-expanded="false" aria-controls="collapseUnModLoads">
+          Unsigned ModLoads (Count: {{ analysis.details.unsigned_modloads | count }})
+        </a>
+      </h5>
+    </div> 
+    <div id="collapseUnModLoads" class="collapse" role="tabpanel">
+      <div class="card-block">
+        {% if analysis.details['unsigned_modloads'] | count > 0 %}
+          <table class="table table-bordered table-condensed">
+            {% for um in analysis.details['unsigned_modloads'] %}
+              <tr>
+                <td class="col-md-2">{{um.timestamp}}</td>
+                <td class="col-md-2">md5: {{um.md5}}</td>
+                <td class="col-md-8">{{um.path}}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          This process loaded zero unsigned moduals.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" role="tab" id="headingFour">
+      <h5 class="mb-0">
+        <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseCrossProcs" aria-expanded="false" aria-controls="collapseCrossProcs">
+          Crossprocs (Count: {{ analysis.details.crossproc_count }})
+        </a>
+      </h5>
+    </div> 
+    <div id="collapseCrossProcs" class="collapse" role="tabpanel">
+      <div class="card-block">
+        {% if analysis.details['crossproc_count'] > 0 %}
+          <table class="table table-bordered table-condensed">
+            {% for cp in analysis.details['crossprocs'] %}
+              <tr>
+                <td class="col-md-2">{{cp.timestamp}}</td>
+                <td class="col-md-1">{{cp.type}}</td>
+                <td class="col-md-3">md5: {{cp.target_md5}}</td>
+                <td class="col-md-6">{{cp.target_path}}</td>
+              </tr>
+            {% endfor %}
+          </table>
+        {% else %}
+          This process performed zero crossprocs.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+

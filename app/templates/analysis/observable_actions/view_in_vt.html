@@ -1,0 +1,9 @@
+{% autoescape false %}
+{% if _observable.exists %}
+<script type="text/javascript">
+$('#action_{{action.name}}_{{unique_reference}}').on('click', function() {
+    window.open("{{url_for('analysis.redirect_to', file_uuid=_observable.id, alert_uuid=_observable.root.uuid, target='vt')}}");
+});
+</script>
+{% endif %}
+{% endautoescape %}

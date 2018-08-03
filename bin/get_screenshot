@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+url_or_file="$1"
+output="$2"
+remote_server="${3:-ace-render1.local}"
+
+remote_dir=$(ssh $remote_server mktemp --tmpdir=/home/cybersecurity/tmp -d)
+echo "remote directory: $remote_dir"
+
+output_basename=$(basename "$output")
+
+if [ -e "$url_or_file" ]
+then
+    file_name=$(basename "$url_or_file")
+    scp "$url_or_file" $remote_server:$remote_dir
+    ssh $remote_server xvfb-run -a python3 render/get_screenshot.py -c render/etc/config.ini -o \"$remote_dir/$output_basename\" \"file://$remote_dir/$file_name\"
+else
+    ssh $remote_server xvfb-run -a python3 render/get_screenshot.py -c render/etc/config.ini -o \"$remote_dir/$output_basename\" \"$url_or_file\"
+fi
+
+scp $remote_server:\"$remote_dir/$output_basename\" "$output"
+ssh $remote_server rm -rf \"$remote_dir\"

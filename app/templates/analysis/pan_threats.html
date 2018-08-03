@@ -1,0 +1,24 @@
+{% if analysis.details %}
+<table class="table">
+<tr>
+    <td>Time</td>
+    <td>Name</td>
+    <td>Action</td>
+    <td>Src:Port</td>
+    <td>Dst:Port</td>
+    <td>Proto</td>
+    <td>File</td>
+</tr>
+{% for row in analysis.details %}
+<tr>
+    <td>{{row['_time']}}</td>
+    <td>{{row['threat_name']}}</td>
+    <td>{{row['action']}}</td>
+    <td>{{row['src_ip']}}:{{row['src_port']}}</td>
+    <td>{{row['dst_ip']}}:{{row['dst_port']}}</td>
+    <td>{{row['transport']}}</td>
+    <td>{{row['filename']}}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}

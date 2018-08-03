@@ -1,0 +1,50 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+<div class="panel panel-default">
+    <div class="panel-heading">Summary Details</div>
+    <ul class="list-group">
+        {% if analysis.details %}
+            {% for e in analysis.details %}
+                {% if 'yara_results' not in e %}
+                    <li class="list-group-item">#{{e['message_number']}} <font color="red">{{e['source_ip']}}</font> <b>{{e['method']}}</b> <font color="blue">{{e['dest_ip']}}:{{e['dest_port']}}</font> <font color="orange">{{e['host']}}</font><font color="green">{{e['uri']}}</font> - HTTP Response Code <b>{{e['status_code']}}</b></li>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    </ul>
+</div>
+
+{% if analysis.details %}
+    {% for d in analysis.details %}
+        {% if 'yara_results' in d %}
+    <div class="panel panel-default">
+        <div class="panel-heading">Yara Scan Results</div>
+        <div class="panel-body">
+            <ul>
+            {% for file_path in d['yara_results'] %}
+                <li>{{file_path}}</li>
+                <ul>
+                {% for yara_result in d['yara_results'][file_path] %}
+                    <li>{{yara_result['rule']}} : {{yara_result['tags']}}</li>
+                    <ul>
+                    {% for string_match in yara_result['strings'] %}
+                        {% if string_match %}<li>{{string_match}}</li>{% endif %}
+                    {% endfor %}
+                    </ul>
+                {% endfor %}
+                </ul>
+            {% endfor %}
+            </ul>
+        </div>
+    </div>
+        {% endif %}
+    {% endfor %}
+{% endif %}
+
+<div class="panel panel-default">
+    <div class="panel-heading">Raw Details</div>
+    <div class="panel-body">
+        <pre>{{ analysis.details | pprint }}</pre>
+    </div>
+</div>
+
+{% endblock %}

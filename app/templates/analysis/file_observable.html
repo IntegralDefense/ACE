@@ -1,0 +1,40 @@
+{% extends "analysis/default_observable.html" %}
+{% block observable_display %}
+{{_observable.display_value}}
+{% if _observable.exists %} ({{_observable.human_readable_size}})
+    {% if _observable.is_image %}<br><img width="{{_observable.scaled_width}}" height="{{_observable.scaled_height}}" src="{{ url_for('analysis.image', alert_uuid=alert.uuid, observable_uuid=observable_node.obj.id) }}" class="img-thumbnail"/><br>{% endif %}
+{% endif %}
+{% endblock %}
+
+<script type="text/javascript">
+$(document).ready(function() {
+    $("#emaillist").change(function (e) {
+        var selection = $("#emaillist option:selected").text();
+        $("#emaillist").val("Select to add");
+        if (selection == "Select to add") {
+            return;
+        }
+        var toemail = $("#toemail").val();
+        if (toemail.indexOf(selection) !== -1) {
+            return;
+        }
+        if (toemail === "") {
+            $("#toemail").val(selection);
+        } else {
+            $("#toemail").val(toemail + ";" + selection);
+        }
+
+    });
+
+    $("#btn-submit-email").click(function (e) {
+        var toemail = $("#toemail").val().trim();
+        if (toemail==="") {
+            alert("You must have at least one email address specified.");
+            return;
+        }
+        $("#email-form").append('<input type="hidden" name="file_uuid" value="{{_observable.id}}" />');
+        $("#email-form").append('<input type="hidden" name="alert_uuid" value="' + current_alert_uuid + '" />');
+        $("#email-form").submit();
+    });
+});
+</script>

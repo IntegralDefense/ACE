@@ -1,0 +1,21 @@
+{# see app/templates/base.html for the observable tag modal (otm) GUI html #}
+<script type="text/javascript">
+    $('#action_{{action.name}}_{{unique_reference}}').on('click', function() {
+        {% set tags = _observable.mapped_tags %}
+        {% if tags|length > 0 %}
+        $('#otm_existing_tags').empty();
+        $('#otm_existing_tags').css('display', 'inline');
+        $('#otm_existing_tags').append('<div>Select which tags to remove.</div>')
+        {% for tag in tags %}
+        $('#otm_existing_tags').append('<input type="checkbox" id="otm_remove_tag" name="otm_remove_tag" value="{{tag.id}}"> <span class="label {{tag.css_class}}">{{tag.name}}</span></input><br>');
+        {% endfor %}
+        $('#otm_existing_tags').append('<br>');
+        {% else %}
+        $('#otm_existing_tags').css('display', 'none');
+        {% endif %}
+
+        $('#otm_observable_id').val('{{_observable.id}}');
+        $('#otm_alert_uuid').val('{{alert.uuid}}');
+        $('#otm').modal('show');
+    });
+</script>

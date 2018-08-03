@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#
+# the order matters here
+#
+
+cd $SAQ_HOME
+bin/start-network-server
+bin/start-network-semaphore
+bin/start-carbon-black-engine
+bin/start-orion-engine
+bin/start-correlation-engine
+bin/start-email-scanning-engine
+bin/start-http-scanning-engine
+bin/start-brotex-engine

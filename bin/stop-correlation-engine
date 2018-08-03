@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+cd $SAQ_HOME
+echo "stopping correlation engine"
+python3 saq --stop correlation-engine

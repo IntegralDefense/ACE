@@ -1,0 +1,32 @@
+{% if analysis.details %}
+<table class="table" style="table-layout: fixed; word-wrap: break-word;">
+<tr>
+    <td>Time</td>
+    <td>Src</td>
+    <td>User</td>
+    <td>Method</td>
+    <td>Content</td>
+    <td>Result</td>
+    <td>Categories</td>
+    <td>Filter</td>
+</tr>
+{% for row in analysis.details %}
+<tr>
+    <td>{{row['_time']}}</td>
+    <td>{{row['src_ip']}}</td>
+    <td>{{row['username']}}</td>
+    <td>{{row['http_method']}}</td>
+    <td>{{row['http_content_type']}}</td>
+    <td>{{row['http_status']}}</td>
+    <td>{{row['categories']}}</td>
+    <td>{{row['filter_result']}}</td>
+</tr>
+<tr>
+    <td colspan="8"><b>Referrer: </b>{{row['http_referrer']}}</td>
+</tr>
+<tr>
+    <td colspan="8"><b>URI: </b>{{row['uri']}}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}

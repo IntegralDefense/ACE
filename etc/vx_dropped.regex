@@ -1,0 +1,6 @@
+^~\$
+# dropped/74BFD122C0875EC75DBE5C6DB4C59019
+^[0-9A-F_]+$
+^dberr\.txt$
+^mso[0-9A-F]+\.tmp$
+^~WRS

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+if [ -z "$SAQ_HOME" ]
+then
+    echo "missing env var SAQ_HOME"
+    exit 1
+fi
+
+cd $SAQ_HOME || { echo "cannot cd into $SAQ_HOME"; exit 1; }
+
+result=$(ldap_query.py "CN=Domain Admins" | jq -r '.[].attributes.member[]' | grep -Eo "[a-zA-Z][0-9]{6}" | tr '[:lower:]' '[:upper:]' | sort)
+
+# exit if query fails and maintain current admin list
+if [ -z "$result" ]
+then
+    echo "ldap query failed"
+    exit 1
+else
+    echo "$result" > etc/domain_admins.tmp
+fi
+
+# has something changed?
+if [ -e etc/domain_admins ]
+then
+    if ! cmp etc/domain_admins.tmp etc/domain_admins 2> /dev/null
+    then
+        diff etc/domain_admins etc/domain_admins.tmp 
+        user_list=$(diff etc/domain_admins etc/domain_admins.tmp | sed -n '/^[<>]/ p' | sed -e 's/^..//' | paste -sd ',' - | sed -e 's/,/ user /g')
+        user_list="user $user_list"
+        if [ -n "$user_list" ]
+        then
+            if [ -d ace.domain_admins ]
+            then
+                rm -rf ace.domain_admins
+            fi
+
+            echo "sending alert"
+            ./saq --force-alerts correlate -d ace.domain_admins --description 'Domain Admin Account Added Or Deleted' --comment 'A Domain Admin account has been added or deleted from active directory.' --alert ${user_list} --disable-all
+
+            if [ -d ace.domain_admins ]
+            then
+                rm -rf ace.domain_admins
+            fi
+        fi
+        mv etc/domain_admins.tmp etc/domain_admins
+    fi
+else
+    mv etc/domain_admins.tmp etc/domain_admins
+fi
+    
+
+if [ -e etc/domain_admins.tmp ]
+then
+    rm etc/domain_admins.tmp
+fi

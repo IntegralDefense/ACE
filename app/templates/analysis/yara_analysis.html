@@ -1,0 +1,49 @@
+{% for yara_result in analysis.details %}
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <h3 class="panel-title">{{yara_result['rule']}}</h3>
+    </div>
+    <div class="panel-body">
+        <table class="table">
+        <tr>
+            <td>target</td>
+            <td>{{yara_result['target']}}</td>
+        </tr>
+        {% if yara_result['meta'] | count > 0 %}
+        <tr>
+            <td>meta</td>
+            <td>{{yara_result['meta']}}</td>
+        </tr>
+        {% endif %}
+        {% if yara_result['tags'] | count > 0 %}
+        <tr>
+            <td>tags</td>
+            <td>{{yara_result['tags']}}</td>
+        </tr>
+        {% endif %}
+        </table>
+        <div class="panel-group" id="{{yara_result['rule']}}" role="tablist" aria-multiselectable="true">
+            <div class="panel panel-default">
+                <div class="panel-heading" role="tab" id="heading_{{yara_result['rule']}}">
+                    <h4 class="panel-title">
+                        <a role="button" data-toggle="collapse" data-parent="#{{yara_result['rule']}}" href="#collapse_{{yara_result['rule']}}" aria-expanded="true" aria-controls="collapse_{{yara_result['rule']}}">
+                            String Matches
+                        </a>
+                    </h4>
+                </div>
+                <div id="collapse_{{yara_result['rule']}}" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="heading_{{yara_result['rule']}}">
+                    <div class="panel-body">
+                        <ul class="list-group">
+                        {% for s in yara_result['strings'] %}
+                            {% if s | count > 0 %}
+                                <li class="list-group-item">{{s}}</li>
+                            {% endif %}
+                        {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
