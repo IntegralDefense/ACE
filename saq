@@ -2518,10 +2518,13 @@ def update_crits_cache(args):
     logging.info("caching indicators...")
     for indicator in collection.find({'status': 'Analyzed'}):
         value = indicator['value']
+        """
+        # Doing this invalidates many of our URI - Path indicators
         # need to fix this on the fly
         if indicator['type'] == 'URI - Path':
             if not value.startswith('/'):
                 value = '/{}'.format(value)
+        """
         db_cursor.execute("INSERT INTO indicators ( id, type, value ) VALUES ( ?, ?, LOWER(?) )", 
                          (str(indicator['_id']), indicator['type'], value))
         c += 1
