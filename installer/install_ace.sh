@@ -49,8 +49,6 @@ then
     done
 fi
 
-exit 0
-
 echo "installing required packages..."
 sudo apt-get -y install \
     nmap \
@@ -73,12 +71,14 @@ sudo apt-get -y install \
 # things that have been removed
 # freetds-dev
 
-# TODO check to see if this is already done
 #sudo ln -s /usr/bin/nodejs /usr/local/bin/node
-sudo npm config set strict-ssl false
-# sudo npm config set proxy "$http_proxy"
-# sudo npm config set https-proxy "$https_proxy"
-sudo npm -g install esprima
+if ! npm -g ls | grep esprima > /dev/null 2>&1
+then 
+    sudo npm config set strict-ssl false
+    # sudo npm config set proxy "$http_proxy"
+    # sudo npm config set https-proxy "$https_proxy"
+    sudo npm -g install esprima
+fi
 
 echo "installing required python modules..."
 # TODO replace with a requirements file
@@ -122,6 +122,12 @@ sudo -E python3 -m pip install pysocks || fail
 sudo -E python3 -m pip install tld || fail
 sudo -E python3 -m pip install python-magic || fail
 
+# install our own custom stuff
+sudo -E python3 -m pip install splunklib
+sudo -E python3 -m pip install yara_scanner
+sudo -E python3 -m pip install vxstreamlib
+sudo -E python3 -m pip install urltoolslib
+
 # set up the ACE database
 echo "installing database..."
 # TODO check to see if this is already done
@@ -160,23 +166,24 @@ export SAQ_HOME=/opt/ace
 #echo "creating initial crits cache..."
 #bin/update_crits_cache
 
+
 # TODO these should actually be installed
 # link in all the libraries we need
-(cd lib && ln -s /opt/splunklib/splunklib .) || fail
-(cd lib && ln -s /opt/yara_scanner/yara_scanner .) || fail
-(cd lib && ln -s /opt/chronos/chronosapi.py .) || fail
-(cd lib && ln -s /opt/virustotal/virustotal.py .) || fail
-(cd lib && ln -s /opt/wildfirelib/bin/wildfirelib.py .) || fail
-(cd lib && ln -s /opt/vxstreamlib/bin/vxstreamlib.py .) || fail
-(cd lib && ln -s /opt/cbinterface/cbinterface.py .) || fail
-(cd lib && ln -s /opt/cbinterface/CBProcess.py .) || fail
-(cd lib && ln -s /opt/event/lib event) || fail
+#(cd lib && ln -s /opt/splunklib/splunklib .) || fail
+#(cd lib && ln -s /opt/yara_scanner/yara_scanner .) || fail
+#(cd lib && ln -s /opt/chronos/chronosapi.py .) || fail
+#(cd lib && ln -s /opt/virustotal/virustotal.py .) || fail
+#(cd lib && ln -s /opt/wildfirelib/bin/wildfirelib.py .) || fail
+#(cd lib && ln -s /opt/vxstreamlib/bin/vxstreamlib.py .) || fail
+#(cd lib && ln -s /opt/cbinterface/cbinterface.py .) || fail
+#(cd lib && ln -s /opt/cbinterface/CBProcess.py .) || fail
+#(cd lib && ln -s /opt/event/lib event) || fail
 
-(cd etc && cp -a ace_logging.example.ini ace_logging.ini) || fail
-(cd etc && cp -a brotex_logging.example.ini brotex_logging.ini) || fail
-(cd etc && cp -a carbon_black_logging.example.ini carbon_black_logging.ini) || fail
-(cd etc && cp -a email_scanner_logging.example.ini email_scanner_logging.ini) || fail
-(cd etc && cp -a http_scanner_logging.example.ini http_scanner_logging.ini) || fail
+(cd etc && sudo -u ace cp -a ace_logging.example.ini ace_logging.ini) || fail
+(cd etc && sudo -u ace cp -a brotex_logging.example.ini brotex_logging.ini) || fail
+(cd etc && sudo -u ace cp -a carbon_black_logging.example.ini carbon_black_logging.ini) || fail
+(cd etc && sudo -u ace cp -a email_scanner_logging.example.ini email_scanner_logging.ini) || fail
+(cd etc && sudo -u ace cp -a http_scanner_logging.example.ini http_scanner_logging.ini) || fail
 
 # install GUI into apache
 # see http://askubuntu.com/questions/569550/assertionerror-using-apache2-and-libapache2-mod-wsgi-py3-on-ubuntu-14-04-python/569551#569551
@@ -184,9 +191,10 @@ export SAQ_HOME=/opt/ace
 sudo apt-get -y install apache2 apache2-dev || fail
 (   
     sudo -E python3 -m pip install mod_wsgi && \
-    sudo mod_wsgi-express install-module && \
-    echo 'LoadModule wsgi_module /usr/lib/apache2/modules/mod_wsgi-py34.cpython-34m.so' | sudo tee -a /etc/apache2/mods-available/wsgi_express.load && \
-    echo 'WSGIPythonHome /usr' | sudo tee -a /etc/apache2/mods-available/wsgi_express.conf && \
+    sudo mod_wsgi-express install-module > .mod_wsgi-express.output && \
+    sed -n -e 1p .mod_wsgi-express.output | sudo tee -a /etc/apache2/mods-available/wsgi_express.load && \
+    sed -n -e 2p .mod_wsgi-express.output | sudo tee -a /etc/apache2/mods-available/wsgi_express.conf && \
+    rm .mod_wsgi-express.output && \
     sudo a2enmod wsgi_express && \
     sudo a2enmod ssl
     #sudo ln -s /opt/ace/etc/saq_apache.conf /etc/apache2/sites-available/ace.conf && \
