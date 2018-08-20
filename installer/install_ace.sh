@@ -16,7 +16,7 @@ fi
 if ! id -u ace > /dev/null 2>&1
 then
     echo "creating user ace"
-    sudo useradd -c 'funtional account for ACE' -g ace -m ace
+    sudo useradd -c 'funtional account for ACE' -g ace -m -s /bin/bash ace
 fi
 
 if [ ! -d /opt/ace ]
