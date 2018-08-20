@@ -55,8 +55,10 @@ CREATE TABLE `alerts` (
   KEY `fk_removal_user_id` (`removal_user_id`),
   KEY `idx_company_id` (`company_id`),
   KEY `idx_location` (`location`),
+  KEY `idx_disposition` (`disposition`),
+  KEY `idx_alert_type` (`alert_type`),
   CONSTRAINT `fk_company` FOREIGN KEY (`company_id`) REFERENCES `company` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=606099 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -71,7 +73,7 @@ CREATE TABLE `campaign` (
   `name` varchar(128) NOT NULL,
   PRIMARY KEY (`name`),
   KEY `id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -91,7 +93,7 @@ CREATE TABLE `comments` (
   KEY `insert_date` (`insert_date`),
   KEY `user_id` (`user_id`),
   KEY `uuid` (`uuid`)
-) ENGINE=InnoDB AUTO_INCREMENT=108052 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -106,7 +108,7 @@ CREATE TABLE `company` (
   `name` varchar(128) NOT NULL,
   PRIMARY KEY (`name`),
   KEY `id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -172,14 +174,14 @@ CREATE TABLE `events` (
   `name` varchar(128) NOT NULL,
   `type` enum('phish','recon','host compromise','credential compromise','web browsing') NOT NULL,
   `vector` enum('corporate email','webmail','usb','website','unknown') NOT NULL,
-  `prevention_tool` enum('response team','ips','fw','proxy','antivirus','email filter','application whitelisting') NOT NULL,
+  `prevention_tool` enum('response team','ips','fw','proxy','antivirus','email filter','application whitelisting','user') NOT NULL,
   `remediation` enum('not remediated','cleaned with antivirus','cleaned manually','reimaged','credentials reset','removed from mailbox','NA') NOT NULL,
   `status` enum('OPEN','CLOSED','IGNORE') NOT NULL,
   `comment` text,
   `campaign_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `creation_date` (`creation_date`,`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=2752 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -194,7 +196,7 @@ CREATE TABLE `malware` (
   `name` varchar(128) NOT NULL,
   PRIMARY KEY (`name`),
   KEY `id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=76 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -259,7 +261,7 @@ CREATE TABLE `observables` (
   `value` varbinary(1024) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `index_type_value` (`type`,`value`(255))
-) ENGINE=InnoDB AUTO_INCREMENT=2222875 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -308,7 +310,31 @@ CREATE TABLE `profile_points` (
   `crits_id` char(24) DEFAULT NULL,
   `description` varchar(4096) NOT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=128 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `remediation`
+--
+
+DROP TABLE IF EXISTS `remediation`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `remediation` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `type` enum('email') NOT NULL,
+  `action` enum('remove','restore') NOT NULL DEFAULT 'remove' COMMENT 'The action that was taken, either the time was removed or it was restored.',
+  `insert_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'The time the action occured.',
+  `user_id` int(11) NOT NULL COMMENT 'The user who performed the action.',
+  `key` varchar(256) NOT NULL COMMENT 'The key to look up the item.  In the case of emails this is the message_id and the recipient email address.',
+  `result` text COMMENT 'The result of the action.  This is free form data for the analyst to see, usually includes error codes and messages.',
+  `comment` text COMMENT 'Optional comment, additional free form data.',
+  `successful` tinyint(4) DEFAULT '0' COMMENT '1 - remediation worked, 0 - remediation didn’t work',
+  PRIMARY KEY (`id`),
+  KEY `i_key` (`key`),
+  KEY `fk_user_id_idx` (`user_id`),
+  CONSTRAINT `fk_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -340,7 +366,7 @@ CREATE TABLE `tags` (
   `name` varchar(256) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=7340 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -358,7 +384,7 @@ CREATE TABLE `users` (
   `omniscience` int(11) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`,`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -374,7 +400,7 @@ CREATE TABLE `workload` (
   `node` varchar(256) DEFAULT NULL COMMENT 'the node that has claimed this work item',
   PRIMARY KEY (`id`),
   KEY `alert_id` (`alert_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=285334 DEFAULT CHARSET=latin1 COMMENT='the list of alerts that need to be analyzed';
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COMMENT='the list of alerts that need to be analyzed';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -386,4 +412,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2018-02-18 16:11:05
+-- Dump completed on 2018-08-20 14:47:26

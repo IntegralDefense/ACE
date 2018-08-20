@@ -4,7 +4,7 @@
 import saq
 
 class Config(object):
-    import sys; sys.stderr.write('EDIT YOUR SECRET KEY\n'); sys.exit(1)
+    import sys; sys.stderr.write('\n\nEDIT YOUR SECRET KEY\nopen config.py and remove this line and set the SECRET_KEY value to something\n\n'); sys.exit(1)
     SECRET_KEY = ''
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
