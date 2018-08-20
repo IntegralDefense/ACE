@@ -65,7 +65,9 @@ sudo apt-get -y install \
     libyaml-dev \
     npm \
     ssdeep \
+    python-pip \
     python3-pip \
+	poppler-utils \
     mysql-server || fail
 
 # things that have been removed
@@ -96,7 +98,7 @@ sudo -E python3 -m pip install PyMySQL==0.6.6 || fail
 sudo -E python3 -m pip install SQLAlchemy==1.2.7 || fail
 sudo -E python3 -m pip install WTForms==2.0.2 || fail
 #sudo -E python3 -m pip install Werkzeug==0.10.4 || fail
-#sudo -E python3 -m pip install iptools==0.6.1 || fail
+sudo -E python3 -m pip install iptools || fail
 #sudo -E python3 -m pip install itsdangerous==0.24 || fail
 sudo -E python3 -m pip install ldap3 || fail
 sudo -E python3 -m pip install pyasn1==0.1.8 || fail
@@ -111,7 +113,7 @@ sudo -E python3 -m pip install beautifulsoup4 || fail
 sudo -E python3 -m pip install lxml || fail
 sudo -E python3 -m pip install python-memcached || fail
 sudo -E python3 -m pip install dnspython || fail
-sudo -E python3 -m pip install cbapi==1.2.0 || fail
+sudo -E python3 -m pip install cbapi || fail
 sudo -E python3 -m pip install ply || fail
 sudo -E python3 -m pip install businesstime || fail
 sudo -E python3 -m pip install html2text || fail
@@ -121,12 +123,16 @@ sudo -E python3 -m pip install openpyxl || fail
 sudo -E python3 -m pip install pysocks || fail
 sudo -E python3 -m pip install tld || fail
 sudo -E python3 -m pip install python-magic || fail
+sudo -E python3 -m pip install oletools || fail
+sudo -E python3 -m pip install pcodedmp || fail
 
 # install our own custom stuff
-sudo -E python3 -m pip install splunklib
-sudo -E python3 -m pip install yara_scanner
-sudo -E python3 -m pip install vxstreamlib
-sudo -E python3 -m pip install urltoolslib
+sudo -E python3 -m pip install splunklib || fail
+sudo -E python3 -m pip install yara_scanner || fail
+sudo -E python3 -m pip install vxstreamlib || fail
+sudo -E python3 -m pip install urltoolslib || fail
+sudo -E python3 -m pip install msoffice_decrypt || fail
+sudo -E python -m pip install officeparser || fail
 
 # set up the ACE database
 echo "installing database..."
@@ -185,6 +191,22 @@ export SAQ_HOME=/opt/ace
 (cd etc && sudo -u ace cp -a email_scanner_logging.example.ini email_scanner_logging.ini) || fail
 (cd etc && sudo -u ace cp -a http_scanner_logging.example.ini http_scanner_logging.ini) || fail
 
+(cd etc && sudo -u ace mv brotex.whitelist.sample brotex.whitelist) || fail
+
+# create various directories and files
+# XXX clean this up
+for path in etc/site_tags.csv etc/ssdeep_hashes etc/local_networks.csv
+do
+	if [ ! -e "${path}" ]; then sudo -u ace touch "${path}"; fi
+done
+
+for path in ole_archive etc/snort 
+do
+	if [ ! -d "${path}" ]; then sudo -u ace mkdir -p "${path}"; fi
+done
+
+if [ ! -e etc/organization.json ]; then echo '{}' | sudo -u ace tee -a etc/organization.json > /dev/null; fi
+
 # install GUI into apache
 # see http://askubuntu.com/questions/569550/assertionerror-using-apache2-and-libapache2-mod-wsgi-py3-on-ubuntu-14-04-python/569551#569551
 sudo apt-get -y install apache2 apache2-dev || fail
@@ -195,7 +217,8 @@ sudo apt-get -y install apache2 apache2-dev || fail
     sed -n -e 2p ~/.mod_wsgi-express.output | sudo tee -a /etc/apache2/mods-available/wsgi_express.conf && \
     rm ~/.mod_wsgi-express.output && \
     sudo a2enmod wsgi_express && \
-    sudo a2enmod ssl
+    sudo a2enmod ssl &&
+	sudo a2ensite default-ssl
     #sudo ln -s /opt/ace/etc/saq_apache.conf /etc/apache2/sites-available/ace.conf && \
     #sudo a2ensite ace && \
     #sudo service apache2 restart
@@ -210,10 +233,11 @@ sudo apt-get -y install apache2 apache2-dev || fail
     #mysql --defaults-file=/opt/sensor_installer/mysql_root_defaults --database=mysql < /opt/site_configs/$customer/ace/sql/saq_users.sql || fail
 #fi
 
+
 # finish ace installation
 sudo ln -s /opt/ace/etc/saq_apache.conf /etc/apache2/sites-available/ace.conf && \
 sudo a2ensite ace && \
-sudo service apache2 restart
+sudo systemctl apache2.service restart
 
 #( cd /opt/ace && bin/update_ssdeep )
 
