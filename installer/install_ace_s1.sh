@@ -156,6 +156,7 @@ sudo -H mysql --database=email-archive < sql/email_archive_schema.sql || fail
 sudo -H mysql --database=cloudphish < sql/cloudphish_schema.sql || fail
 sudo -H mysql --database=hal9000 < sql/hal9000_schema.sql || fail
 
+
 # set up environment
 # TODO do not install globally, just for specific user
 echo | sudo -H -u ace tee -a ~ace/.bashrc > /dev/null
@@ -177,6 +178,9 @@ sudo apt-get -y install apache2 apache2-dev || fail
 
 echo "installing local files..."
 sudo -H -u ace /opt/ace/installer/install_ace_s2.sh
+
+# create the mysql database
+sudo -H mysql < sql/create_db_user.sql 
 
 # install site configurations for ace
 #cp -r --backup=simple --suffix=.backup /opt/site_configs/$customer/ace/* /opt/ace
