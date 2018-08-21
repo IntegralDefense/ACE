@@ -35,7 +35,7 @@ sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && ch
 # and then one to use as the secret key for flask
 tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1 > .gui_secret_key.sed
 sed -i -e 's;^;s/SAQ_SECRET_KEY/;' -e 's;$;/g;' .gui_secret_key.sed
-sed -f .gui_secret_key.sed etc/saq.ini
+sed -i -f .gui_secret_key.sed etc/saq.ini
 rm .gui_secret_key.sed
 
 # create various directories and files
