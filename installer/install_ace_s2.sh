@@ -28,9 +28,15 @@ source "installer/common.sh"
 tr -cd '[:alnum:]' < /dev/urandom | fold -w14 | head -n1 > .mysql.password.sed
 # modify the configuration files to use it
 sed -i -e 's;^;s/SAQ_USER_PASSWORD/;' -e 's;$;/g;' .mysql.password.sed
-sed -i -f .mysql.password.sed /opt/ace/etc/saq.ini
-sed -f .mysql.password.sed /opt/ace/sql/create_db_user.sql > /opt/ace/sql/create_db_user.exec.sql
+sed -i -f .mysql.password.sed etc/saq.ini
+sed -f .mysql.password.sed sql/create_db_user.sql > sql/create_db_user.exec.sql
 sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && chmod 660 etc/mysql_defaults 
+
+# and then one to use as the secret key for flask
+tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1 > .gui_secret_key.sed
+sed -i -e 's;^;s/SAQ_SECRET_KEY/;' -e 's;$;/g;' .gui_secret_key.sed
+sed -f .gui_secret_key.sed etc/saq.ini
+rm .gui_secret_key.sed
 
 # create various directories and files
 # XXX clean this up
