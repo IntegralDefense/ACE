@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-if [ -z "$SAQ_HOME" ]; then echo "missing SAQ_HOME env variable"; exit 1; fi
-cd $SAQ_HOME || { echo "cannot cd to $SAQ_HOME"; exit 1; }
+cd /opt/ace || { echo "cannot cd to /opt/ace"; exit 1; }
 
 source "installer/common.sh"
 
@@ -20,6 +19,7 @@ source "installer/common.sh"
 (cd etc && cp -a carbon_black_logging.example.ini carbon_black_logging.ini) || fail
 (cd etc && cp -a email_scanner_logging.example.ini email_scanner_logging.ini) || fail
 (cd etc && cp -a http_scanner_logging.example.ini http_scanner_logging.ini) || fail
+(cd etc && cp -a saq.example.ini saq.local.ini && ln -s saq.local.ini saq.ini) || fail
 
 (cd etc && mv brotex.whitelist.sample brotex.whitelist) || fail
 
