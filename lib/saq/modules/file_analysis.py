@@ -24,7 +24,7 @@ from urllib.parse import urlparse, urljoin
 
 #from subprocess import Popen, PIPE, DEVNULL, TimeoutExpired
 
-from urltools.urltools import find_urls
+from urlfinderlib import find_urls
 
 import saq
 import yara_scanner

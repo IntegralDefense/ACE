@@ -130,7 +130,7 @@ sudo -E python3 -m pip install pcodedmp || fail
 sudo -E python3 -m pip install splunklib || fail
 sudo -E python3 -m pip install yara_scanner || fail
 sudo -E python3 -m pip install vxstreamlib || fail
-sudo -E python3 -m pip install urltoolslib || fail
+sudo -E python3 -m pip install urlfinderlib || fail
 sudo -E python3 -m pip install msoffice_decrypt || fail
 sudo -E python -m pip install officeparser || fail
 
@@ -195,17 +195,20 @@ export SAQ_HOME=/opt/ace
 
 # create various directories and files
 # XXX clean this up
-for path in etc/site_tags.csv etc/ssdeep_hashes etc/local_networks.csv
+for path in etc/site_tags.csv etc/ssdeep_hashes
 do
 	if [ ! -e "${path}" ]; then sudo -u ace touch "${path}"; fi
 done
 
-for path in ole_archive etc/snort 
+for path in ole_archive etc/snort ssl/web
 do
 	if [ ! -d "${path}" ]; then sudo -u ace mkdir -p "${path}"; fi
 done
 
 if [ ! -e etc/organization.json ]; then echo '{}' | sudo -u ace tee -a etc/organization.json > /dev/null; fi
+if [ ! -e etc/local_networks.csv ]; then echo 'Indicator,Indicator_Type' | sudo -u ace tee -a etc/local_networks.csv > /dev/null; fi
+
+openssl req -x509 -newkey rsa:4096 -keyout ssl/web/localhost.key.pem -out ssl/web/localhost.cert.pem -days 365 -nodes -subj '/CN=localhost'
 
 # install GUI into apache
 # see http://askubuntu.com/questions/569550/assertionerror-using-apache2-and-libapache2-mod-wsgi-py3-on-ubuntu-14-04-python/569551#569551
