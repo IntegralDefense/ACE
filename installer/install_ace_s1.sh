@@ -180,7 +180,7 @@ echo "installing local files..."
 sudo -H -u ace /opt/ace/installer/install_ace_s2.sh
 
 # create the mysql database
-sudo -H mysql < sql/create_db_user.sql 
+sudo -H mysql < sql/create_db_user.exec.sql && rm sql/create_db_user.exec.sql
 
 # install site configurations for ace
 #cp -r --backup=simple --suffix=.backup /opt/site_configs/$customer/ace/* /opt/ace
@@ -208,3 +208,12 @@ sudo systemctl apache2.service restart
 #then
     #/opt/site_configs/$customer/ace/install
 #fi
+
+echo
+echo finished installation of ACE
+echo
+echo add a user for yourself using the following commands
+echo sudo su - ace
+echo cd /opt/ace
+echo ./ace add-user username email_address
+echo

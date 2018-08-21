@@ -27,9 +27,9 @@ source "installer/common.sh"
 # generate a random password to use for the mysql account
 tr -cd '[:alnum:]' < /dev/urandom | fold -w14 | head -n1 > .mysql.password.sed
 # modify the configuration files to use it
-sed -i -e 's;^;s/SAQ_USER_PASSWORD/' -e 's;$;/g;' .mysql.password.sed
+sed -i -e 's;^;s/SAQ_USER_PASSWORD/;' -e 's;$;/g;' .mysql.password.sed
 sed -i -f .mysql.password.sed /opt/ace/etc/saq.ini
-sed -i -f .mysql.password.sed /opt/ace/sql/create_db_user.sql
+sed -f .mysql.password.sed /opt/ace/sql/create_db_user.sql > /opt/ace/sql/create_db_user.exec.sql
 sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && chmod 660 etc/mysql_defaults 
 
 # create various directories and files
