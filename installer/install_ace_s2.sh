@@ -19,9 +19,18 @@ source "installer/common.sh"
 (cd etc && cp -a carbon_black_logging.example.ini carbon_black_logging.ini) || fail
 (cd etc && cp -a email_scanner_logging.example.ini email_scanner_logging.ini) || fail
 (cd etc && cp -a http_scanner_logging.example.ini http_scanner_logging.ini) || fail
+(cd etc && cp -a gui_logging.example.ini gui_logging.ini && ln -s gui_logging.ini apache_logging.ini) || fail
 (cd etc && cp -a saq.example.ini saq.local.ini && ln -s saq.local.ini saq.ini) || fail
 
 (cd etc && mv brotex.whitelist.sample brotex.whitelist) || fail
+
+# generate a random password to use for the mysql account
+tr -cd '[:alnum:]' < /dev/urandom | fold -w14 | head -n1 > .mysql.password.sed
+# modify the configuration files to use it
+sed -i -e 's;^;s/SAQ_USER_PASSWORD/' -e 's;$;/g;' .mysql.password.sed
+sed -i -f .mysql.password.sed /opt/ace/etc/saq.ini
+sed -i -f .mysql.password.sed /opt/ace/sql/create_db_user.sql
+sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && chmod 660 etc/mysql_defaults 
 
 # create various directories and files
 # XXX clean this up
