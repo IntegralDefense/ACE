@@ -68,7 +68,7 @@ echo "installing local files..."
 sudo -H -u ace /opt/ace/installer/install_ace_s2.sh
 
 # create the mysql database
-sudo -H mysql < sql/create_db_user.exec.sql && rm sql/create_db_user.exec.sql
+sudo -H mysql < /opt/ace/sql/create_db_user.exec.sql && sudo rm /opt/ace/sql/create_db_user.exec.sql
 
 # install site configurations for ace
 #cp -r --backup=simple --suffix=.backup /opt/site_configs/$customer/ace/* /opt/ace
@@ -82,7 +82,7 @@ sudo -H mysql < sql/create_db_user.exec.sql && rm sql/create_db_user.exec.sql
 # finish ace installation
 sudo ln -s /opt/ace/etc/saq_apache.conf /etc/apache2/sites-available/ace.conf && \
 sudo a2ensite ace && \
-sudo systemctl apache2.service restart
+sudo systemctl restart apache2.service
 
 #( cd /opt/ace && bin/update_ssdeep )
 
