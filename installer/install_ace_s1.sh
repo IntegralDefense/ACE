@@ -175,7 +175,8 @@ sudo apt-get -y install apache2 apache2-dev || fail
 	sudo a2ensite default-ssl
 ) || fail
 
-sudo -H -u ace /opt/ace/install_ace_s2.sh
+echo "installing local files..."
+sudo -H -u ace /opt/ace/installer/install_ace_s2.sh
 
 # install site configurations for ace
 #cp -r --backup=simple --suffix=.backup /opt/site_configs/$customer/ace/* /opt/ace
