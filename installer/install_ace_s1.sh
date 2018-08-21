@@ -158,8 +158,8 @@ sudo -H mysql --database=hal9000 < sql/hal9000_schema.sql || fail
 
 # set up environment
 # TODO do not install globally, just for specific user
-echo | sudo tee -a ~ace/.bashrc
-echo 'source /opt/ace/load_environment' | sudo tee -a ~ace/bash.bashrc
+echo | sudo -H -u ace tee -a ~ace/.bashrc > /dev/null
+echo 'source /opt/ace/load_environment' | sudo -H -u ace tee -a ~ace/.bashrc > /dev/null
 
 # install GUI into apache
 # see http://askubuntu.com/questions/569550/assertionerror-using-apache2-and-libapache2-mod-wsgi-py3-on-ubuntu-14-04-python/569551#569551
