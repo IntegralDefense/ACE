@@ -36,7 +36,7 @@ sudo -H -E installer/install_python_packages.sh || fail "python package installa
 sudo -E installer/install_database.sh || fail "database installation failed"
 
 # set up environment
-echo -e "\\nsource $SAQ_HOME/load_environment" > ~/.bashrc
+echo -e "\\nsource $SAQ_HOME/load_environment" >> ~/.bashrc
 
 for l in ace apache brotex carbon_black email_scanner http_scanner gui
 do
