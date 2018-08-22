@@ -29,7 +29,7 @@ CREATE TABLE `archive` (
   PRIMARY KEY (`archive_id`),
   UNIQUE KEY `server_id` (`server_id`,`md5`),
   CONSTRAINT `fk_archive_1` FOREIGN KEY (`server_id`) REFERENCES `archive_server` (`server_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=3275 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -81,7 +81,7 @@ CREATE TABLE `archive_server` (
   `hostname` varchar(256) NOT NULL,
   PRIMARY KEY (`server_id`),
   UNIQUE KEY `hostname` (`hostname`)
-) ENGINE=InnoDB AUTO_INCREMENT=96 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

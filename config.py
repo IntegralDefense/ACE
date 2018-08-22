@@ -4,8 +4,7 @@
 import saq
 
 class Config(object):
-    import sys; sys.stderr.write('EDIT YOUR SECRET KEY\n'); sys.exit(1)
-    SECRET_KEY = ''
+    SECRET_KEY = saq.CONFIG['gui']['secret_key']
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     INSTANCE_NAME = saq.CONFIG.get('global', 'instance_name')

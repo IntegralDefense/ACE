@@ -1,0 +1,4 @@
+[client]
+host=localhost
+user=saq-user
+password=SAQ_USER_PASSWORD

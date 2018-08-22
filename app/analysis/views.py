@@ -61,8 +61,6 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql import text, func
 
-from chronosapi import Chronos
-
 # used to determine where to redirect to after doing something
 REDIRECT_MAP = {
     'analysis': 'analysis.index',
@@ -1177,11 +1175,7 @@ def add_to_event():
                 report_exception()
 
         wiki_name = "{} {}".format(creation_date.strftime("%Y%m%d"), event_name)
-        host = saq.CONFIG.get('chronos', 'analysis-host')
-        port = saq.CONFIG.get('chronos', 'analysis-port')
-        chronos = Chronos("{}:{}".format(host, port))
         data = { "name": wiki_name, "alerts": alert_paths, "id": event_id }
-        chronos.task_create("event2wiki", data)
 
     if analysis_page:
         return redirect(url_for('analysis.index'))
