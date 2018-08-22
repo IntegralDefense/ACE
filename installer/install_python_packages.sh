@@ -51,7 +51,7 @@ for p in \
 	"urlfinderlib" \
 	"msoffice_decrypt" 
 do
-	pip3 install $p || fail "unable to install python pip package $p"
+	python3 -m pip install $p || fail "unable to install python pip package $p"
 done
 
 # old python2 stuff
