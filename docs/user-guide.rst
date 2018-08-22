@@ -1,5 +1,5 @@
-User/Analyst Guid
-=================
+User/Analyst Guide
+==================
 
 GUI Overview
 ------------
@@ -20,5 +20,6 @@ Managing Alerts
 ---------------
 
 All alerts are managed via the queue on the Manage Alerts page. The alert management page is where analysts spend most of their time interacting with ACE. Each alert, in the queue, is intended to evoke the correct emotion in the analyst when viewed. To accomplish this, there are several features for the analyst to understand when working with alerts; to name a couple of the most important: observables, dispositions, tagging, and alert filtering.
+
 
 
