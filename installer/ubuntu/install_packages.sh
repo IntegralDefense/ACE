@@ -3,8 +3,16 @@
 # installs any packages required by ACE on an Ubuntu machine
 #
 
+source installer/common.sh
+
+if [ "$EUID" != "0" ]
+then
+	echo "this script must be executed as root"
+	exit 1
+fi
+
 echo "installing required packages..."
-sudo -H apt-get -y install \
+apt-get -y install \
     nmap \
     libldap2-dev \
     libsasl2-dev \
@@ -22,17 +30,18 @@ sudo -H apt-get -y install \
     python-pip \
     python3-pip \
 	poppler-utils \
-    mysql-server
+    mysql-server || fail "package installation failed"
 
 # things that have been removed
 # freetds-dev
 
 if ! npm -g ls | grep esprima > /dev/null 2>&1
 then 
-    sudo -H npm config set strict-ssl false
+    npm config set strict-ssl false
 	# TODO deal with proxy settings
     # sudo npm config set proxy "$http_proxy"
     # sudo npm config set https-proxy "$https_proxy"
-    sudo -H npm -g install esprima
+    npm -g install esprima || fail "npm package installation failed"
 fi
 
+exit 0

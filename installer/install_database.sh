@@ -3,20 +3,33 @@
 # installs and configures MySQL database settings required for ACE
 #
 
+source installer/common.sh
+
+if [ "$EUID" != "0" ]
+then
+	echo "this script must be executed as root"
+	exit 1
+fi
+
+# is mysql available?
+if ! which mysql > /dev/null 2>&1
+then
+	echo "missing mysql installation"
+	exit 1
+fi
+
 # set up the ACE database
-echo "installing database..."
-# TODO check to see if this is already done
-sudo -H mysqladmin create saq-production
-sudo -H mysqladmin create ace-workload
-sudo -H mysqladmin create brocess
-sudo -H mysqladmin create chronos
-sudo -H mysqladmin create email-archive
-sudo -H mysqladmin create hal9000
-sudo -H mysqladmin create cloudphish
-sudo -H mysql --database=saq-production < sql/ace_schema.sql
-sudo -H mysql --database=ace-workload < sql/ace_workload_schema.sql
-sudo -H mysql --database=brocess < sql/brocess_schema.sql
-sudo -H mysql --database=chronos < sql/chronos_schema.sql
-sudo -H mysql --database=email-archive < sql/email_archive_schema.sql
-sudo -H mysql --database=cloudphish < sql/cloudphish_schema.sql
-sudo -H mysql --database=hal9000 < sql/hal9000_schema.sql
+echo "installing databases..."
+
+mysql -N -B -e 'show databases' > .db_list
+
+for db in saq-production ace-workload brocess email-archive hal9000 cloudphish vt-hash-cache
+do
+	if ! egrep "^$db\$" .db_list > /dev/null 2>&1
+	then
+		echo "creating database $db"
+		( mysqladmin create $db && mysql --database=$db < sql/$db\_schema.sql ) || fail "unable to install database $db"
+	fi
+done
+
+exit 0

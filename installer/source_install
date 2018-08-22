@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+#
+# this scripts configures a source installation of ACE
+# which is just ACE running directly from a clone of the repository
+# instead of being "installed" into some other directory
+#
+
+# make sure we've already set the SAQ_HOME environment variable
+if [ -z "${SAQ_HOME}" ]
+then
+	echo "You are missing the SAQ_HOME environment variable."
+	echo "Do you want to use $(pwd) as the value for SAQ_HOME?"
+	select yn in Yes No; do
+		case ${yn} in
+			Yes ) export SAQ_HOME=$(pwd); break ;;
+			No ) echo "Set your SAQ_HOME to the correct value and try again."; exit 1 ;;
+		esac
+	done
+fi
+
+if [ ! -d "${SAQ_HOME}" ]
+then
+	echo "Your SAQ_HOME environment variable points to ${SAQ_HOME} which does not exist."
+	echo "Set it correctly and then try again."
+	exit 1
+fi
+
+cd "${SAQ_HOME}" || { echo "cannot cd to $SAQ_HOME"; exit 1; }
+source common.sh
+
+create_ace_dirs || fail "cannot create required directories"
+
+# install the required packages
+sudo -E installer/install_packages.sh || fail "package installation failed"
+sudo -E installer/install_python_packages.sh || fail "python package installation failed"
+sudo -E installer/install_database.sh || fail "database installation failed"
+
+# set up environment
+echo -e "\\nsource $SAQ_HOME/load_environment" > ~/.bashrc
+
+for l in ace apache brotex carbon_black email_scanner http_scanner gui
+do
+	if [ ! -e etc/$l\_logging.ini ]
+	then
+		cp -a etc/$l\_logging.example.ini etc/$l\_logging.ini || fail "unable to copy logging config for $l"
+	fi
+done
+
+if [ ! -e etc/saq.local.ini ]; then cp -a etc/saq.example.ini etc/saq.local.ini || fail "unable to configure saq.local.ini"; fi
+if [ ! -L etc/saq.ini ]; then ln -s saq.local.ini etc/saq.ini || fail "unable to symlink saq.ini"; fi
+if [ ! -e etc/brotex.whitelist ]; then cp -a etc/brotex.whitelist.sample etc/brotex.whitelist || fail "unable to configure brotex.whitelist"; fi
+
+if grep SAQ_USER_PASSWORD etc/saq.ini > /dev/null 2>&1
+then
+	echo "generating mysql account for ACE with random password"
+	tr -cd '[:alnum:]' < /dev/urandom | fold -w14 | head -n1 > .mysql.password.sed
+	# modify the configuration files to use it
+	sed -i -e 's;^;s/SAQ_USER_PASSWORD/;' -e 's;$;/g;' .mysql.password.sed
+	sed -i -f .mysql.password.sed etc/saq.ini
+	sed -f .mysql.password.sed sql/create_db_user.sql > sql/create_db_user.exec.sql
+	sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && chmod 660 etc/mysql_defaults 
+	rm .mysql.password.sed
+fi
+
+if grep SAQ_SECRET_KEY etc/saq.ini > /dev/null 2>&1
+then
+	echo "generating random secret key for flask"
+	tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1 > .gui_secret_key.sed
+	sed -i -e 's;^;s/SAQ_SECRET_KEY/;' -e 's;$;/g;' .gui_secret_key.sed
+	sed -i -f .gui_secret_key.sed etc/saq.ini
+	rm .gui_secret_key.sed
+fi
+
+# create various directories and files
+# XXX clean this up
+for path in etc/site_tags.csv etc/ssdeep_hashes
+do
+	if [ ! -e "${path}" ]; then touch "${path}"; fi
+done
+
+if [ ! -e etc/organization.json ]; then echo '{}' > etc/organization.json; fi
+if [ ! -e etc/local_networks.csv ]; then echo 'Indicator,Indicator_Type' > etc/local_networks.csv; fi
+
+# create a self signed SSL cert
+openssl req -x509 -newkey rsa:4096 -keyout ssl/web/localhost.key.pem -out ssl/web/localhost.cert.pem -days 365 -nodes -subj '/CN=localhost'
+
+echo "How do you want to run the gui?"
+echo "Apache - Run the gui in Apache"
+echo "Debug - Run the gui in debug mode from the command line"
+select gui in Apache Debug; do
+	case ${gui} in
+		Apache ) sudo installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
+		Debug ) break ;;
+	esac
+done
