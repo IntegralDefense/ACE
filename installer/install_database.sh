@@ -32,4 +32,5 @@ do
 	fi
 done
 
+rm .db_list
 exit 0
