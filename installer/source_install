@@ -92,7 +92,7 @@ echo "Apache - Run the gui in Apache"
 echo "Debug - Run the gui in debug mode from the command line"
 select gui in Apache Debug; do
 	case ${gui} in
-		Apache ) sudo installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
+		Apache ) sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
 		Debug ) break ;;
 	esac
 done
