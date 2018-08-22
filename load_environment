@@ -1,9 +1,6 @@
 # this is meant to be sourced from bash
-export SAQ_HOME=/opt/saq
-#export SAQ_CONFIG_PATHS="etc/saq.qa.ini,etc/saq.aws.ini"
+export SAQ_HOME=/opt/ace
 export PATH="$PATH:$SAQ_HOME"
-#export -n http_proxy
-#source /opt/saq/env3/bin/activate
 
 if [ -e "$SAQ_HOME/load_local_environment" ]
 then
