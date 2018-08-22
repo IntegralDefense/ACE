@@ -12,7 +12,7 @@ from saq.modules import AnalysisModule, SplunkAnalysisModule, splunktime_to_saqt
 from cbapi import auth, connection
 from cbapi.response import *
 from cbapi.errors import ApiError, ObjectNotFoundError
-from cbinterface import events_to_json, walk_process_tree
+from cbinterface.modules.process import SuperProcess
 
 KEY_ASSET_COUNT = 'asset_count'
 KEY_PROCESS_LOGS = 'process_logs'
@@ -329,10 +329,12 @@ class ProcessGUIDAnalyzer(AnalysisModule):
             logging.error("Encountered unknown error retrieving process: {0:s}".format(str(e)))
             return False
 
+        sp = SuperProcess(proc)
+
         analysis = self.create_analysis(observable)
 
-        process_tree = walk_process_tree(proc)
-        process_event_details = events_to_json(proc)
+        process_tree = sp.walk_process_tree()
+        process_event_details = sp.events_to_json()
         process_event_details['process_tree'] =  process_tree.tuple_list()
   
         binfo = proc.binary.version_info
