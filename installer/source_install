@@ -26,13 +26,13 @@ then
 fi
 
 cd "${SAQ_HOME}" || { echo "cannot cd to $SAQ_HOME"; exit 1; }
-source common.sh
+source installer/common.sh
 
 create_ace_dirs || fail "cannot create required directories"
 
 # install the required packages
 sudo -E installer/install_packages.sh || fail "package installation failed"
-sudo -E installer/install_python_packages.sh || fail "python package installation failed"
+sudo -H -E installer/install_python_packages.sh || fail "python package installation failed"
 sudo -E installer/install_database.sh || fail "database installation failed"
 
 # set up environment
@@ -60,6 +60,9 @@ then
 	sed -f .mysql.password.sed sql/create_db_user.sql > sql/create_db_user.exec.sql
 	sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && chmod 660 etc/mysql_defaults 
 	rm .mysql.password.sed
+
+	# create the mysql database user for ace
+	sudo mysql < sql/create_db_user.exec.sql && rm sql/create_db_user.exec.sql
 fi
 
 if grep SAQ_SECRET_KEY etc/saq.ini > /dev/null 2>&1
