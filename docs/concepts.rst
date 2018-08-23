@@ -47,11 +47,9 @@ The ACE system is named after the system's core engine, the Analysis Correlation
 +---------------+--------------------------------------------------------------------------------------------------------------+
 |   Engine      |                                       Description                                                            |
 +===============+==============================================================================================================+
-| ace           | The alert correlation engine - provides alerts to ACE                                                        |
+| ace           | The Alert Correlation Engine creates and submits alerts to the Analsis Correlation Engine                    |
 +---------------+--------------------------------------------------------------------------------------------------------------+
-| carbon_black  | Provides CarbonBlack data to ACE                                                                             |
-+---------------+--------------------------------------------------------------------------------------------------------------+
-| cli           | A command line interface to ACE                                                                              |
+| carbon_black  | Collects binaries and files from CarbonBlack environments and runs them through ACE                          |
 +---------------+--------------------------------------------------------------------------------------------------------------+
 | brotex_stream | Responsible for analyzing tar files extrated from SMTP and HTTP streams via the Brotex system [#]_. Extracted|
 |               | Emails are submitted to the Email Scanning Engine. Extracted HTTP streams are submitted to the HTTP Scanning |
