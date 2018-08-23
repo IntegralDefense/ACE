@@ -6,6 +6,8 @@ GUI Overview
 
 Generally, analysts interact with ACE through it's graphical interface. The ACE GUI has a few different pages, below is a breakdown of what each page is used for:
 
+.. image:: _static/ace-gui-navbar.png
+
 ===============  ===============
      Page        Function
 ===============  ===============
@@ -19,7 +21,135 @@ Metrics          For creating and tracking metrics from the data ACE generates
 Managing Alerts
 ---------------
 
-All alerts are managed via the queue on the Manage Alerts page. The alert management page is where analysts spend most of their time interacting with ACE. Each alert, in the queue, is intended to evoke the correct emotion in the analyst when viewed. To accomplish this, there are several features for the analyst to understand when working with alerts; to name a couple of the most important: observables, dispositions, tagging, and alert filtering.
+All alerts are managed via the queue on the Manage Alerts page. The alert management page is where analysts spend most of their time interacting with ACE. Each alert, in the queue, is intended to evoke the correct emotion in the analyst when viewed. To accomplish this, there are several features for the analyst to understand when working with alerts; to name a couple of the most important: observables, dispositions, tagging, and alert filtering. Oberservables are a core concept that can be reviewed, in the documentation, under :doc:`Concepts </concepts>`.
+
+An example of the the Manage Alerts page:
+
+.. image:: _static/ACE\ gui-medium.png
+
+Expanding Alert Observables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+On the Manage Alerts page, each alert can be expanded via its dropdown button. Once expanded, all of the observables in the alert can be viewed. The observables are grouped and listed by their observable type. The numbers, in parentheses, at the end of each observable shows a count of how many times ACE has seen that particular observable. Each observable is clickable, and when clicked, ACE will add that observable to its current alert filter. An upcoming section has more on alert `Filtering and Grouping`_.
+
+.. figure:: _static/expanded-alert-observables-emotet-noEventTag.png
+   :alt: expanded alert observables
+
+   An expanded alert shows its observables
+
+.. container:: toggle
+
+   .. container:: header
+
+      **Expand/Collapse Observables**
+
+   ::
+
+       - email_address
+         - fakeuser@fakecompany.com (21)
+         - tfry@kennyross.com (2)
+       - email_conversation
+         - tfry@kennyross.com|fakeuser@fakecompany.com (1)
+       - file
+         - 308591a9db1d3b8739e53feaf3dd5ba069f7191125cf3bb7e2c849bad2182e98.vxstream/dropped/1LSZPI0TG6C82HTABETK.temp (1)
+         - 308591a9db1d3b8739e53feaf3dd5ba069f7191125cf3bb7e2c849bad2182e98.vxstream/dropped/Kenny_Ross_Inquiry.LNK (1)
+         - 308591a9db1d3b8739e53feaf3dd5ba069f7191125cf3bb7e2c849bad2182e98.vxstream/dropped/index.dat (1)
+         - 308591a9db1d3b8739e53feaf3dd5ba069f7191125cf3bb7e2c849bad2182e98.vxstream/dropped/urlref_httpvezopilan.comtstindex.phpl_soho7.tkn_.Split (1)
+         - Kenny_Ross_Inquiry.doc (9)
+         - Kenny_Ross_Inquiry.doc.officeparser/iYzcZYMdfv.bas (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/oUDOGruwp.bas (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_10_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_11_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_12_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_13_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_14_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_15_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_16_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_17_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_18_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_19_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_1_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_2_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_2_0.dat.extracted/WXRIK/WXRIK/WXRIK1.lrA (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_2_0.dat.extracted/WXRIK/WXRIK/WXRIKManager.lrA (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_2_0.dat.extracted/WXRIK/WXRIK/_pPOR/WXRIKManager.lrA.pPOR (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_2_0.dat.extracted/[Content_Types].lrA (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_2_0.dat.extracted/_pPOR/.pPOR (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_3_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_4_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_5_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_8_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.officeparser/stream_9_0.dat (2)
+         - Kenny_Ross_Inquiry.doc.olevba/macro_0.bas (2)
+         - Kenny_Ross_Inquiry.doc.olevba/macro_1.bas (2)
+         - Kenny_Ross_Inquiry.doc.pcode.bas (2)
+         - email.rfc822 (37952)
+         - email.rfc822.headers (37949)
+         - email.rfc822.unknown_text_html_000 (3229)
+         - email.rfc822.unknown_text_html_000_000.png (2482)
+         - email.rfc822.unknown_text_plain_000 (37354)
+         - filename.PNG (11)
+       - indicator
+         - 55c36786bcb87f2d54cf15da (369)
+         - 57ffd02cbcb87fbb1464b1ce (88)
+         - 58c9708aad951d7387c65be2 (274)
+         - 58e3e8dfad951d49aabb1622 (384)
+         - 58ee209dad951d09a1ee3860 (92)
+         - 58ee221dad951d09a0b13e99 (92)
+         - 5937f5d4ad951d4fe8787c63 (672)
+         - 599db056ad951d5cb2c4768b (302)
+         - 599dd8abad951d5cb3204569 (155)
+         - 59a7fcc7ad951d522eeef8ed (380)
+       - ipv4
+         - 104.118.208.249 (24)
+       - md5
+         - 2307a1a403c6326509d4d9546e5f32ab (2)
+         - 267b1bd0ae8194781c373f93c9df02fa (2)
+         - 39ee938f6fa351f94a2cbf8835bb454f (2)
+         - 5c4c76cbb739c04fb3838aff5b2c25bb (2)
+         - 65811d8f7c6a1b94eab03ba1072a3a7e (2)
+         - b3b8bf4ed2c5cb26883661911487d642 (2)
+         - d8a7ea6ba4ab9541e628452e2ad6014a (2)
+       - message_id
+         - <8de41f6eb57ac01b2a90d3466890b0a1@127.0.0.1> (1)
+       - sha1
+         - 03484a568871d494ad144ac9597e9717a2ae5601 (2)
+         - 2e3b95bb9b0beb5db3487646d772363004505df6 (2)
+         - 33b9d3de33adc5bd5954c1e9f9e48f10eabe7c49 (2)
+         - 62837876eb5ec321e6d8dbd6babd0d5789230b60 (2)
+         - b3024c6f598b1745ca352ac3a24cc3603b814cad (2)
+         - cfe4f07fbf042b4f7dce44f9e6e3f449e02c123a (2)
+         - fa47ebc1026bbe8952f129480f38a011f9faf47d (2)
+       - sha256
+         - 308591a9db1d3b8739e53feaf3dd5ba069f7191125cf3bb7e2c849bad2182e98 (2)
+         - 50aef060b9192d5230be21df821acb4495f7dc90416b2edfd68ebebde40562be (2)
+         - 62be2fe5e5ad79f62671ba4b846a63352d324bb693ee7c0f663f488e25f05fe0 (2)
+         - 8159227eb654ef2f60eb4c575f4a218bb76919ea15fdd625c2d01d151e4973f3 (2)
+         - 9c7e06164ec59e76d6f3e01fa0129607be1d98af270a09fd0f126ee8e16da306 (2)
+         - ae67f33b6ff45aecf91ff6cac71b290c27f791ccbe4829be44bd64468cbe3f5d (2)
+         - ca797ec10341aebaed1130c4dbf9a5b036945f17dd94d71d46f2f81d9937504f (2)
+       - url
+         - http://schemas.openxmlformats.org/drawingml/2006/main (3796)
+       - user
+         - fake_user_id (17)
+       - yara_rule
+         - CRITS_EmailContent (4478)
+         - CRITS_StringOffice (1685)
+         - CRITS_StringVBS (6592)
+         - CRITS_StringWindowsShell (1770)
+         - macro_code_snippet (1013)
+         - macro_overused_legit_functions (82)
+
+Above, you can click to expand a text based example of an alerts observable structure when an alert is expanded on the Manage Alerts page.
+
+
+Alert Page
+~~~~~~~~~~
 
 
 
+Views
++++++
+
+Filtering and Grouping
+~~~~~~~~~~~~~~~~~~~~~~
