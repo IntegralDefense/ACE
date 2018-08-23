@@ -1,7 +1,7 @@
 Concepts
 ========
 
-There are several concept crucial to understanding how ACE works and how to use ACE. For the analyst, it's important to understand dispositions (ACE uses the cyber kill chain model), observables, and tagging. For the administrator, it's crucial to understand ACE's dependancies and architecture, as well as how to implement or turn on/off different ACE engines. Finally, anyone wanting to do development work on ACE must understand it's engine and module based arcitecture.
+There are several concept crucial to understanding how ACE works and how to use ACE. For the analyst, it's important to understand observables, and tagging. For the administrator or a developer, it's crucial to understand ACE's dependancies and it's engine and module based arcitecture.
 
 Observables
 -----------
@@ -41,6 +41,10 @@ yara_rule           yara rule name
 
 Engines
 -------
+
+.. image:: _static/ace-engines.PNG
+   :height: 160px
+   :width: 200px
 
 The ACE system is named after the system's core engine, the Analysis Correlation *Engine*. However, there are additional engines that interface with, utalize, or provide input to the core Analysis Correlation Engine. Below is a table of the currently defined engines:
 
