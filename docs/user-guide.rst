@@ -8,7 +8,7 @@ Generally, analysts interact with ACE through it's graphical interface. The ACE 
 
 .. image:: _static/ace-gui-navbar.png
 
-===============  ===============
+===============  =============== 
      Page        Function
 ===============  ===============
 Overview         Gives an overview of ACE's performance and statistics
@@ -21,11 +21,12 @@ Metrics          For creating and tracking metrics from the data ACE generates
 Managing Alerts
 ---------------
 
-All alerts are managed via the queue on the Manage Alerts page. The alert management page is where analysts spend most of their time interacting with ACE. Each alert, in the queue, is intended to evoke the correct emotion in the analyst when viewed. To accomplish this, there are several features for the analyst to understand when working with alerts; to name a couple of the most important: observables, dispositions, tagging, and alert filtering. Oberservables are a core concept that can be reviewed, in the documentation, under :doc:`Concepts </concepts>`.
+All alerts are managed via the queue on the Manage Alerts page. The alert management page is where analysts spend most of their time interacting with ACE. Each alert, in the queue, is intended to evoke the correct emotion in the analyst when viewed. To accomplish this, there are several features for the analyst to understand when working with alerts; to name a couple of the most important: observables, dispositions, tagging, and alert filtering. Oberservables are a core concept that can be reviewed, in the documentation, under :doc:`Concepts </concepts>`. An example of the the Manage Alerts page follows.
 
-An example of the the Manage Alerts page:
+.. _ace-gui-alerts-page:
+.. figure:: _static/ACE\ gui-medium.png
 
-.. image:: _static/ACE\ gui-medium.png
+   The Manage Alerts page
 
 Expanding Alert Observables
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -142,6 +143,11 @@ On the Manage Alerts page, each alert can be expanded via its dropdown button. O
 
 Above, you can click to expand a text based example of an alerts observable structure when an alert is expanded on the Manage Alerts page.
 
+Alert Tags
+~~~~~~~~~~
+
+ACE has a tagging system, by which observables are tagged for the purpose of providing additional context about an alert’s observables.  If you review the previous figure of :ref:`ace-gui-alerts-page` you will notice the tags, such as, phish, new_sender, frequent_conversation associated to various alerts.
+All of an observables tag’s get associated with the respective alert and show up on the alert management page. Any observable can be tagged and can have any number of tags. For instance, an email conversation between two addresses that ACE has seen a lot will be tagged as 'frequent_conversation'. Tags can also be added directly to alerts from the Manage Alerts page. This can be helpful for `Filtering and Grouping`_ alerts if an analyst needs a way to group alerts that don’t otherwise have a commonly shared tag or observable.
 
 Alert Page
 ~~~~~~~~~~
@@ -163,14 +169,33 @@ Next, depending on the alert type, there may be more high-level context informat
 Views
 +++++
 
-There are two different modes you can view ACE alerts in, 'Critical' and 'All' analysis, by default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alert with a lot of observables, however, generally, it's most helpful to view all of the alert analysis. At the top right of every alert you will see a button to "View All Analysis". Whichever mode you have enabled will be persistent accross your ACE session.
+There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alerts with a lot of observables, however, generally, it's most helpful to view all of an alert's analysis. At the top right of every alert you will see a button to "View All Analysis". Whichever mode you have enabled will be persistent accross your ACE session.
 
-Be mindful of these different views, as it's possible for an analyst to miss crucial information if viewing an alert in crucial mode, verse all mode. For instance, you wouldn't see an availble pcap file if you were viewing a snort alert in crucial mode.
+Be mindful of these different views, as it's possible for an analyst to miss crucial information if viewing an alert in crucial mode, verse all mode. For instance, if you were viewing a snort alert in crucial mode, it wouldnt' be as obvious that an extracted pcap file is attached to the alert.
 
 
 Analysis Overview
 +++++++++++++++++
 
+The Analysis Overview section will contain the results from every ACE module that performed work on all of the alert observables. In this section, the observables displayed at the root level are the observables that were directly discovered in the data provided to ACE at the time of the alert's creations. Underneath each observable you will find the output of the various ACE modules that ran analysis the respective observable. You may also see some general details about the observable. For example, every ACE email alert will have a root level file observabled named 'email.rfc882'. Under that observable you will see the output of the Email Analysis module. Underneath Email Analysis, you will find many more observables discovered from the modules analysis output, such as email addresses, email conversations, urls, files, etc. Of course, each of those observables will have any useful output from the modules that analyze those observables. For example, if the value of an email_address observable was found in the corporate domain via an LDAP query, you will find a user observable with summary details of the user. All of these analysis sections are clickable, which allows the analyst to view the output of an analysis module in greater detail. The following figure shows the Analysis Overview section of an email, user identification has been removed or obscured.
+
+.. figure:: _static/
+
+   The Analysis Overview section of an email alert
+
+At the bottom of the figure above, notice the 'Live Browser Analysis' section. The Live Browser module renders a visual image of html content in emails for the analyst's convienience.
+
+Scrolling down on the same alert from the example above, we see the 'URL Extraction Analysis' found some url observables. Each of those urls were submitted to ACE's cloudphish engine. The next figure shows that cloudphish discovered detection(s) in its analysis of that first url. We see that a zip file was found and downloaded. Further we see that the respective file analysis modules analyzed that zip file and extracted the exe inside.
+
+.. figure:: _static/
+
+   URL Extraction analysis shows more observables
+
+When viewing the figure below, note the dropdown to the right of those file observables. Expanding that dropdown reveals additional actions you can take with respect to a file observable, actions such as, downloading the file or viewing any availble sandbox analysis for the file.
+
+.. figure:: _static/
+
+   Additional file observable actions
 
 
 Filtering and Grouping
