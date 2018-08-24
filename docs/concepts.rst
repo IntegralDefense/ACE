@@ -85,8 +85,8 @@ Each ACE Engine knows which ACE modules to work with. Modules can perform work f
 - ACE modules automate something that an analyst has previously done manually.
 - Modules, "know what to do" with observables of type X.
 - Modules can do anything you can think of, anything you can automate
-- recursion with limits FTW
+- Introducing recursion with limits, FTW
 
-For example, given observable type 'file', each ACE module that acts on an observable of type file will be called to perform its’ analysis.  From the output of each module’s analysis, ACE will discover and create new observables, which, kicks off more modules to perform analysis.  This recursive process will continue until all observables are discovered, analyzed, and correlated, or, until a specified alert correlation timeout is reached. ACE’s default timeout limit for recursive alert analysis is 15 minutes, however, a warning will be logged if alert analysis exceeds five minutes. These values are configurable. 
+For example, given observable type 'file', each ACE module that acts on an observable of type file will be called to perform its analysis.  From the output of each module’s analysis, ACE will discover and create new observables, which, kicks off more modules to perform analysis.  This recursive process will continue until all observables are discovered, analyzed, and correlated, or, until a specified alert correlation timeout is reached. ACE’s default timeout limit for recursive alert analysis is 15 minutes, however, a warning will be logged if alert analysis exceeds five minutes. These values are configurable. 
 
 Additionally, ACE maintains the relationships between all discovered observables and the 'root' level alert observable(s). The maintenance of those observable relationships allows for the data to be visually presented to the analyst in a contextually intuitive way. 
