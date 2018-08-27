@@ -23,12 +23,17 @@ echo "installing databases..."
 
 mysql -N -B -e 'show databases' > .db_list
 
-for db in saq-production ace-workload brocess email-archive hal9000 cloudphish vt-hash-cache
+for db in ace ace-workload brocess email-archive hal9000 cloudphish vt-hash-cache
 do
 	if ! egrep "^$db\$" .db_list > /dev/null 2>&1
 	then
 		echo "creating database $db"
 		( mysqladmin create $db && mysql --database=$db < sql/$db\_schema.sql ) || fail "unable to install database $db"
+		
+		if [ -e sql/$db\_init.sql ]
+		then
+			mysql --database=$db < sql/$db\_init.sql || fail "unable to initialize database $db"
+		fi
 	fi
 done
 
