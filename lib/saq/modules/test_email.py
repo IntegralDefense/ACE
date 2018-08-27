@@ -5,6 +5,7 @@ import os, os.path
 import shutil
 import socket
 import uuid
+import unittest
 
 import saq, saq.test
 from saq.constants import *
@@ -65,7 +66,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         url_logs = [_ for _ in url_logs.split('\n') if _]
 
         self.assertEquals(len(smtp_logs), 1)
-        self.assertEquals(len(url_logs), 2)
+        self.assertEquals(len(url_logs), 3)
 
         url_fields = url_logs[0].split('\x1e')
         self.assertEquals(len(url_fields), 3)
@@ -121,14 +122,14 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
             # check the index and make sure all the expected values are there
             expected_values = [ ('body_from', b'unixfreak0037@gmail.com'),
-            ('body_to', b'jwdavison@valvoline.com'),
+            ('body_to', b'jwdavison@company.com'),
             ('decoded_subject', b'canary #3'),
-            ('env_to', b'jwdavison@valvoline.com'),
+            ('env_to', b'jwdavison@company.com'),
             ('message_id', b'<CANTOGZsMiMb+7aB868zXSen_fO=NS-qFTUMo9h2eHtOexY8Qhw@mail.gmail.com>'),
             ('subject', b'canary #3'),
             ('url', b'http://tldp.org/LDP/abs/html'),
-            ('url', b'https://www.alienvault.com')]
-            #('url', b'mailto:unixfreak0037@gmail.com')]
+            ('url', b'https://www.alienvault.com'),
+            ('url', b'http://197.210.28.107')]
 
             for field_name, field_value in expected_values:
                 c.execute("SELECT value FROM archive_search WHERE field = %s AND archive_id = %s AND value = %s", 
@@ -186,9 +187,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
             archive_id = row[0]
 
             # check the index and make sure all the expected values are there
-            expected_values = [ ('env_to', b'jwdavison@valvoline.com'),
+            expected_values = [ ('env_to', b'jwdavison@company.com'),
             ('body_from', b'unixfreak0037@gmail.com'),
-            ('body_to', b'jwdavison@valvoline.com'),
+            ('body_to', b'jwdavison@company.com'),
             ('subject', b'canary #1'),
             ('decoded_subject', b'canary #1'),
             ('message_id', b'<CANTOGZuWahvYOEr0NwPELF5ASriGNWjfVsWhMSE_ekiSVw1RbA@mail.gmail.com>'),
@@ -270,7 +271,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         entry = analysis.emails['email_archive'][archive_id]
         self.assertEquals(int(archive_id), entry['archive_id'])
         self.assertEquals('canary #3', entry['subject'])
-        self.assertEquals('jwdavison@valvoline.com', entry['recipient'])
+        self.assertEquals('jwdavison@company.com', entry['recipient'])
         self.assertEquals('<CANTOGZsMiMb+7aB868zXSen_fO=NS-qFTUMo9h2eHtOexY8Qhw@mail.gmail.com>', entry['message_id'])
         self.assertEquals('unixfreak0037@gmail.com', entry['sender'])
         self.assertEquals(len(entry['remediation_history']), 0)
@@ -387,7 +388,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
-        shutil.copy(os.path.join('test_data', 'emails', 'plain.email.rfc822'), 
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
                     os.path.join(root.storage_dir, 'email.rfc822'))
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
@@ -409,15 +410,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertIsNone(email_analysis.env_mail_from)
         self.assertTrue(isinstance(email_analysis.env_rcpt_to, list))
         self.assertEquals(len(email_analysis.env_rcpt_to), 1)
-        self.assertEquals(email_analysis.env_rcpt_to[0], 'dcmonnin@ashland.com')
-        self.assertEquals(email_analysis.mail_from, 'Bill Lewis <bill@everchem.com>')
+        self.assertEquals(email_analysis.env_rcpt_to[0], 'jwdavison@company.com')
+        self.assertEquals(email_analysis.mail_from, 'John Davison <unixfreak0037@gmail.com>')
         self.assertTrue(isinstance(email_analysis.mail_to, list))
         self.assertEquals(len(email_analysis.mail_to), 1)
-        self.assertEquals(email_analysis.mail_to[0], 'Donata Monnin <dcmonnin@ashland.com>')
+        self.assertEquals(email_analysis.mail_to[0], 'jwdavison@company.com')
         self.assertIsNone(email_analysis.reply_to)
-        self.assertEquals(email_analysis.subject, 'Re: -- - RE: Ortho Cresol')
+        self.assertEquals(email_analysis.subject, 'canary #3')
         self.assertEquals(email_analysis.decoded_subject, email_analysis.subject)
-        self.assertEquals(email_analysis.message_id, '<CAOGbF-9Z7_EpDqeG=P560A=DGScjig=ThaXhPSyVb_nueecskA@mail.gmail.com>')
+        self.assertEquals(email_analysis.message_id, '<CANTOGZsMiMb+7aB868zXSen_fO=NS-qFTUMo9h2eHtOexY8Qhw@mail.gmail.com>')
         self.assertIsNone(email_analysis.originating_ip, None)
         self.assertTrue(isinstance(email_analysis.received, list))
         self.assertEquals(len(email_analysis.received), 6)
@@ -426,7 +427,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertIsNone(email_analysis.x_mailer)
         self.assertIsNotNone(email_analysis.body)
         self.assertIsInstance(email_analysis.attachments, list)
-        self.assertEquals(len(email_analysis.attachments), 3)
+        self.assertEquals(len(email_analysis.attachments), 0)
         
     def test_email_007_o365_journal_email_parsing(self):
 
@@ -461,15 +462,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertIsNone(email_analysis.env_mail_from)
         self.assertTrue(isinstance(email_analysis.env_rcpt_to, list))
         self.assertEquals(len(email_analysis.env_rcpt_to), 1)
-        self.assertEquals(email_analysis.env_rcpt_to[0], 'luis.rivera@valvoline.com')
-        self.assertEquals(email_analysis.mail_from, 'Ryan Knowles <ap@consolidateddesign.com>')
+        self.assertEquals(email_analysis.env_rcpt_to[0], 'lulu.zingzing@company.com')
+        self.assertEquals(email_analysis.mail_from, 'Bobbie Fruitypie <ap@someothercompany.com>')
         self.assertTrue(isinstance(email_analysis.mail_to, list))
         self.assertEquals(len(email_analysis.mail_to), 1)
-        self.assertEquals(email_analysis.mail_to[0], '<luis.rivera@valvoline.com>')
+        self.assertEquals(email_analysis.mail_to[0], '<lulu.zingzing@company.com>')
         self.assertIsNone(email_analysis.reply_to)
         self.assertEquals(email_analysis.subject, 'INVOICE PDL-06-38776')
         self.assertEquals(email_analysis.decoded_subject, email_analysis.subject)
-        self.assertEquals(email_analysis.message_id, '<13268020124593518925.93733CB7019D1C46@valvoline.com>')
+        self.assertEquals(email_analysis.message_id, '<13268020124593518925.93733CB7019D1C46@company.com>')
         self.assertIsNone(email_analysis.originating_ip, None)
         self.assertTrue(isinstance(email_analysis.received, list))
         self.assertEquals(len(email_analysis.received), 7)
@@ -484,14 +485,14 @@ class EmailModuleTestCase(ACEModuleTestCase):
     def test_email_008_whitelisting_000_mail_from(self):
 
         import saq
-        whitelist_path = os.path.join('tmp', 'brotex.whitelist')
+        whitelist_path = os.path.join('var', 'tmp', 'brotex.whitelist')
         saq.CONFIG['analysis_module_email_analyzer']['whitelist_path'] = whitelist_path
 
         if os.path.exists(whitelist_path):
             os.remove(whitelist_path)
 
         with open(whitelist_path, 'w') as fp:
-            fp.write('smtp_from:ap@consolidateddesign.com')
+            fp.write('smtp_from:ap@someothercompany.com')
 
         engine = AnalysisEngine()
         engine.enable_module('analysis_module_file_type')
@@ -521,14 +522,14 @@ class EmailModuleTestCase(ACEModuleTestCase):
     def test_email_008_whitelisting_001_mail_to(self):
 
         import saq
-        whitelist_path = os.path.join('tmp', 'brotex.whitelist')
+        whitelist_path = os.path.join('var', 'tmp', 'brotex.whitelist')
         saq.CONFIG['analysis_module_email_analyzer']['whitelist_path'] = whitelist_path
 
         if os.path.exists(whitelist_path):
             os.remove(whitelist_path)
 
         with open(whitelist_path, 'w') as fp:
-            fp.write('smtp_to:luis.rivera@valvoline.com')
+            fp.write('smtp_to:lulu.zingzing@company.com')
 
         engine = AnalysisEngine()
         engine.enable_module('analysis_module_file_type')
@@ -554,6 +555,8 @@ class EmailModuleTestCase(ACEModuleTestCase):
         email_analysis = file_observable.get_analysis(EmailAnalysis)
         self.assertFalse(email_analysis)
 
+    # XXX move this to the site-specific test
+    @unittest.skip
     def test_email_009_live_browser_no_render(self):
 
         # we usually render HTML attachments to emails
