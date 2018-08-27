@@ -39,9 +39,18 @@ apt-get -y install \
 if ! npm -g ls | grep esprima > /dev/null 2>&1
 then 
     npm config set strict-ssl false
-	# TODO deal with proxy settings
-    # sudo npm config set proxy "$http_proxy"
-    # sudo npm config set https-proxy "$https_proxy"
+
+    # npm can't seem to use the env proxy settings
+    if [ ! -z "$http_proxy" ]
+    then
+        npm config set proxy "$http_proxy"
+    fi
+    
+    if [ ! -z "$https_proxy" ]
+    then
+        npm config set https-proxy "$https_proxy"
+    fi
+
     npm -g install esprima || fail "npm package installation failed"
 fi
 

@@ -28,6 +28,17 @@ fi
 cd "${SAQ_HOME}" || { echo "cannot cd to $SAQ_HOME"; exit 1; }
 source installer/common.sh
 
+# check proxy situation
+# TODO maybe allow user to type username/password?
+echo "checking internet access..."
+if ! curl -m 5 'http://www.google.com' > /dev/null 2>&1
+then
+    echo "unable to connect to google -- do you need to configure a proxy?"
+    echo "set your http_proxy, https_proxy and ftp_proxy environment variables and try again"
+    if [ -e /etc/lsb-release ]; then echo "you may also need to configure apt for a proxy"; fi
+    exit 1
+fi
+
 create_ace_dirs || fail "cannot create required directories"
 
 # install the required packages
