@@ -41,7 +41,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         with open(yss_log_path, 'wb') as fp:
             pass
 
-        self.yss_process = Popen([ 'python3', '/home/ace/yara_scanner/yss.py', 
+        self.yss_process = Popen([ 'yss', 
                                    '--base-dir', saq.YSS_BASE_DIR,
                                    '-L', os.path.join('etc', 'unittest_logging.ini'),
                                    '-d', get_yara_rules_dir(), ], 

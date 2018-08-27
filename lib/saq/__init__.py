@@ -392,6 +392,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         os.path.join(SAQ_HOME, 'stats', 'metrics'),
         os.path.join(SAQ_HOME, CONFIG['splunk_logging']['splunk_log_dir']),
         os.path.join(SAQ_HOME, CONFIG['global']['tmp_dir']),
+        os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'], 'logs'),
         os.path.join(SAQ_HOME, maliciousdir) ]:
         try:
             if not os.path.isdir(dir_path):
