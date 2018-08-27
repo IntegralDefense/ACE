@@ -2170,8 +2170,8 @@ class YaraScanner_v3_4(AnalysisModule):
 
     @property
     def base_dir(self):
-        """Base directory of the yara_scanner library."""
-        return self.config['base_dir']
+        """Base directory of the yara_scanner server."""
+        return saq.YSS_BASE_DIR
 
     @property
     def generated_analysis_type(self):

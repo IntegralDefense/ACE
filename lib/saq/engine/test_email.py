@@ -162,9 +162,6 @@ class EmailEngineTestCase(ACEEngineTestCase):
     @clear_log
     def test_email_engine_004_cloudphish_tracking(self):
 
-        # set the decryption password
-        saq.ENCRYPTION_PASSWORD = 'password'
-
         self.reset_cloudphish()
         self.reset_correlation()
         self.reset_email_archive()
@@ -260,7 +257,7 @@ class EmailEngineTestCase(ACEEngineTestCase):
         self.start_engine(cloudphish_engine)
 
         # wait for both to finish
-        wait_for_log_count(log_message, 3)
+        wait_for_log_count(log_message, 3, timeout=15)
     
         cloudphish_engine.stop()
         self.wait_engine(cloudphish_engine)
