@@ -17,3 +17,4 @@ crawlphish.whitelist
 network_semaphore_logging.ini
 gui_logging.ini
 saq.ini
+saq.unittest.ini
