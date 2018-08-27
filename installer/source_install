@@ -121,3 +121,6 @@ select gui in Apache Debug; do
 		Debug ) break ;;
 	esac
 done
+
+source load_environment
+./test
