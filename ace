@@ -3087,6 +3087,61 @@ verify_test_imports_parser = subparsers.add_parser('verify-test-imports',
     help="Verify import of test modules.")
 verify_test_imports_parser.set_defaults(func=verify_test_imports)
 
+def set_encryption_password(args):
+    from saq.crypto import set_encryption_password
+    while True:
+        password = getpass.getpass("Enter the decryption password:")
+        password_2 = getpass.getpass("Re-enter the decryption password for verification:")
+
+        if password != password_2:
+            logging.error("passwords do not match")
+            continue
+
+        break
+
+    set_encryption_password(password)
+    sys.exit(0)
+
+set_encryption_password_parser = subparsers.add_parser('set-encryption-password',
+    help="Sets the password used to encrypt and decrypt archived emails.")
+set_encryption_password_parser.set_defaults(func=set_encryption_password)
+
+def test_encryption_password(args):
+    from saq.crypto import test_encryption_password
+    password = getpass.getpass("Enter the decryption password:")
+    if test_encryption_password(password):
+        logging.info("password OK")
+    else:
+        logging.error("invalid password")
+
+    sys.exit(0)
+
+test_encryption_password_parser = subparsers.add_parser('test-encryption-password',
+    help="Tests the given password to see if it matches what is currently set as the encryption password.")
+test_encryption_password_parser.set_defaults(func=test_encryption_password)
+
+def encrypt_file(args):
+    from saq.crypto import encrypt
+    encrypt(args.source_path, args.target_path)
+    sys.exit(0)
+
+encrypt_file_parser = subparsers.add_parser('encrypt-file',
+    help="Encrypts the given file with the password set with set-encryption-password.")
+encrypt_file_parser.add_argument('source_path', help="The file to encrypt from.")
+encrypt_file_parser.add_argument('target_path', help="The file to saved the decrypted data to.")
+encrypt_file_parser.set_defaults(func=encrypt_file)
+
+def decrypt_file(args):
+    from saq.crypto import decrypt
+    decrypt(args.source_path, args.target_path)
+    sys.exit(0)
+
+decrypt_file_parser = subparsers.add_parser('decrypt-file',
+    help="Decrypts the given file with the password set with set-decryption-password.")
+decrypt_file_parser.add_argument('source_path', help="The file to decrypt from.")
+decrypt_file_parser.add_argument('target_path', help="The file to saved the decrypted data to.")
+decrypt_file_parser.set_defaults(func=decrypt_file)
+
 #def execute_unittests(args):
     #unittest.main(module=saq.test_analysis, exit=False)
     #sys.exit(0)
@@ -3132,54 +3187,18 @@ if __name__ == '__main__':
     if args.provide_decryption_password:
         import tempfile
         from subprocess import Popen, PIPE
+        from saq.crypto import test_encryption_password, get_aes_key
 
-        saq.ENCRYPTION_PASSWORD = getpass.getpass("Enter the decryption password:")
-        # verify that the password is correct
-        t = tempfile.NamedTemporaryFile(delete=False)
-        secret = 'blah blah blah'
-        t.write(secret.encode())
-        t.close()
-        p = Popen(['gpg', '--quiet', '--yes', '--encrypt', '-r', saq.CONFIG['gpg']['encryption_recipient'], 
-                   '-o', t.name], stdout=PIPE, stdin=PIPE, stderr=PIPE)
-        p.stdin.write('{}\n'.format(secret).encode())
-        _stdout, _stderr = p.communicate()
-        p.wait()
+        while True:
+            password = getpass.getpass("Enter the decryption password:")
+            # first check to see if the given password matches the sha256 hash
+            if not test_encryption_password(password):
+                logging.error("invalid encryption password")
+                continue
 
-        if p.returncode != 0:
-            logging.error("gpg encryption returned {}".format(p.returncode))
-            sys.stderr.write(_stderr.decode())
-            try:
-                os.remove(t.name)
-            except:
-                pass
-            sys.exit(1)
+            break
 
-        p = Popen(['gpg', '--no-tty', '-d', '--passphrase-fd', '0', t.name], 
-                  stdout=PIPE, stdin=PIPE, stderr=PIPE)
-        p.stdin.write('{}\n'.format(saq.ENCRYPTION_PASSWORD).encode())
-        _stdout, _stderr = p.communicate()
-        p.wait()
-
-        try:
-            os.remove(t.name)
-        except:
-            pass
-
-        if p.returncode != 0:
-            logging.error("gpg decryption returned {} (wrong password?)".format(p.returncode))
-            sys.stderr.write(_stderr.decode())
-            sys.exit(1)
-
-        _stdout = _stdout.decode()
-        _stdout = _stdout[:-1] # remove the trailing newline gpg puts on standard output
-
-        if _stdout != secret:
-            logging.error("decryption failed (decrypted text does not match input text)")
-            sys.stderr.write("\noriginal: [{}]\n".format(secret))
-            sys.stderr.write("decrypted: [{}]\n".format(_stdout))
-            sys.exit(1)
-
-        logging.debug("decryption password accepted")
+        saq.ENCRYPTION_PASSWORD = get_aes_key(password)
 
     if args.debug_on_error:
         def info(type, value, tb):

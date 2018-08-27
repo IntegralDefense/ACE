@@ -23,7 +23,7 @@
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `workload` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` enum('ACE','EMAIL','HTTP','BROTEX') NOT NULL,
+  `name` enum('ACE','EMAIL','HTTP','BROTEX','UNITTEST') NOT NULL,
   `path` varchar(512) NOT NULL,
   PRIMARY KEY (`id`),
   KEY `index_id_name` (`id`,`name`)

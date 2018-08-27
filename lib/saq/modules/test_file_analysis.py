@@ -16,9 +16,8 @@ from saq.test import *
 from saq.engine.test_engine import AnalysisEngine, TerminatingMarker
 from saq.analysis import Analysis, RootAnalysis
 
-YSS_BASE_DIR = '/opt/saq/yara_scanner'
-# relative to YSS_BASE_DIR
-YARA_RULES_DIR = '/opt/saq/test_data/yara_rules'
+def get_yara_rules_dir():
+    return os.path.join(saq.SAQ_HOME, 'test_data', 'yara_rules')
 
 class FileAnalysisModuleTestCase(ACEModuleTestCase):
     def __init__(self, *args, **kwargs):
@@ -32,25 +31,33 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
     def initialize_yss(self):
 
         # clear existing logs
-        yss_log_path = os.path.join(YSS_BASE_DIR, 'logs', 'unittest_yss.log')
+        yss_log_path = os.path.join(saq.YSS_BASE_DIR, 'logs', 'unittest_yss.log')
         if os.path.exists(yss_log_path):
             try:
                 os.remove(yss_log_path)
             except Exception as e:
                 logging.error("unable to remove yss log {}: {}".format(yss_log_path, e))
 
-        self.yss_process = Popen([ 'python3', './yss.py', 
-                                   '--base-dir', YSS_BASE_DIR,
-                                   '-L', os.path.join(YSS_BASE_DIR, 'etc', 'unittest_logging.ini'),
-                                   '-d', YARA_RULES_DIR, ], 
+        with open(yss_log_path, 'wb') as fp:
+            pass
+
+        self.yss_process = Popen([ 'python3', '/home/ace/yara_scanner/yss.py', 
+                                   '--base-dir', saq.YSS_BASE_DIR,
+                                   '-L', os.path.join('etc', 'unittest_logging.ini'),
+                                   '-d', get_yara_rules_dir(), ], 
                                  stdout=PIPE, stderr=PIPE, 
-                                 universal_newlines=True, cwd=YSS_BASE_DIR)
+                                 universal_newlines=True, cwd=saq.YSS_BASE_DIR)
 
         def _pipe_reader(pipe, buf, marker):
             try:
-                for line in pipe:
+                while True:
+                    line = pipe.readline()
+                    if line == '':
+                        break
+
                     #logging.info("MARKER: {}: {}".format(marker, line.strip()))
                     buf.append(line.strip())
+
             except Exception as e:
                 logging.error("error reading yss_process pipe: {}".format(e))
 
@@ -59,7 +66,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         self.yss_stdout_reader_thread.start()
 
         self.yss_stderr_reader_thread = threading.Thread(target=_pipe_reader, 
-                                                         args=(self.yss_process.stdout, self.yss_stdout_buffer, 'STDERR'))
+                                                         args=(self.yss_process.stdout, self.yss_stderr_buffer, 'STDERR'))
         self.yss_stderr_reader_thread.start()
 
         # wait for yss to start
@@ -79,14 +86,14 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         super().setUp()
     
         # change the yara scanning to point to /opt/saq/yara_scanner
-        saq.CONFIG['analysis_module_yara_scanner_v3_4']['base_dir'] = YSS_BASE_DIR
+        #saq.CONFIG['analysis_module_yara_scanner_v3_4']['base_dir'] = YSS_BASE_DIR
         # change what rules are getting loaded
         existing_rule_dirs = [key for key in saq.CONFIG['yara'].keys() if key.startswith('signature_')]
         for key in existing_rule_dirs:
             del saq.CONFIG['yara'][key]
             
-        saq.CONFIG['yara']['signature_dir_custom'] = '/opt/saq/test_data/yara_rules/custom'
-        saq.CONFIG['yara']['signature_dir_crits'] = '/opt/saq/test_data/yara_rules/crits'
+        saq.CONFIG['yara']['signature_dir_custom'] = 'test_data/yara_rules/custom'
+        saq.CONFIG['yara']['signature_dir_crits'] = 'test_data/yara_rules/crits'
 
     def tearDown(self):
         if self.yss_process:
@@ -94,6 +101,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
                 self.yss_process.terminate()
                 self.yss_process.wait(5)
             except Exception as e:
+                print(self.yss_process.poll())
                 logging.error("unable to terminate yss process {}: {}:".format(self.yss_process.pid, e))
                 try:
                     self.yss_process.kill()
