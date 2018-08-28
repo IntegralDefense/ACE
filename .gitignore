@@ -105,3 +105,10 @@ venv.bak/
 
 # vim
 .*.swp
+
+archive/
+crontab
+load_local_environment
+splunk_logs/
+ssl/
+stats/
