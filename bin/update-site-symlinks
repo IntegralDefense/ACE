@@ -24,6 +24,8 @@ do
 
         if [ ! -e "${link_name}" ]
         then
+            dir_path=$(dirname "${link_name}")
+            if [ ! -d "${dir_path}" ]; then mkdir -p "${dir_path}"; fi
             ln -s ${target} ${link_name} && echo "symlinked ${link_name} to ${target}"
         fi
     done
