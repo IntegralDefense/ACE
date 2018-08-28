@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-cd /opt/saq && source load_environment && ./saq update-crits-cache
+cd /opt/ace && source load_environment && ./ace update-crits-cache
