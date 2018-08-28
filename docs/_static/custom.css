@@ -7,6 +7,10 @@
     content: " ▼";
 }
 
+.strike  {
+  text-decoration: line-through;
+}
+
 .toggle .header.open:before {
     content: " ▲";
 }

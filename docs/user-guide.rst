@@ -31,7 +31,7 @@ All alerts are managed via the queue on the Manage Alerts page. The alert manage
 Expanding Alert Observables
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-On the Manage Alerts page, each alert can be expanded via its dropdown button. Once expanded, all of the observables in the alert can be viewed. The observables are grouped and listed by their observable type. The numbers, in parentheses, at the end of each observable, show a count of how many times ACE has seen that particular observable. Each observable is clickable, and when clicked, ACE will add that observable to its current alert filter. An upcoming section has more on alert `Filtering and Grouping`_.
+On the Manage Alerts page, each alert can be expanded via its dropdown button. Once expanded, all of the observables in the alert can be viewed. The observables are grouped and listed by their observable type. The numbers, in parentheses, show a count of how many times ACE has seen that particular observable. Each observable is clickable, and when clicked, ACE will add that observable to its current alert filter. An upcoming section has more on alert `Filtering and Grouping`_.
 
 .. figure:: _static/expanded-alert-observables-emotet-noEventTag.png
    :alt: expanded alert observables
@@ -141,7 +141,7 @@ On the Manage Alerts page, each alert can be expanded via its dropdown button. O
          - macro_code_snippet (1013)
          - macro_overused_legit_functions (82)
 
-Above, you can click to expand a text based example of an alerts observable structure when an alert is expanded on the Manage Alerts page.
+Above, you can click to expand a text based example of an alerts observable structure when expanded on the Manage Alerts page.
 
 Alert Tags
 ~~~~~~~~~~
@@ -152,19 +152,22 @@ All of an observables tag’s get associated with the respective alert and show 
 Alert Page
 ~~~~~~~~~~
 
+.. role:: strike
+   :class: strike
+
 At the top of each alert page you will see the title of the alert, followed by a table providing the details on where the alert came from and what kind of alert it is. The following fields are present at the top of every alert, underneath the title:
 
     :Company: The company this alert corresponds to, if applicable. Something like: FakeCompany
     :Alert Time: The datetime this alert was created, in YYYY-MM-DD HH:MM:SS format
     :Source: Where this alert came from. Something like: ACE - Mailbox Scanner
     :Instance: The ACE server this alert came from (If you're running a distributed, multi-instance ACE). Something like: ace-fakecompany1
-    :Alert Type: They type of alert this is
+    :Alert Type: The type of alert this is
     :Storage: The path, on the server where all of the alert data is stored. Something like: data/ace-fakecompany1.local/7d5/7d53d3aa-c48d-4534-b7a6-5a4be4e8289e
     :Priority: The estimated priority of the alert
     :Status: The analysis state of the alert. This could be 'Analyzing', 'Delayed', or 'Completed'
     :Detections: The number of detections found on this alert
 
-Next, depending on the alert type, there may be more high-level context information provided. For instance, if it's a mailbox alert, there will be a meta-data summary of the email. Followed by an expandable section to display the raw email headers and then, if email remediation is implemented, email remediation history. Other alerts, such as CRITS or Snort alerts, will have a section showing the raw log results for which the alert was generated. All that being said, every alert will have an `Analysis Overview`_ section. The contextual results of ACE's recusive observable analysis is displayed in the `Analysis Overview`_ section.
+Next, depending on the alert type, there may be more high-level context information provided. For instance, if it's a mailbox alert, there will be a meta-data summary of the email. Followed by an expandable section to display the raw email headers :strike:`and then, if email remediation is implemented, email remediation history`. Other alerts, such as CRITS or Snort alerts, will have a section showing the raw log results for which the alert was generated. All that being said, every alert will have an `Analysis Overview`_ section. The contextual results of ACE's recusive observable analysis is displayed in the `Analysis Overview`_ section.
 
 Views
 +++++
