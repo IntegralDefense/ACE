@@ -49,7 +49,8 @@ for p in \
 	"yara_scanner" \
 	"vxstreamlib" \
 	"urlfinderlib" \
-	"msoffice_decrypt" 
+	"msoffice_decrypt" \
+    "cbinterface"
 do
 	python3 -m pip install $p || fail "unable to install python pip package $p"
 done
