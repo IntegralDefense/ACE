@@ -116,13 +116,6 @@ then
 	openssl req -x509 -newkey rsa:4096 -keyout ssl/web/localhost.key.pem -out ssl/web/localhost.cert.pem -days 365 -nodes -subj '/CN=localhost'
 fi
 
-# create the gpg key used to encrypt the emails for unit testing
-if ! ( gpg --list-keys | grep aceunittest@localhost )
-then
-	sudo rngd -r /dev/urandom
-	gpg --verbose --batch --gen-key etc/gnupg
-fi
-
 echo "How do you want to run the gui?"
 echo "Apache - Run the gui in Apache"
 echo "Debug - Run the gui in debug mode from the command line"
