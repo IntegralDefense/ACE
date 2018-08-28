@@ -1,3 +1,5 @@
 stop
 start
 cleanup
+update-ssdeep
+update-snort-rules

@@ -26,3 +26,9 @@ organization.json
 saq.aws.ini
 saq.dsie.ini
 ssdeep_hashes
+crits_ssdeep/
+
+mysql_defaults.email_archive
+saq.production.ini
+snort/
+yara/
