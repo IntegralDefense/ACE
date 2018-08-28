@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#
+
+#
+# start a yss server for ACE
+#
+
+bin/stop-yss
+
+( cd yss && yss --base-dir=$(pwd) -L etc/logging.ini -d /opt/signatures -b )

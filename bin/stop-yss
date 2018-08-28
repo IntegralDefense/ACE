@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#
+
+#
+# stop the yss server for ACE
+#
+
+if [ -e yss/.yss.pid ]
+then
+    ( cd yss && yss --base-dir=$(pwd) -L etc/logging.ini -k )
+fi
