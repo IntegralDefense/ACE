@@ -44,13 +44,15 @@ then
         saq.engine.test_engine \
         saq.engine.test_email \
         saq.engine.test_ace \
-        saq.engine.test_cloudphish \
         saq.modules.test_asset \
         saq.modules.test_url \
         saq.modules.test_file_analysis \
         saq.modules.test_email \
 
+        # TODO reintroduce these next two somehow
+        #saq.engine.test_cloudphish \
         #saq.test_detection \
+
         #saq.test_pds \
         #saq.modules.test_pds \
         #saq.modules.test_vx \
