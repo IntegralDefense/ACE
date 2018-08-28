@@ -172,34 +172,58 @@ Next, depending on the alert type, there may be more high-level context informat
 Views
 +++++
 
-There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alerts with a lot of observables, however, generally, it's most helpful to view all of an alert's analysis. At the top right of every alert you will see a button to "View All Analysis". Whichever mode you have enabled will be persistent accross your ACE session.
+There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alerts with a lot of observables, however, generally, it's most helpful to view all of an alert's analysis. At the top right of every alert you will see a button to "View All Analysis" or "View Critical Analysis". Whichever mode you have enabled will be persistent accross your ACE session.
 
-Be mindful of these different views, as it's possible for an analyst to miss crucial information if viewing an alert in crucial mode, verse all mode. For instance, if you were viewing a snort alert in crucial mode, it wouldnt' be as obvious that an extracted pcap file is attached to the alert.
+Be mindful of these different views, as it's possible for an analyst to miss helpful information if viewing an alert in critical mode, verse all mode. :strike:`For instance, if you were viewing a snort alert in crucial mode, it wouldnt' be as obvious that an extracted pcap file is attached to the alert.`
 
 
 Analysis Overview
 +++++++++++++++++
 
-The Analysis Overview section will contain the results from every ACE module that performed work on all of the alert observables. In this section, the observables displayed at the root level are the observables that were directly discovered in the data provided to ACE at the time of the alert's creations. Underneath each observable you will find the output of the various ACE modules that ran analysis the respective observable. You may also see some general details about the observable. For example, every ACE email alert will have a root level file observabled named 'email.rfc882'. Under that observable you will see the output of the Email Analysis module. Underneath Email Analysis, you will find many more observables discovered from the modules analysis output, such as email addresses, email conversations, urls, files, etc. Of course, each of those observables will have any useful output from the modules that analyze those observables. For example, if the value of an email_address observable was found in the corporate domain via an LDAP query, you will find a user observable with summary details of the user. All of these analysis sections are clickable, which allows the analyst to view the output of an analysis module in greater detail. The following figure shows the Analysis Overview section of an email, user identification has been removed or obscured.
+The Analysis Overview section will contain the results from every ACE module that performed analysis on an alert's observables. In this section, the observables displayed at the root level are the observables that were directly discovered in the data provided to ACE at the time of the alert's creation. Underneath each observable you will find the output of the various ACE modules that ran analysis the respective observable. You may also see some general details about the observable. For example, every ACE email alert will have a root level file observabled named 'email.rfc882'. Under that observable you will see the output of the Email Analysis module. Underneath Email Analysis, you will find many more observables discovered from the modules analysis output, such as email addresses, email conversations, urls, files, etc. Of course, each of those observables will have any useful output from the modules that analyze those observables. For example, if the value of an email_address observable was found in the corporate domain via an LDAP query, you will find a user observable with summary details of the user. All of these analysis sections are clickable, which allows the analyst to view the output of an analysis module in greater detail. The following figure shows the Analysis Overview section of an email, user identification has been removed or obscured.
 
-.. figure:: _static/
+.. figure:: _static/analysis-overview-jdoe.png
 
    The Analysis Overview section of an email alert
 
 At the bottom of the figure above, notice the 'Live Browser Analysis' section. The Live Browser module renders a visual image of html content in emails for the analyst's convienience.
 
-Scrolling down on the same alert from the example above, we see the 'URL Extraction Analysis' found some url observables. Each of those urls were submitted to ACE's cloudphish engine. The next figure shows that cloudphish discovered detection(s) in its analysis of that first url. We see that a zip file was found and downloaded. Further we see that the respective file analysis modules analyzed that zip file and extracted the exe inside.
+Scrolling down on the same alert from the example above, we see the 'URL Extraction Analysis' found some url observables. Each of those urls were submitted to ACE's cloudphish engine. The next figure shows that cloudphish discovered detection(s) in its analysis of that first url. We see that a zip file was found and downloaded. Further we see that the respective file analysis modules analyzed that zip file and extracted the exe inside. Also, note the dropdown to the right of those file observables. Expanding that dropdown reveals additional actions you can take with respect to a file observable, actions such as, downloading the file or viewing it in a different format.
 
-.. figure:: _static/
+.. figure:: _static/url-extraction-analysis-zip-exe-jdoe.png
 
    URL Extraction analysis shows more observables
 
-When viewing the figure below, note the dropdown to the right of those file observables. Expanding that dropdown reveals additional actions you can take with respect to a file observable, actions such as, downloading the file or viewing any availble sandbox analysis for the file.
-
-.. figure:: _static/
-
-   Additional file observable actions
-
-
 Filtering and Grouping
 ~~~~~~~~~~~~~~~~~~~~~~
+
+On the :ref:`ace-gui-alerts-page`, alerts are filtered by default to show open alerts that are not currently owned by any other analysts. The current filter state is always displayed at the top of the page, in a human readable format. You can select 'Edit Filters' to modify the alert filter and display alerts based on several different conditions. Such as, if you want to see alerts dispositioned as DELIVERY, in the last seven days, by a specific analyst.
+
+Alerts can also be filtered by observables. Conveniently, when `Expanding Alert Observables`_ on the Manage Alerts page you can click any of those observables to add it to the currently defined alert filter. So, with the default filter applied, if you clicked on an md5 observable with value `10EFE4369EA344308416FB59051D5947` then the page would refresh and you'd see that the new filter became: `filter: open alerts AND not owned by others AND with observable type md5 value b'10EFE4369EA344308416FB59051D5947'`.
+
+
+Manual Analysis
+---------------
+
+Via the Manual Analysis page, an analyst can submit an observable for ACE to analyze.
+
+.. _manual-analysis-page:
+.. figure:: _static/gui-manual-analysis.png
+
+   Observables can be submitted for analysis via the Manual Analysis page
+
+By default, the Insert Date is set to the current time and the Description set to 'Manual Correlation'. You should go ahead and change the description to something meaningful. The Target Company will also be set to default, which should be fine for most ACE installations.
+
+Select the type of observable you wish to correlation and then provide the value. Click the Add button to correlate more than one observable type and/or value at a time.
+
+Shortly, after you've submitted your observable(s) for correlation, you will see your alert appear on the Manage Alerts page with the description you provided. The alert status will change to 'Complete' once ACE is done performing its analysis. Currently, you have to manually refresh the Manage Alerts page for status updates.
+
+Events
+------
+
+The Events page provides an interface for managing Event Sentry wiki events. Event Sentry is a powerful intel analysis automation tool. See https://github.com/IntegralDefense/eventsentry.git for more information on Event Sentry.
+
+Metrics
+-------
+
+
