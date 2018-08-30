@@ -61,6 +61,7 @@ done
 if [ ! -e etc/saq.local.ini ]; then cp -a etc/saq.example.ini etc/saq.local.ini || fail "unable to configure saq.local.ini"; fi
 if [ ! -L etc/saq.ini ]; then ln -s saq.local.ini etc/saq.ini || fail "unable to symlink saq.ini"; fi
 if [ ! -e etc/brotex.whitelist ]; then cp -a etc/brotex.whitelist.sample etc/brotex.whitelist || fail "unable to configure brotex.whitelist"; fi
+if [ ! -e etc/startup ]; then cp -a etc/startup.example etc/startup || fail "unable to configure startup"; fi
 
 if grep ACE_DB_USER_PASSWORD etc/saq.ini > /dev/null 2>&1
 then

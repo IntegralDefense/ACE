@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-cd /opt/site && git pull

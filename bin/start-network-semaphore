@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
-export TZ="America/New_York"
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
-./saq --start --daemon -L etc/network_semaphore_logging.ini network-semaphore
+
+python3 ace --start --daemon -L etc/network_semaphore_logging.ini network-semaphore

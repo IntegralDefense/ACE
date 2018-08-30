@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-export SAQ_HOME=/opt/saq
-cd $SAQ_HOME
-bin/stop-orion-engine
-bin/start-orion-engine

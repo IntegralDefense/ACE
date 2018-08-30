@@ -116,3 +116,5 @@ ace.out/
 error_reports/
 load_proxy
 yss/.yss.pid
+backups/
+data/

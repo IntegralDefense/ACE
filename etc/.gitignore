@@ -32,3 +32,4 @@ mysql_defaults.email_archive
 saq.production.ini
 snort/
 yara/
+startup

@@ -1,6 +1,7 @@
 # this is meant to be sourced from bash
 export SAQ_HOME=/opt/ace
-export PATH="$PATH:$SAQ_HOME"
+export PATH="$PATH:$SAQ_HOME:$SAQ_HOME/bin"
+export TZ="America/New_York"
 
 if [ -e "$SAQ_HOME/load_local_environment" ]
 then

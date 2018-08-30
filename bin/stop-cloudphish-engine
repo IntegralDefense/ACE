@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
+
 echo "stopping cloudphish engine"
-python3 saq --stop cloudphish
+python3 ace --stop cloudphish

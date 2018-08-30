@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
+
 echo "stopping brotex engine"
-python3 saq --stop brotex
+python3 ace --stop brotex
