@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-cd /opt/saq && bin/stop && git pull && bin/start

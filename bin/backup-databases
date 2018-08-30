@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+source $(dirname "$0")/common.sh
+cd $SAQ_HOME
+
+if [ ! -e "etc/mysql_defaults" ]
+then
+    echo "missing etc/mysql_defaults"
+    exit 1
+fi
+
+if [ ! -d backups ]
+then
+    mkdir backups
+fi
+
+for db in ace ace-workload brocess email-archive hal9000 cloudphish vt-hash-cache
+do
+    backup_file="backups/$db-$(date '+%Y%m%d').sql"
+    mysqldump --defaults-file=etc/mysql_defaults --quick --single-transaction $db > $backup_file
+    gzip $backup_file
+done

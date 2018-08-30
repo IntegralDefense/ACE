@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-cd $SAQ_HOME
-bin/start-correlation-engine
-bin/start-orion-engine
-bin/start-brotex-engine
-bin/start-email-scanning-engine
-bin/start-http-scanning-engine
-bin/start-carbon-black-engine
