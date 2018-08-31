@@ -2,8 +2,8 @@
 
 if [ -z "${SAQ_HOME}" ]
 then
-	echo "missing env var SAQ_HOME"
-	exit 1
+    echo "missing env var SAQ_HOME"
+    exit 1
 fi
 
 cd "${SAQ_HOME}" || { echo "cannot cd to ${SAQ_HOME}"; exit 1; }
@@ -20,7 +20,8 @@ fi
 if [ "$(readlink etc/saq.ini)" != "saq.unittest.ini" ]
 then
     echo "switching to saq.unittest.ini"
-	rm etc/saq.ini && ln -s saq.unittest.ini etc/saq.ini
+    cp etc/saq.ini etc/saq.ini.saved
+    rm etc/saq.ini && ln -s saq.unittest.ini etc/saq.ini
     if [ "$(readlink etc/saq.ini)" != "saq.unittest.ini" ]
     then
         echo "unable to set config"
@@ -80,4 +81,11 @@ then
     echo "*** ERRORS REPORTED ** "
     echo
     cat error_reports/* 2> /dev/null
+fi
+
+# restore the original saq.ini
+if [ -e etc/saq.ini.saved ]
+then
+    rm -f etc/saq.ini
+    mv etc/saq.ini.saved etc/saq.ini
 fi
