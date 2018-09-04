@@ -145,6 +145,7 @@ class CritsObservableAnalyzer(AnalysisModule):
                 'status': 'Analyzed',
                 'type': 'URI - URL',
                 'value': re.compile('^{}$'.format(re.escape(observable.value)), re.IGNORECASE)}):
+                #logging.debug("MARKER: exact match {}".format(indicator['_id']))
                 indicators.add(str(indicator['_id']))
 
             # for this part we have to parse the URL if we can
@@ -156,7 +157,8 @@ class CritsObservableAnalyzer(AnalysisModule):
                     for indicator in collection.find({
                         'status': 'Analyzed',
                         'type': 'URI - Path',
-                        'value': re.compile(re.escape(parsed_url.path), re.IGNORECASE)}):
+                        'value': re.compile('^{}$'.format(re.escape(parsed_url.path)), re.IGNORECASE)}):
+                        #logging.debug("MARKER: path match {} - {}".format(parsed_url.path, indicator['_id']))
                         indicators.add(str(indicator['_id']))
 
                 # and then look for the hostname/path (with re.IGNORECASE)
@@ -166,6 +168,7 @@ class CritsObservableAnalyzer(AnalysisModule):
                         'status': 'Analyzed',
                         'type': 'URI - Path',
                         'value': re.compile(re.escape('{}{}'.format(parsed_url.netloc, parsed_url.path)), re.IGNORECASE)}):
+                        #logging.debug("MARKER: hostname path match {}".format(indicator['_id']))
                         indicators.add(str(indicator['_id']))
 
             except Exception as e:
