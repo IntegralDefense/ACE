@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-cd /opt/saq || exit 1
-source /opt/saq/load_environment
+cd /opt/ace || exit 1
+source load_environment
 
-find -L cloudphish -type f -mtime +7 -delete
-find -L cloudphish_cache -type f -mtime +3 -delete
-
-db_name=$(sed -ne '/^\[database_cloudphish/,/^\[/ p' etc/saq.ini | awk '/^database/ { print $3 }')
-if [ -z "$db_name" ]
+if [ -d cloudphish_cache ]
 then
-    echo "cannot find database name for cloudphish"
-    exit 1
+    find -L cloudphish_cache -type f -mtime +3 -delete
 fi
 
-mysql --database=$db_name < sql/cleanup_cloudphish.sql
+if egrep '^cloudphish$' etc/startup > /dev/null 2>&1
+then
+    find -L cloudphish -type f -mtime +7 -delete
+
+    db_name=$(sed -ne '/^\[database_cloudphish/,/^\[/ p' etc/saq.ini | awk '/^database/ { print $3 }')
+    if [ -z "$db_name" ]
+    then
+        echo "cannot find database name for cloudphish"
+        exit 1
+    fi
+
+    mysql --defaults-file=etc/mysql_defaults --database=$db_name < sql/cleanup_cloudphish.sql
+fi
