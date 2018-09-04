@@ -31,6 +31,7 @@ apt-get -y install \
     python3-pip \
 	poppler-utils \
     rng-tools \
+    memcached \
     mysql-server || fail "package installation failed"
 
 # things that have been removed

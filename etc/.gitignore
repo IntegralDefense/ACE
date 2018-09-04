@@ -19,6 +19,7 @@ gui_logging.ini
 saq.ini
 saq.unittest.ini
 brotex.whitelist
+saq_apache.conf
 
 carbon_black.auth
 mysql_defaults
@@ -30,6 +31,7 @@ crits_ssdeep/
 
 mysql_defaults.email_archive
 saq.production.ini
+saq.shared.ini
 snort/
 yara/
 startup
