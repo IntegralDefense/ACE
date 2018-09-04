@@ -1552,6 +1552,32 @@ test_database_parser = subparsers.add_parser('test-database',
     help="Run tests on the database.")
 test_database_parser.set_defaults(func=test_database)
 
+def test_database_connections(args):
+    import saq
+    from saq.database import get_db_connection
+
+    for key in saq.CONFIG.keys():
+        if key.startswith('database_'):
+            if not saq.CONFIG[key]['hostname'] \
+            or not saq.CONFIG[key]['database'] \
+            or not saq.CONFIG[key]['username'] \
+            or not saq.CONFIG[key]['password']:
+                logging.info("skipping {}".format(key))
+                continue
+
+            db_name = key[len('database_'):]
+            logging.info("trying {}...".format(db_name))
+            with get_db_connection(db_name) as db:
+                c = db.cursor()
+                c.execute("SELECT 1")
+                row = c.fetchone()
+
+    sys.exit(0)
+
+test_database_connections_parser = subparsers.add_parser('test-database-connections',
+    help="Test the connections to all configured databases.")
+test_database_connections_parser.set_defaults(func=test_database_connections)
+
 def test_network_semaphore(args):
     from saq.network_semaphore import NetworkSemaphoreClient
     import time
