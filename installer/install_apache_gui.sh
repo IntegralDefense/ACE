@@ -25,6 +25,7 @@ rm ~/.mod_wsgi-express.output
 sudo a2enmod wsgi_express
 sudo a2enmod ssl
 sudo a2ensite default-ssl
+cp /opt/ace/etc/saq_apache.example.conf /opt/ace/etc/saq_apache.conf
 sudo ln -s /opt/ace/etc/saq_apache.conf /etc/apache2/sites-available/ace.conf && \
 sudo a2ensite ace && \
 sudo systemctl restart apache2.service
