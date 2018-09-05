@@ -462,6 +462,9 @@ class ArchiveAnalysis(Analysis):
 
         return None
 
+# 2018-02-19 12:15:48          319534300    299585795  155 files, 47 folders
+Z7_SUMMARY_REGEX = re.compile(rb'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+\d+\s+\d+\s+(\d+)\s+files,\s+\d+\s+folders.*?')
+
 class ArchiveAnalyzer(AnalysisModule):
     def verify_environment(self):
         self.verify_config_exists('max_file_count')
@@ -604,7 +607,7 @@ class ArchiveAnalyzer(AnalysisModule):
             is_office_document |= (ole_object_regex.search(stdout) is not None)
                 
         else:
-            p = Popen(['7z', '-y', '-pinfected', 't', local_file_path], stdout=PIPE, stderr=PIPE)
+            p = Popen(['7z', '-y', '-pinfected', 'l', local_file_path], stdout=PIPE, stderr=PIPE)
             try:
                 (stdout, stderr) = p.communicate(timeout=self.timeout)
             except TimeoutExpired as e:
@@ -616,8 +619,12 @@ class ArchiveAnalyzer(AnalysisModule):
 
             count = 0
             for line in stdout.split(b'\n'):
-                if line.startswith(b'Testing'):
-                    count += 1
+                m = Z7_SUMMARY_REGEX.match(line)
+                if m:
+                    count = int(m.group(1))
+
+                #if line.startswith(b'Testing'):
+                    #count += 1
 
                 if b'ppt/slides/_rels' in line:
                     is_office_document = True
