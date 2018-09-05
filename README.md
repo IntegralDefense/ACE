@@ -1,5 +1,21 @@
 # ACE - Analysis Correlation Engine
 
+ACE automates data correlation and analysis for an intuitive presentation to security analysts so a quick, high confidence disposition can be made. ACE does not automate the analyst away, instead, ACE makes the analyst's job easier by automating as much as possible for the analyst. This way, the analyst can quickly and accurately disposition alerts. The analyst's reduction in time-to-disposition means that a much larger number of alerts can be work in a day, and when combined with hunting and tuning a very broad detection net can be cast.
+
+ACE ..
++ is an automated, recursive analysis and correlation system
++ is an email scanner
++ presents data intuitively
++ greatly reduces time-to-disposition
++ prevents alert fatigue
+
+ACE is NOT ..
++ a SIEM!
+
+ACE is a system for automating the orginary, manual, repeative, and redundant security analyst tasks, in such a way, as to present the security analyst all of the right data needed to give a quick, high considence disposition.
+
+
+
 ![Analyst using ACE](analyst_on_ace.png)
 
 John Davison gave a talk on the development of this tool set at Bsides Cincinnati in 2015. You can see his talk below.
