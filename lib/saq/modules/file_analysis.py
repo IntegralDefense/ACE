@@ -2113,7 +2113,7 @@ class PDFTextAnalyzer(AnalysisModule):
             return False
         
         if len(analysis.stderr) > 0:
-            logging.warning("pdfparser returned errors for {}".format(local_file_path))
+            logging.debug("pdftotext returned errors for {}".format(local_file_path))
 
         # add the output file as a new file to scan
         # the FILE type indicators are relative to the alert storage directory
