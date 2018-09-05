@@ -463,7 +463,7 @@ class ArchiveAnalysis(Analysis):
         return None
 
 # 2018-02-19 12:15:48          319534300    299585795  155 files, 47 folders
-Z7_SUMMARY_REGEX = re.compile(rb'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+\d+\s+\d+\s+(\d+)\s+files,\s+\d+\s+folders.*?')
+Z7_SUMMARY_REGEX = re.compile(rb'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+\d+\s+\d+\s+(\d+)\s+files.*?')
 
 class ArchiveAnalyzer(AnalysisModule):
     def verify_environment(self):
@@ -537,6 +537,7 @@ class ArchiveAnalyzer(AnalysisModule):
         # we don't know it anyways
 
         if is_rar_file:
+            logging.debug("using unrar to extract files from {}".format(local_file_path))
             p = Popen(['unrar', 'la', local_file_path], stdout=PIPE, stderr=PIPE)
             try:
                 (stdout, stderr) = p.communicate(timeout=self.timeout)
@@ -563,6 +564,7 @@ class ArchiveAnalyzer(AnalysisModule):
                 count += 1
 
         elif is_zip_file:
+            logging.debug("using unzip to extract files from {}".format(local_file_path))
             p = Popen(['unzip', '-l', '-P', 'infected', local_file_path], stdout=PIPE, stderr=PIPE)
             try:
                 (stdout, stderr) = p.communicate(timeout=self.timeout)
@@ -607,6 +609,7 @@ class ArchiveAnalyzer(AnalysisModule):
             is_office_document |= (ole_object_regex.search(stdout) is not None)
                 
         else:
+            logging.debug("using 7z to extract files from {}".format(local_file_path))
             p = Popen(['7z', '-y', '-pinfected', 'l', local_file_path], stdout=PIPE, stderr=PIPE)
             try:
                 (stdout, stderr) = p.communicate(timeout=self.timeout)
