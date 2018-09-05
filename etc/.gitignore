@@ -31,7 +31,11 @@ crits_ssdeep/
 
 mysql_defaults.email_archive
 saq.production.ini
+saq.qa.ini
 saq.shared.ini
 snort/
 yara/
 startup
+validation_hash
+FLAG_EXTRACT_ARCHIVES
+crits-ssdeep/
