@@ -13,7 +13,7 @@
 for site_dir in /opt/site /opt/site_common
 do
     if [ ! -d "${site_dir}" ]; then continue; fi
-    find "${site_dir}" -type f -ipath '*/opt/ace/*' | while read target
+    find "${site_dir}" -type f -ipath '*/opt/ace/*' ! -ipath '*.swp' | while read target
     do
         link_name="${target#${site_dir}}"
         if [ -e "${link_name}" ] && [ ! -L "${link_name}" ]
