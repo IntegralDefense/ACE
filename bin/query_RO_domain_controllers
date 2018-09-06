@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-export SAQ_HOME=/opt/saq
-
 if [ -z "$SAQ_HOME" ]
 then
     echo "missing env var SAQ_HOME"
