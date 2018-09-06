@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-cd /opt/saq
+cd /opt/ace
 source load_environment
-export PATH="$PATH:/usr/local/bin"
+
+echo "executing bin/query_domain_admins"
 bin/query_domain_admins
+echo "executing bin/query_domain_controllers"
 bin/query_domain_controllers
+echo "bin/query_RO_domain_controllers"
 bin/query_RO_domain_controllers
