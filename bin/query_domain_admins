@@ -35,7 +35,7 @@ then
             fi
 
             echo "sending alert"
-            ./saq --force-alerts correlate -d ace.domain_admins --description 'Domain Admin Account Added Or Deleted' --comment 'A Domain Admin account has been added or deleted from active directory.' --alert ${user_list} --disable-all
+            ./ace --force-alerts correlate -d ace.domain_admins --description 'Domain Admin Account Added Or Deleted' --comment 'A Domain Admin account has been added or deleted from active directory.' --alert ${user_list} --disable-all
 
             if [ -d ace.domain_admins ]
             then
