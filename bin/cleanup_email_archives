@@ -32,7 +32,7 @@ find -L archive/email/$hostname -mindepth 2 -maxdepth 2 -type f -mtime +90 | whi
 do
     # determine the md5 of the file, which is the filename
     file_name=$(basename $email)
-    md5=${file_name/.gz.gpg/}
+    md5=${file_name/.gz.e/}
     #echo "server id $server_id md5 $md5"
 
     sql="DELETE FROM archive WHERE server_id = $server_id AND md5 = UNHEX('$md5');"
