@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 url_or_file="$1"
 output="$2"
-remote_server="${3:-ace-render1.local}"
+remote_server="${3:-rendersandbox1.local}"
 
 remote_dir=$(ssh $remote_server mktemp --tmpdir=/home/cybersecurity/tmp -d)
 echo "remote directory: $remote_dir"
