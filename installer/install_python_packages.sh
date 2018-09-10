@@ -45,6 +45,7 @@ for p in \
 	"python-magic" \
 	"oletools" \
 	"pcodedmp" \
+    "Pillow" \
 	"splunklib" \
 	"yara_scanner" \
 	"vxstreamlib" \
