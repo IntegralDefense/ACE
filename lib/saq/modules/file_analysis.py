@@ -653,7 +653,10 @@ class ArchiveAnalyzer(AnalysisModule):
                     local_file_path, count, self.max_file_count))
                 return False
 
-        logging.debug("extracting {} files from archive {}".format(count, local_file_path))
+        if count == 0:
+            return False
+
+        logging.info("extracting {} files from archive {}".format(count, local_file_path))
 
         # we need a place to store these things
         extracted_path = '{}.extracted'.format(local_file_path).replace('*', '_') # XXX need a normalize function
