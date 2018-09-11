@@ -92,7 +92,7 @@ then
 	sudo mysql < sql/create_unittest_db_user.exec.sql && rm sql/create_unittest_db_user.exec.sql
 fi
 
-if grep SAQ_SECRET_KEY etc/saq.ini > /dev/null 2>&1
+if grep ACE_SECRET_KEY etc/saq.ini > /dev/null 2>&1
 then
 	echo "generating random secret key for flask"
 	tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1 > .gui_secret_key.sed
