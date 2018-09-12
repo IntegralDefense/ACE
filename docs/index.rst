@@ -8,30 +8,45 @@ ACE: Analysis Correlation Engine
 
 Release v\ |release|.
 
-ACE is the implementation of a proven detection strategy, a framework for automating analysis and correlation, a central platform to launch incident response and remediation, and a powerful tool for generating and utalizing intelligence. ACE is built for the security analyst, and intuitively presents data in a way that allows for a quick, high confidence disposition.
+ACE **is NOT** a SIEM.
 
-#. A detection platform
-#. A framework for automating analysis and correlation
-#. A remediation and response platform
-#. An intelligence generating machine
-#. A tool for intuitively presenting alerts to security analysts
+ACE **is** ..
 
-John Davison gave a talk on the development of this tool set at Bsides Cincinnati in 2015. You can see his talk on YouTube at https://youtu.be/okMkF-NYCHk
+* an email scanner
+* a detection tool set and platform
+* an automation framework
+* a recursive file scanner
+* a URL crawler and cacher
+* a system for automated, recursive, data analysis and correlation
+* and more..
 
+Built for the information security team, ACE is the implementation of a proven detection strategy, a framework for automating analyst tasks and activities, a central platform to launch and manage incident response and remediation activites, an email scanner, and much more.
+
+ACE's core strength is the automation of the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data, in such a way, as to present security analysts with all the right data needed to give a quick, high confidence disposition.
+
+Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase their attack surface coverage, all while utilizing the same amount of analyst time and practically eliminating alert fatigue.
 
 Major Features
 --------------
 
-- Recursive Correlation & Analysis
-- Intuitive Alert Presentation
-- Modular Design
++ Email Scanning
++ Recursive File Scanning
++ URL Crawling and Content Caching
++ Intuitive Alert Presentation
++ Recursive Data Analysis & Correlation
++ Central Analyst Interface
++ Event management
++ Intel Ingestion
++ Modular, bolt-on Design
+
+.. image:: _static/analyst_on_ace.png
 
 .. toctree::
    :maxdepth: 3
    :caption: Contents:
 
    installation
-   getting-started
+   analyst-walkthrough
    concepts
    user-guide
    admin-guide
