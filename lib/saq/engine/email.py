@@ -60,6 +60,14 @@ class EmailScanningEngine(SSLNetworkServer, MySQLCollectionEngine, Engine):
 
     def initialize_collection(self, *args, **kwargs):
         super().initialize_collection(*args, **kwargs)
+        
+        # TODO is this the right place to check this?
+        if not os.path.isdir(self.bro_smtp_dir):
+            try:
+                os.makedirs(self.bro_smtp_dir)
+            except Exception as e:
+                logging.error("unable to create directory {}: {}".format(self.bro_smtp_dir))
+            
         self.start_bro_consumer()
 
     def start_bro_consumer(self):
@@ -108,7 +116,6 @@ class EmailScanningEngine(SSLNetworkServer, MySQLCollectionEngine, Engine):
                 except Exception as e:
                     logging.error("unable to delete {}: {}".format(file_path, e))
 
-        logging.info("sleeping for {} seconds".format(self.collection_frequency))
         time.sleep(self.collection_frequency)
 
     def bro_consumer_process(self, target_file_path):
