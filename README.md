@@ -1,27 +1,31 @@
 # ACE - Analysis Correlation Engine
 
-ACE automates data correlation and analysis for an intuitive presentation to security analysts so a quick, high confidence disposition can be made. ACE does not automate the analyst away, instead, ACE makes the analyst's job easier by automating as much as possible for the analyst. This way, the analyst can quickly and accurately disposition alerts. The analyst's reduction in time-to-disposition means that a much larger number of alerts can be work in a day, and when combined with hunting and tuning a very broad detection net can be cast.
+ACE **_is NOT_** a SIEM.
 
-ACE ..
-+ is an automated, recursive analysis and correlation system
-+ is an email scanner
-+ presents data intuitively
-+ greatly reduces time-to-disposition
-+ prevents alert fatigue
+ACE **_is_** ..
+* an email scanner
+* a detection tool set
+* an automation framework
+* a recursive file scanner
+* a URL crawler and cacher
+* an automated, recursive, data analysis and correlation system
+* and more..
 
-ACE is NOT ..
-+ a SIEM!
+ACE is a system for automating the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data, in such a way, as to present security analysts with all the right data needed to give a quick, high confidence disposition.
 
-ACE is a system for automating the orginary, manual, repeative, and redundant security analyst tasks, in such a way, as to present the security analyst all of the right data needed to give a quick, high considence disposition.
+### Major Features
 
++ email scanning
++ recursive file scanning
++ URL crawling and content caching
++ intuitive presentation
++ recursive data analysis and correlation
++ modular, bolt-on design
++ Central and singular interface
++ Event management
++ Intel ingestion
 
-
-![Analyst using ACE](analyst_on_ace.png)
-
-John Davison gave a talk on the development of this tool set at Bsides Cincinnati in 2015. You can see his talk below.
-[![Automated Detection Strategies](http://img.youtube.com/vi/okMkF-NYCHk/0.jpg)](https://youtu.be/okMkF-NYCHk)
-
-## Super fast How-To
+## The Super Fast, Getting Started
 1. Clean Ubuntu 18 install.
 2. Create username/group ace/ace.
 3. Add ace to sudo.
@@ -33,6 +37,21 @@ John Davison gave a talk on the development of this tool set at Bsides Cincinnat
 8. `./ace add-user username email_address`
 9. Goto https://127.0.0.1:5000/ace/ or what IP address you're using.
 
+
+## Built for the InfoSec Team
+
+Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase their attack surface coverage, all while utilizing the same amount of analyst time and practically eliminating alert fatigue.
+
+![Analyst using ACE](docs/_static/analyst_on_ace.png)
+
+## Philosophy
+
+For a more in-depth understanding of the philosophy behind ACE, see the talk that John Davison gave on the development of the ACE tool set at Bsides Cincinnati in 2015.
+
+[![Automated Detection Strategies](http://img.youtube.com/vi/okMkF-NYCHk/0.jpg)](https://youtu.be/okMkF-NYCHk)
+
+
 ## Documentation
 
 View ACE's full documentaion here: [https://seanm17-ace.readthedocs.io/en/latest/](https://seanm17-ace.readthedocs.io/en/latest/)
+
