@@ -20,7 +20,7 @@ ACE **is** ..
 * a system for automated, recursive, data analysis and correlation
 * and more..
 
-Built for the information security team, ACE is the implementation of a proven detection strategy, a framework for automating analyst tasks and activities, a central platform to launch and manage incident response and remediation activites, an email scanner, and much more.
+Built for the information security team, ACE is the implementation of a proven detection strategy, a framework for automating analyst tasks and methods, a central platform to launch and manage incident response and remediation activites, an email scanner, and much more.
 
 ACE's core strength is the automation of the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data, in such a way, as to present security analysts with all the right data needed to give a quick, high confidence disposition.
 
@@ -46,7 +46,7 @@ Major Features
    :caption: Contents:
 
    installation
-   analyst-walkthrough
+   analyst-orientation
    concepts
    user-guide
    admin-guide
