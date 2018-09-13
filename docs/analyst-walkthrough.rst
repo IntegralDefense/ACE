@@ -1,2 +1,0 @@
-Analyst Orientation
-===================

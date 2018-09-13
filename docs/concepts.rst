@@ -8,7 +8,10 @@ Observables
 
 Observables are artifacts or meta data that an analyst can and normally would take note of during an investigation. For example, an analyst working a snort alert may discover an IP address of interest. That IP address would be an observable. Likewise, an email message id could be an observable, or a username, hostname, etc. Just like the analyst working an alert, ACE takes every observable it finds when performing alert analysis and correlates those observables with all available data sources. ACE’s correlation reduces and simplifies the analysts workload by providing the analyst with as much available context as reasonably possible.
 
+.. _observable-table:
+
 Currently defined ACE observables:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ==================  ===================================================================================================
 Observable Type     Description
