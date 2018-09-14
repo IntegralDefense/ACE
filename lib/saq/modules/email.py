@@ -1684,6 +1684,14 @@ class EmailArchiveAction(PostAnalysisModule):
         analysis.details = archive_path
         return True
 
+    @property
+    def maintenance_frequency(self):
+        return 60 # execute every 60 seconds
+
+    def execute_maintenance(self):
+        from saq.email import maintain_archive
+        maintain_archive()
+
 class EmailConversationFrequencyAnalysis(Analysis):
     """How often does this external person email this internal person?"""
     def initialize_details(self):
