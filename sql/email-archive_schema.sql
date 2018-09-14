@@ -1,6 +1,6 @@
 -- MySQL dump 10.13  Distrib 5.5.53, for debian-linux-gnu (x86_64)
 --
--- Host: localhost    Database: email-archive-ash-v2
+-- Host: localhost    Database: email-archive-vvv-v3
 -- ------------------------------------------------------
 -- Server version	5.5.53-0ubuntu0.14.04.1
 
@@ -26,10 +26,12 @@ CREATE TABLE `archive` (
   `archive_id` int(11) NOT NULL AUTO_INCREMENT,
   `server_id` int(11) NOT NULL,
   `md5` binary(16) NOT NULL,
+  `insert_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`archive_id`),
   UNIQUE KEY `server_id` (`server_id`,`md5`),
+  KEY `idx_insert_date` (`insert_date`),
   CONSTRAINT `fk_archive_1` FOREIGN KEY (`server_id`) REFERENCES `archive_server` (`server_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=7664531 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=2176919 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -66,7 +68,7 @@ CREATE TABLE `archive_search` (
   UNIQUE KEY `entry_id_UNIQUE` (`entry_id`),
   KEY `archive_id` (`archive_id`),
   KEY `field_value` (`field`,`value`(767)) KEY_BLOCK_SIZE=256
-) ENGINE=InnoDB AUTO_INCREMENT=183032952 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=5014 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -81,7 +83,7 @@ CREATE TABLE `archive_server` (
   `hostname` varchar(256) NOT NULL,
   PRIMARY KEY (`server_id`),
   UNIQUE KEY `hostname` (`hostname`)
-) ENGINE=InnoDB AUTO_INCREMENT=96 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=118 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -93,4 +95,4 @@ CREATE TABLE `archive_server` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2018-08-24 14:36:21
+-- Dump completed on 2018-09-14 11:13:56
