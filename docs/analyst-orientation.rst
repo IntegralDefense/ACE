@@ -39,6 +39,7 @@ Alert Dispositioning
 When making a determination about an Alert, there is a categorization model for Anaylsts to follow called Dispositioning. The Disposition model that ACE uses is based on Lockheed Martin's `Cyber Kill Chain <https://www.lockheedmartin.com/en-us/capabilities/cyber/cyber-kill-chain.html>`_ |reg| model for identifing and describing the stages of an adversaires attack. The table below describes each of the different dispositions used by ACE.
 
 .. _ace-dispositions:
+.. _dispositioned:
 
 +---------------------+--------------------------------------------------------------------------------------------------------------+
 |  Disposition        |                                       Description / Example                                                  |
@@ -113,9 +114,9 @@ When making a determination about an Alert, there is a categorization model for 
 | COMMAND_AND_CONTROL | An attacker was able to communicate between their control system and a compromised asset. The adversary has  |
 |                     | been able to establish a control channel with an asset.                                                      |
 |                     |                                                                                                              |
-|                     | + A phish is DELIVERED to an inbox and a user opens a malicious word document that was attached. The word    |
-|                     | document EXPLOITS a vulnerability and leads to the INSTALLATION of malware. The malware is able to           |
-|                     | communicate back to the attackers COMMAND_AND_CONTROL server.                                                |
+|                     | Example Scenario: A phish is DELIVERED to an inbox and a user opens a malicious word document that was       |
+|                     | attached. The word document EXPLOITS a vulnerability and leads to the INSTALLATION of malware. The malware is|
+|                     | able to communicate back to the attackers COMMAND_AND_CONTROL server.                                        |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
 | EXFIL               | A form of **action on objectives** where an objective is an adversaries goal for attacking. EXFIL indicates  |
 |                     | the loss of something important.                                                                             |
@@ -152,9 +153,36 @@ Metrics          For creating and tracking metrics from the data ACE generates
 ===============  ===============
 
 
-Managing Alerts
----------------
+Alert Management
+----------------
 
-Now we're getting somewhere. ACE Alerts will queue up on the Manage Alerts page. ACE 
+ACE Alerts will queue up on the Manage Alerts page. By default, only alerts that are open (not dispositioned_) and not owned by another analyst are displayed. When working an alert, analysts should take ownership of it to prevent other analysts from starting to work on the same alert. This prevents re-work and saves analyst time. You can take ownership of one or more Alerts, on the Manage Alerts page, by checking Alert checkboxes and clicking the 'Take Ownership' button. You can also take ownership of an Alert when viewing an individual Alert. Below is an example of the Manage Alerts page with thirty four open, un-owned Alerts.
 
-Alerts are queued up on the 'Manage Alerts' page. By default, only alert that are open (not dispositioned
+.. _manage-alerts-page:
+.. figure:: _static/ACE-gui-medium.png
+
+Quick View Observables
+~~~~~~~~~~~~~~~~~~~~~~
+
+On the Manage Alerts page, each alert can be expanded via its dropdown button. Once expanded, all of the observables in the alert can be viewed. The observables are grouped and listed by their observable type. The numbers, in parentheses, show a count of how many times ACE has seen that observable. Each observable is clickable, and when clicked, ACE will add that observable to the current alert filter. You don't need to worry about Alert filtering to work Alerts, however, the :ref:`Filtering and Grouping <filtering and grouping>` section covers Alert filtering. 
+
+.. figure:: _static/expanded-alert-observables-emotet-noEventTag.png
+   :alt: expanded alert observables
+
+   An expanded alert shows it observables
+
+Alert Page Overview
+~~~~~~~~~~~~~~~~~~~
+
+Once an Alert is opened, the full analysis results will be displayed. It's a good idea to go ahead and view all of the Alert's analysis.
+
+Views
++++++
+
+There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alerts with a l
+ot of observables, however, generally, it's most helpful to view all of an alert's analysis. At the top right of every alert you will see a button to "View All Analysis" or "View Critical Analysis". Whichever mode you have enabled will be
+persistent across your ACE session.
+
+Be mindful of these different views, as it's possible for an analyst to miss helpful information if viewing an alert in critical mode, verse all mode.
+
+

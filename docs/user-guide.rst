@@ -194,6 +194,8 @@ Scrolling down on the same alert from the example above, we see the 'URL Extract
 
    URL Extraction analysis shows more observables
 
+.. _filtering and grouping:
+
 Filtering and Grouping
 ~~~~~~~~~~~~~~~~~~~~~~
 
