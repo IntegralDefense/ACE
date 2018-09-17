@@ -127,5 +127,10 @@ select gui in Apache Debug; do
 	esac
 done
 
-source load_environment
-./test
+echo "Do you want to run the unit tests? This is not a required step."
+select yn in Yes No; do
+    case ${yn} in
+        Yes ) source load_environment ; ./test ;;
+        No ) break ;;
+    esac
+done
