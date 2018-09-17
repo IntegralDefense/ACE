@@ -82,10 +82,3 @@ then
     echo
     cat error_reports/* 2> /dev/null
 fi
-
-# restore the original saq.ini
-if [ -e etc/saq.ini.saved ]
-then
-    rm -f etc/saq.ini
-    mv etc/saq.ini.saved etc/saq.ini
-fi
