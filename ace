@@ -3202,12 +3202,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # where is ACE?
-    saq_home = '/opt/saq'
+    saq_home = '/opt/ace' # default installation directory
     if 'SAQ_HOME' in os.environ:
-        saq_home = os.environ['SAQ_HOME']
+        saq_home = os.environ['SAQ_HOME'] # should be in this env variable
     if args.saq_home is not None:
-        saq_home = args.saq_home
+        saq_home = args.saq_home # otherwise pull it from the command line
 
+    # XXX I would like to get rid of this
     # adjust search path
     if args.saq_home is not None:
         sys.path.append(os.path.join(args.saq_home, 'lib'))

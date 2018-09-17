@@ -222,6 +222,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         sys.stderr.write("invalid root SAQ directory {0}\n".format(SAQ_HOME)) 
         sys.exit(1)
 
+    # XXX not sure we need this SAQ_RELATIVE_DIR anymore -- check it out
     # this system was originally designed to run out of /opt/saq
     # later we modified to run out of anywhere for command line correlation
     # when running the GUI in apache you have no control over the current working directory
@@ -231,7 +232,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     SAQ_RELATIVE_DIR = os.getcwd()
     if relative_dir:
         SAQ_RELATIVE_DIR = relative_dir
-
 
     # load configuration file
     # defaults to $SAQ_HOME/etc/saq.ini
