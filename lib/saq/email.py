@@ -1,6 +1,9 @@
 # vim: sw=4:ts=4:et:cc=120
 
 import logging
+import os
+import os.path
+import socket
 
 import saq
 from email.utils import parseaddr
@@ -163,3 +166,60 @@ def search_archive(source, message_ids, excluded_emails=[]):
                 'successful': _successful})
 
     return _buffer
+
+def maintain_archive(verbose=False):
+    """Deletes archived emails older than what is configured as [analysis_module_email_archiver] expiration_days."""
+
+    _log = logging.debug
+    if verbose: 
+        _log = logging.info
+
+    hostname = socket.gethostname()
+    section = saq.CONFIG['analysis_module_email_archiver']
+    if not section.getboolean('enabled'):
+        _log("email archives are not enabled")
+        return
+
+    expiration_days = section.getint('expiration_days')
+    archive_dir = section['archive_dir']
+    
+    # get our current server id
+    with get_db_connection('email_archive') as db:
+        c = db.cursor()
+        c.execute("SELECT server_id FROM archive_server WHERE hostname = %s", (hostname,))
+        row = c.fetchone()
+        server_id = row[0]
+
+        _log("searching for expired emails for {}({}) older than {} days".format(hostname, server_id, expiration_days))
+
+        while True:
+
+            # get a list of all the emails on this server that are older than N days
+            # we'll delete in batches of 1K
+            
+            c.execute("SELECT archive_id, LOWER(HEX(md5)) FROM archive WHERE insert_date < NOW() - INTERVAL %s DAY LIMIT 1024", 
+                     ( expiration_days,))
+            results = c.fetchall()
+
+            if not results:
+                _log("no more emails have expired")
+                break
+
+            logging.info("removing {} expired emails".format(len(results)))
+
+            for archive_id, md5 in results:
+                # delete the file if it exists on disk
+                target_path = os.path.join(archive_dir, hostname, md5[0:3], '{}.gz.e'.format(md5))
+
+                if not os.path.exists(target_path):
+                    logging.warning("expired archive path {} no longer exists".format(target_path))
+                else:
+                    try:
+                        os.remove(target_path)
+                    except Exception as e:
+                        logging.error("unable to delete {}: {}".format(target_path, e))
+
+            # and then clear these entries out of the database
+            sql = "DELETE FROM archive WHERE archive_id IN ( {} )".format(','.join([str(r[0]) for r in results]))
+            c.execute(sql)
+            db.commit()

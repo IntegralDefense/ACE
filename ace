@@ -2837,6 +2837,15 @@ cleanup_alerts_parsers.add_argument('--dry-run', required=False, dest='dry_run',
     help="Just report how many would be deleted and archived.")
 cleanup_alerts_parsers.set_defaults(func=cleanup_alerts)
 
+def cleanup_email_archive(args):
+    from saq.email import maintain_archive
+    maintain_archive(verbose=True)
+    sys.exit(0)
+
+cleanup_email_archive_parser = subparsers.add_parser('cleanup-email-archive',
+    help="Removes emails from the archive that have expired.")
+cleanup_email_archive_parser.set_defaults(func=cleanup_email_archive)
+
 def display_alert(args):
     from saq.analysis import RootAnalysis
     
