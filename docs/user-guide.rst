@@ -1,5 +1,14 @@
-User/Analyst Guide
-==================
+User Guide
+==========
+
+This User Guide is meant to be a complete guide to the ACE system, including everything from the underlying philosphy that lead to the development of ACE to a detailed description of the core concepts, high-level moving parts of ACE, a detailed breakdown of all of ACE's features and how to use them.
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents
+
+   concepts
+
 
 GUI Overview
 ------------
@@ -193,18 +202,6 @@ Scrolling down on the same alert from the example above, we see the 'URL Extract
 .. figure:: _static/url-extraction-analysis-zip-exe-jdoe.png
 
    URL Extraction analysis shows more observables
-
-.. _filtering and grouping:
-
-Filtering and Grouping
-~~~~~~~~~~~~~~~~~~~~~~
-
-On the :ref:`ace-gui-alerts-page`, alerts are filtered by default to show open alerts that are not currently owned by any other analysts. The current filter state is always displayed at the top of the page, in a human readable format. You can select 'Edit Filters' to modify the alert filter and display alerts based on several different conditions. Such as, if you want to see alerts dispositioned as DELIVERY, in the last seven days, by a specific analyst.
-
-Alerts can also be filtered by observables. Conveniently, when `Expanding Alert Observables`_ on the Manage Alerts page you can click any of those observables to add it to the currently defined alert filter. So, with the default filter applied, if you clicked on an md5 observable with value `10EFE4369EA344308416FB59051D5947` then the page would refresh and you'd see that the new filter became::
-
-  filter: open alerts AND not owned by others AND with observable type md5 value b'10EFE4369EA344308416FB59051D5947'`
-
 
 Manual Analysis
 ---------------

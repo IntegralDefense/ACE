@@ -47,7 +47,6 @@ Major Features
 
    installation
    analyst-orientation
-   concepts
    user-guide
    admin-guide
    developer-guide
