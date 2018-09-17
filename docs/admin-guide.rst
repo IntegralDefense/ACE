@@ -1,2 +1,2 @@
-Administration Guide
-====================
+Top-Level Documentation
+=======================

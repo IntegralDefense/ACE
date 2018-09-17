@@ -13,6 +13,8 @@ Quick Concept Touchpoint
 
 There are two core concepts an analyst must be familiar with when working ACE alerts, Observables and Dispositioning.
 
+.. _observable:
+
 Observables
 ~~~~~~~~~~~
 
@@ -153,16 +155,25 @@ Metrics          For creating and tracking metrics from the data ACE generates
 ===============  ===============
 
 
-Alert Management
-----------------
+Working Alerts
+--------------
 
-ACE Alerts will queue up on the Manage Alerts page. By default, only alerts that are open (not dispositioned_) and not owned by another analyst are displayed. When working an alert, analysts should take ownership of it to prevent other analysts from starting to work on the same alert. This prevents re-work and saves analyst time. You can take ownership of one or more Alerts, on the Manage Alerts page, by checking Alert checkboxes and clicking the 'Take Ownership' button. You can also take ownership of an Alert when viewing an individual Alert. Below is an example of the Manage Alerts page with thirty four open, un-owned Alerts.
+This section coveres the basics for working and managing ACE Alerts. If you're comfortable, skip ahead to the `Examples`_ section to find a walkthrough of a few ACE alerts being worked.
+
+The Manage Alerts Page
+~~~~~~~~~~~~~~~~~~~~~~
+
+ACE Alerts will queue up on the Manage Alerts page. By default, only alerts that are open (not dispositioned_) and not owned by another analyst are displayed. When working an alert, analysts should take ownership of it to prevent other analysts from starting to work on the same alert. This prevents re-work and saves analyst time. You can take ownership of one or more Alerts, on the Manage Alerts page, by checking Alert checkboxes and clicking the 'Take Ownership' button. You can also take ownership of an Alert when viewing an individual Alert. Below is an example of the Manage Alerts page with thirty two open, un-owned Alerts.
 
 .. _manage-alerts-page:
 .. figure:: _static/ACE-gui-medium.png
 
-Quick View Observables
-~~~~~~~~~~~~~~~~~~~~~~
+   The Manage Alerts page, with example Alerts
+
+.. _observable-summary:
+
+Viewing Observable Summary
+++++++++++++++++++++++++++
 
 On the Manage Alerts page, each alert can be expanded via its dropdown button. Once expanded, all of the observables in the alert can be viewed. The observables are grouped and listed by their observable type. The numbers, in parentheses, show a count of how many times ACE has seen that observable. Each observable is clickable, and when clicked, ACE will add that observable to the current alert filter. You don't need to worry about Alert filtering to work Alerts, however, the :ref:`Filtering and Grouping <filtering and grouping>` section covers Alert filtering. 
 
@@ -171,18 +182,58 @@ On the Manage Alerts page, each alert can be expanded via its dropdown button. O
 
    An expanded alert shows it observables
 
-Alert Page Overview
-~~~~~~~~~~~~~~~~~~~
+.. _filtering and grouping:
 
-Once an Alert is opened, the full analysis results will be displayed. It's a good idea to go ahead and view all of the Alert's analysis.
+Filtering and Grouping
+++++++++++++++++++++++
+
+On the :ref:`ace-gui-alerts-page`, alerts are filtered by default to show open alerts that are not currently owned by any other analysts. The current filter state is always displayed at the top of the page, in a human readable format. You can select 'Edit Filters' to modify the alert filter and display alerts based on several different conditions. Such as, if you want to see alerts dispositioned as DELIVERY, in the last seven days, by a specific analyst.
+
+Alerts can also be filtered by observables. Conveniently, when viewing an Alert's :ref:`Observable Summary <observable-summary>` on the Manage Alerts page you can click any of those observables to add it to the currently defined alert filter. So, with the default filter applied, if you clicked on an md5 observable with value `10EFE4369EA344308416FB59051D5947` then the page would refresh and you'd see that the new filter became::
+
+  filter: open alerts AND not owned by others AND with observable type md5 value b'10EFE4369EA344308416FB59051D5947'`
+
+
+The Alert Page
+~~~~~~~~~~~~~~
+
+Once an Alert is opened, the full analysis results will be displayed. It's a good idea to go ahead and :ref:`view <analysis-views>` all of the Alert's analysis.
+
+.. _analysis-views:
 
 Views
 +++++
 
-There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alerts with a l
-ot of observables, however, generally, it's most helpful to view all of an alert's analysis. At the top right of every alert you will see a button to "View All Analysis" or "View Critical Analysis". Whichever mode you have enabled will be
+There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alerts with alot of observables, however, generally, it's most helpful to view all of an alert's analysis. At the top right of every alert you will see a button to "View All Analysis" or "View Critical Analysis". Whichever mode you have enabled will be
 persistent across your ACE session.
 
 Be mindful of these different views, as it's possible for an analyst to miss helpful information if viewing an alert in critical mode, verse all mode.
+
+Analysis Overview
++++++++++++++++++
+
+Each standard ACE Alert will have analysis overview section, where, the analysis results for every :ref:`Observable <observable>` will be found. The Observables displayed at the 'root' level are the Observables that were directly discovered in the data provided to ACE at the time of the alert's creation. Underneath each observable you will find the analysis results for that respective observable. Underneath Observables, you may also find new Observables that were added to the Alert from the analysis results of resepective Observables. This observable nesting, on the Alert page, provides a visual representaion of how Alert Observables are related. The figure below shows the analysis overview section of an ACE Mailbox (email) alert. You can see that a user Observable of value 'fake-user-id' was discovered from the analysis results of the email_address Observable.
+
+.. figure:: _static/analysis-overview-jdoe.png
+
+   The Analysis Overview section of an email alert
+
+Alert Tags
+~~~~~~~~~~
+
+ACE has a tagging system, by which observables are tagged for the purpose of providing additional context about an Alert.  If you review the previous figure of :ref:`ace-gui-alerts-page` you will notice the tags, such as, phish, new_sender, frequent_conversation associated to various alerts.
+All observable tag’s get associated with their respective alert and show up on the alert management page. Any observable can be tagged and can have any number of tags. For instance, an email conversation between two addresses that ACE has seen a lot will be tagged as 'frequent_conversation'. Tags can also be added directly to alerts from the Manage Alerts page. This can be helpful for `Filtering and Grouping`_ alerts if an analyst needs a way to group alerts that don’t otherwise have a commonly shared tag or observable.
+
+Examples
+~~~~~~~~
+
+The following are examples of an analayst working ACE alerts. Think about how the Alert looks and your first intuition you get from what you see about each Alert.
+
+A False Positive Alert
+++++++++++++++++++++++
+
+
+A True Positive Alert
++++++++++++++++++++++
 
 
