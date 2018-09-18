@@ -29,7 +29,7 @@ class Config(object):
     base_dir = '/opt/ace'
     mysql_host = 'localhost'
     mysql_unix_socket = '/var/run/mysqld/mysqld.sock'
-    mysql_username = 'amc'
+    mysql_username = 'ace-user'
     mysql_password = '' # yeah I know
     mysql_database = 'amc'
 
