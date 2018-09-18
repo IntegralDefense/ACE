@@ -75,7 +75,7 @@ then
 	sed -i -e 's;^;s/ACE_DB_USER_PASSWORD/;' -e 's;$;/g;' .mysql.password.sed
     for path in etc/saq.ini etc/amc_mda.ini etc/amc_client.ini
     do
-        sed -i -f .mysql.password.sed --follow-symlinks etc/saq.ini
+        sed -i -f .mysql.password.sed --follow-symlinks "$path"
     done
 
 	sed -f .mysql.password.sed sql/create_db_user.sql > sql/create_db_user.exec.sql
@@ -144,4 +144,5 @@ select yn in Yes No; do
     esac
 done
 
-cd "$SAQ_HOME" && source load_environment
+echo next steps:
+echo cd "$SAQ_HOME" && source load_environment
