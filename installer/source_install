@@ -153,4 +153,4 @@ select yn in Yes No; do
 done
 
 echo next steps:
-echo cd "$SAQ_HOME" && source load_environment
+echo "cd $SAQ_HOME && source load_environment"
