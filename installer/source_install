@@ -64,6 +64,8 @@ if [ ! -e etc/brotex.whitelist ]; then cp -a etc/brotex.whitelist.sample etc/bro
 if [ ! -e etc/startup ]; then cp -a etc/startup.example etc/startup || fail "unable to configure startup"; fi
 if [ ! -e etc/remote_assignments.yar ]; then cp etc/remote_assignments.example.yar etc/remote_assignments.yar; fi
 if [ ! -e etc/blacklist.yar ]; then cp etc/blacklist.example.yar etc/blacklist.yar; fi
+if [ ! -e etc/amc_mda.ini ]; then cp etc/amc_mda.example.ini etc/amc_mda.ini; fi
+if [ ! -e etc/amc_client.ini ]; then cp etc/amc_client.example.ini etc/amc_client.ini; fi
 
 if grep ACE_DB_USER_PASSWORD etc/saq.ini > /dev/null 2>&1
 then
@@ -71,7 +73,11 @@ then
 	tr -cd '[:alnum:]' < /dev/urandom | fold -w14 | head -n1 > .mysql.password.sed
 	# modify the configuration files to use it
 	sed -i -e 's;^;s/ACE_DB_USER_PASSWORD/;' -e 's;$;/g;' .mysql.password.sed
-	sed -i -f .mysql.password.sed --follow-symlinks etc/saq.ini
+    for path in etc/saq.ini etc/amc_mda.ini etc/amc_client.ini
+    do
+        sed -i -f .mysql.password.sed --follow-symlinks etc/saq.ini
+    done
+
 	sed -f .mysql.password.sed sql/create_db_user.sql > sql/create_db_user.exec.sql
 	sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && chmod 660 etc/mysql_defaults 
 	rm .mysql.password.sed
