@@ -39,11 +39,24 @@ then
     exit 1
 fi
 
+echo "How do you want to run the gui?"
+echo "Apache - Run the gui in Apache"
+echo "Debug - Run the gui in debug mode from the command line"
+select gui in Apache Debug; do
+	case ${gui} in
+		#Apache ) sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
+		Apache ) break ;;
+		Debug ) break ;;
+	esac
+done
+
 create_ace_dirs || fail "cannot create required directories"
 
 # install the required packages
 sudo -E installer/install_packages.sh || fail "package installation failed"
-sudo -H -E installer/install_python_packages.sh || fail "python package installation failed"
+#sudo -H -E installer/install_python_packages.sh || fail "python package installation failed"
+sudo -H -E python3 -m pip install -r installer/requirements-3.6.txt || fail "python3.6 package installation failed"
+sudo -H -E python2 -m pip install -r installer/requirements-2.7.txt || fail "python2.7 package installation failed"
 sudo -E installer/install_database.sh || fail "database installation failed"
 sudo -E bin/reset-unittest-databases || fail "unittest database installation failed"
 
@@ -126,15 +139,10 @@ then
     ln -s "$SAQ_HOME/ssl/web/localhost.cert.pem" "$SAQ_HOME/ssl/ca-chain.cert.pem"
 fi
 
-echo "How do you want to run the gui?"
-echo "Apache - Run the gui in Apache"
-echo "Debug - Run the gui in debug mode from the command line"
-select gui in Apache Debug; do
-	case ${gui} in
-		Apache ) sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
-		Debug ) break ;;
-	esac
-done
+if [ "${gui}" -eq "Apache" ]
+then
+    sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
+fi
 
 echo "Do you want to run the unit tests? This is not a required step."
 select yn in Yes No; do
