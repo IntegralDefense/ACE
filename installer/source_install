@@ -137,3 +137,5 @@ select yn in Yes No; do
         No ) break ;;
     esac
 done
+
+cd "$SAQ_HOME" && source load_environment
