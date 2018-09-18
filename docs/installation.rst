@@ -18,8 +18,13 @@ Super fast How-To
 #. `./installer/source_install`
 #. `source load_environment`
 #. `./ace add-user username email_address`
-#. Goto https://127.0.0.1:5000/ace/ or what IP address you're using.
+#. Goto https://127.0.0.1:5000/ace/ or whatever IP address you're using.
 
 Detailed Installation
 ---------------------
 
+Getting Started
+---------------
+
+Getting Data into ACE
+~~~~~~~~~~~~~~~~~~~~~
