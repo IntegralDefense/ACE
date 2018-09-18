@@ -141,7 +141,7 @@ fi
 
 if [ "${gui}" -eq "Apache" ]
 then
-    sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
+    sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace";
 fi
 
 echo "Do you want to run the unit tests? This is not a required step."
