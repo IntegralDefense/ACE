@@ -8,7 +8,21 @@ ACE: Analysis Correlation Engine
 
 Release v\ |release|.
 
-ACE **is NOT** a SIEM.
+For every security operation, the number one metric to drive should be how long it takes to determine if an Alert is a False Positive or True Positive. Ideally, False Positive Alerts are confidently, and accurately, recognized in seconds. Allowing for analysts to focus on Alerts that require some form or a response.
+
+What if you had a magical tool that somehow, for each alert, gave the analyst enough information that he or she could quickly determine that the alert was a False Positive? How would that affect things?
+
+.. figure:: _static/ace-high-level.png
+   :scale: 50%
+   :align: center
+
+   Observable Analysis & Correlation
+
+ACE **is NOT** a SIEM... but, it *kinda*, *sorta*, acts like one.
+
+Other tools, hunters, smtp listeners, splunk hunters, elk hunters, take one sigle detectable condition and send an Alerts to ACE. ACE then spiders out through its recursive analysis of observables and hopefully hits as many detections points on the attack surface, as possible.
+
+Unlike a SIEM, ACE takes
 
 ACE **is** ..
 
@@ -47,6 +61,7 @@ Major Features
 
    installation
    analyst-orientation
+   work-in-progress
    user-guide
    admin-guide
    developer-guide
