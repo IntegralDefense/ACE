@@ -50,7 +50,7 @@ sudo -E bin/reset-unittest-databases || fail "unittest database installation fai
 # set up environment
 echo -e "\\nsource $SAQ_HOME/load_environment" >> ~/.bashrc
 
-for l in ace apache brotex carbon_black email_scanner http_scanner gui
+for l in ace apache amc_mda amc_client brotex carbon_black email_scanner http_scanner gui
 do
 	if [ ! -e etc/$l\_logging.ini ]
 	then
@@ -62,6 +62,8 @@ if [ ! -e etc/saq.local.ini ]; then cp -a etc/saq.example.ini etc/saq.local.ini 
 if [ ! -L etc/saq.ini ]; then ln -s saq.local.ini etc/saq.ini || fail "unable to symlink saq.ini"; fi
 if [ ! -e etc/brotex.whitelist ]; then cp -a etc/brotex.whitelist.sample etc/brotex.whitelist || fail "unable to configure brotex.whitelist"; fi
 if [ ! -e etc/startup ]; then cp -a etc/startup.example etc/startup || fail "unable to configure startup"; fi
+if [ ! -e etc/remote_assignments.yar ]; then cp etc/remote_assignments.example.yar etc/remote_assignments.yar; fi
+if [ ! -e etc/blacklist.yar ]; then cp etc/blacklist.example.yar etc/blacklist.yar; fi
 
 if grep ACE_DB_USER_PASSWORD etc/saq.ini > /dev/null 2>&1
 then
@@ -115,6 +117,7 @@ if [ ! -e etc/local_networks.csv ]; then echo 'Indicator,Indicator_Type' > etc/l
 if [ ! -e ssl/web/localhost.key.pem ] || [ ! -e ssl/web/localhost.cert.pem ]
 then
 	openssl req -x509 -newkey rsa:4096 -keyout ssl/web/localhost.key.pem -out ssl/web/localhost.cert.pem -days 365 -nodes -subj '/CN=localhost'
+    ln -s "$SAQ_HOME/ssl/web/localhost.cert.pem" "$SAQ_HOME/ssl/ca-chain.cert.pem"
 fi
 
 echo "How do you want to run the gui?"

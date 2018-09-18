@@ -24,7 +24,7 @@ def connect_db():
 
 class Config(object):
     args = None
-    data_dir = 'data'
+    data_dir = 'var/incoming/amc'
     logging_config_path = 'etc/amc_logging_mda.ini'
     base_dir = '/opt/ace'
     mysql_host = 'localhost'
