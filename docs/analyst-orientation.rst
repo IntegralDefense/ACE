@@ -27,9 +27,9 @@ Observables
 
 First, observables are anything an analyst might "observe" or take note of during an investigation or when performing Alert Triage. For instance, an ip address is an observable and a file name is a different type of observable. Some more observable types are: URLs, domain names, usernames, file hashes, file names, file paths, email address, and yara signatures.
 
-Moving on, ACE knows what kind of analysis to perform for a given observable type and how to correlate the value of an observable accross all availble data sources. In the process of correlating observables with other data sources, ACE will discover more observables to analyze and correlate.
+Moving on, ACE knows what kind of analysis to perform for a given observable type and how to correlate the value of an observable across all available data sources. In the process of correlating observables with other data sources, ACE will discover more observables to analyze and correlate.
 
-When an ACE Alert is created from an initial detection point, the Alert's 'root' level Observables are found in the output of that initial detection. ACE then gets to work on those root observables. An ACE Alert's status becomes complete when ACE is done with its recursive analysis, correlation, discovery, and relational combination of Observables. The final result is an ACE Alert with intuitive context ready for the human analyst's consumption.
+When an ACE Alert is created from an initial detection point, the Alert's 'root' level Observables are found in the output of that initial detection. ACE then gets to work on those root observables. An ACE Alert's status becomes complete when ACE is done with its recursive analysis, correlation, discovery, and relational combination of Observables. The result is an ACE Alert with intuitive context ready for the human analyst's consumption.
 
 The figure below is meant to give a visual representation ACE's recursive observable analysis and correlation. 
 
@@ -40,11 +40,11 @@ The figure below is meant to give a visual representation ACE's recursive observ
 
    Recursive Observable Analysis
 
-ACE’s correlation of observables reduces and simplifies the analysts workload by providing the analyst with as much available context as reasonably possible. A complete list of currently defined observable types can be viewed in the table below.
+ACE’s recursive analysis of observables reduces and simplifies the analyst’s workload by providing the analyst with as much available context as reasonably possible. A complete list of currently defined observable types can be viewed in the table below.
 
 .. _observable-table:
 
-Currently defined ACE observables:
+Currently defined ACE Observables:
 ++++++++++++++++++++++++++++++++++
 
 ==================  ===================================================================================================
@@ -85,7 +85,7 @@ Alert Dispositioning
 
 .. include:: <isonum.txt>
 
-When making a determination about an Alert, there is a categorization model for Anaylsts to follow called Dispositioning. The Disposition model that ACE uses is based on Lockheed Martin's `Cyber Kill Chain <https://www.lockheedmartin.com/en-us/capabilities/cyber/cyber-kill-chain.html>`_ |reg| model for identifing and describing the stages of an adversaires attack. The table below describes each of the different dispositions used by ACE.
+When investigating an Alert, there is a categorization model for Analysts to follow called Dispositioning. No matter if an Alert requires a response or not, Analysts need to disposition them correctly. Sometimes, especially for True Positive Alerts that get escalated, more information may lead a change in an Alert’s Disposition. The Disposition model that ACE uses is based on Lockheed Martin's `Cyber Kill Chain <https://www.lockheedmartin.com/en-us/capabilities/cyber/cyber-kill-chain.html>`_ |reg| model for identifying and describing the stages of an adversary’s attack. The table below describes each of the different dispositions used by ACE.
 
 .. _ace-dispositions:
 .. _dispositioned:
@@ -109,7 +109,7 @@ When making a determination about an Alert, there is a categorization model for 
 |                     | FALSE_POSITIVE are used to tune detection signatures, while alerts marked as IGNORE are not. IGNORE alerts   |
 |                     | are deleted by cleanup routines.                                                                             |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
-| UNKNOWN             | Not enough information is available to make a good decision because of a lack of visibilty.                  |
+| UNKNOWN             | Not enough information is available to make a good decision because of a lack of visibility.                 |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
 | REVIEWED            | This is a special disposition to be used for alerts that were manually generated for analysis or serve       |
 |                     | an informational purpose. For example, if someone uploaded a malware sample from a third party to ACE, you   |
@@ -123,7 +123,7 @@ When making a determination about an Alert, there is a categorization model for 
 |                     |                                                                                                              |
 |                     | :strike:`If desired, this disposition can be used to categorize spam emails.`                                |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
-| POLICY_VIOLATION    | In the course of an investigation, general risky user behavior or behavior against an offical policy or      |
+| POLICY_VIOLATION    | In the course of an investigation, general risky user behavior or behavior against an official policy or     |
 |                     | standard is discovered.                                                                                      |
 |                     |                                                                                                              |
 |                     | + Installing unsupported software                                                                            |
@@ -138,7 +138,7 @@ When making a determination about an Alert, there is a categorization model for 
 | WEAPONIZATION       | The detection of an attempt to build or use a cyber attack weapon, that was stopped or failed.               |
 |                     |                                                                                                              |
 |                     | + IPS/Proxy blocks to exploit kits that stopped an attack from being delivery                                |
-|                     | + SMTP filter/IPS that blocks a phish from being delivery to an inbox                                        |
+|                     | + SMTP filter/IPS that blocks a phish from being delivered to an inbox                                       |
 |                     | + AV deleting a malicious file before it was written to disk, such as on an inserted USB device              |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
 | DELIVERY            | An attack was attempted, and the attack's destination was reached. Even with no indication the attack worked.|
@@ -205,12 +205,12 @@ Metrics          For creating and tracking metrics from the data ACE generates
 Working Alerts
 --------------
 
-This section coveres the basics for working and managing ACE Alerts. If you're comfortable, skip ahead to the `Examples`_ section to find a walkthrough of a few ACE alerts being worked.
+This section covers the basics for working and managing ACE Alerts. If you're comfortable, skip ahead to the `Examples`_ section to find a walkthrough of a few ACE alerts being worked.
 
 The Manage Alerts Page
 ~~~~~~~~~~~~~~~~~~~~~~
 
-ACE Alerts will queue up on the Manage Alerts page. By default, only alerts that are open (not dispositioned_) and not owned by another analyst are displayed. When working an alert, analysts should take ownership of it to prevent other analysts from starting to work on the same alert. This prevents re-work and saves analyst time. You can take ownership of one or more Alerts, on the Manage Alerts page, by checking Alert checkboxes and clicking the 'Take Ownership' button. You can also take ownership of an Alert when viewing an individual Alert. Below is an example of the Manage Alerts page with thirty two open, un-owned Alerts.
+ACE Alerts will queue up on the Manage Alerts page. By default, only alerts that are open (not dispositioned_) and not owned by another analyst are displayed. When working an alert, analysts should **take ownership** of it to prevent other analysts from starting to work on the same alert. This prevents re-work and saves analyst time. You can take ownership of one or more Alerts, on the Manage Alerts page, by checking Alert checkboxes and clicking the 'Take Ownership' button. You can also take ownership of an Alert when viewing an individual Alert. Below is an example of the Manage Alerts page with thirty-two open, un-owned Alerts.
 
 .. _manage-alerts-page:
 .. figure:: _static/ACE-gui-medium.png
@@ -222,7 +222,7 @@ ACE Alerts will queue up on the Manage Alerts page. By default, only alerts that
 Viewing Observable Summary
 ++++++++++++++++++++++++++
 
-On the Manage Alerts page, each alert can be expanded via its dropdown button. Once expanded, all of the observables in the alert can be viewed. The observables are grouped and listed by their observable type. The numbers, in parentheses, show a count of how many times ACE has seen that observable. Each observable is clickable, and when clicked, ACE will add that observable to the current alert filter. You don't need to worry about Alert filtering to work Alerts, however, the :ref:`Filtering and Grouping <filtering and grouping>` section covers Alert filtering. 
+On the Manage Alerts page, each alert can be expanded via its dropdown button. Once expanded, all the observables in the alert can be viewed. The observables are grouped and listed by their observable type. The numbers, in parentheses, show a count of how many times ACE has seen that observable. Each observable is clickable, and when clicked, ACE will add that observable to the current alert filter. You don't need to worry about Alert filtering to work Alerts, however, the :ref:`Filtering and Grouping <filtering and grouping>` section covers Alert filtering. 
 
 .. figure:: _static/expanded-alert-observables-emotet-noEventTag.png
    :alt: expanded alert observables
@@ -356,15 +356,14 @@ Once an Alert is opened, the full analysis results will be displayed. It's a goo
 Views
 +++++
 
-There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observables. This is helpful for alerts with alot of observables, however, generally, it's most helpful to view all of an alert's analysis. At the top right of every alert you will see a button to "View All Analysis" or "View Critical Analysis". Whichever mode you have enabled will be
-persistent across your ACE session.
+There are two different modes you can view ACE alerts in, 'Critical' and 'All'.  By default, ACE alerts will be displayed in critical mode. Critical mode will only display 'root' level alert observable analysis. This is helpful for alerts with a lot of observables, however, generally, it's most helpful to view all alert analysis. At the top right of every alert you will see a button to "View All Analysis" or "View Critical Analysis". Whichever mode you have enabled will be persistent across your ACE session.
 
 Be mindful of these different views, as it's possible for an analyst to miss helpful information if viewing an alert in critical mode, verse all mode.
 
 Analysis Overview
 +++++++++++++++++
 
-Each standard ACE Alert will have analysis overview section, where, the analysis results for every :ref:`Observable <observable>` will be found. The Observables displayed at the 'root' level are the Observables that were directly discovered in the data provided to ACE at the time of the alert's creation. Underneath each observable you will find the analysis results for that respective observable. Underneath Observables, you may also find new Observables that were added to the Alert from the analysis results of resepective Observables. This observable nesting, on the Alert page, provides a visual representaion of how Alert Observables are related. The figure below shows the analysis overview section of an ACE Mailbox (email) alert. You can see that a user Observable of value 'fake-user-id' was discovered from the analysis results of the email_address Observable.
+Each standard ACE Alert will have analysis overview section, where, the analysis results for every :ref:`Observable <observable>` will be found. The Observables displayed at the 'root' level are the Observables that were directly discovered in the data provided to ACE at the time of the alert's creation. Underneath each observable you will find the analysis results for that respective observable. Underneath Observables, you may also find new Observables that were added to the Alert from the analysis results of respective Observables. This observable nesting, on the Alert page, provides a visual representation of how Alert Observables are related. The figure below shows the analysis overview section of an ACE Mailbox (email) alert. You can see that a user Observable of value 'fake-user-id' was discovered from the analysis results of the email_address Observable.
 
 .. figure:: _static/analysis-overview-jdoe.png
 
@@ -376,14 +375,15 @@ Alert Tags
 ~~~~~~~~~~
 
 ACE has a tagging system, by which observables and analysis are tagged for the purpose of providing additional context.  If you review the previous figure of :ref:`manage-alerts-page` you will notice the tags, such as, phish, new_sender, frequent_conversation associated to various alerts.
+
 All observable tag’s get associated with their respective alert and show up on the alert management page. Any observable can be tagged and can have any number of tags. For instance, an email conversation between two addresses that ACE has seen a lot will be tagged as 'frequent_conversation'. Tags can also be added directly to alerts from the Manage Alerts page. This can be helpful for `Filtering and Grouping`_ alerts if an analyst needs a way to group alerts that don’t otherwise have a commonly shared tag or observable.
 
-ACE Tags have a priority assigned to them. The priority of any ACE Alert is the sumation of its Tags. So, if ACE recognizes a Domain Controller, it will be Tagged as such and given whatever priority is specified for Domain Controllers.
+ACE Tags have a priority assigned to them. The priority of any ACE Alert is the summation of its Tags. So, if ACE recognizes a Domain Controller, it will be Tagged as such and given whatever priority is specified for Domain Controllers.
 
 Examples
 ~~~~~~~~
 
-The following are examples of a snarky analayst working ACE alerts. Think about the first intuition you get from what you see in these Alerts.
+The following are examples of a snarky analyst working ACE alerts. Think about the first intuition you get from what you see in these Alerts.
 
 Check out this Email Alert
 ++++++++++++++++++++++++++
@@ -393,23 +393,21 @@ We just got this Alert in the queue. Huh, looks like this email might be related
 .. figure:: _static/example-alert-in-gueue.png
    :align: center
  
-Let's open the Alert and take a look at the Analysis Overview section to see the results ACE brought us. In the case of email Alerts like this one, the 'email.rfc882' file is what ACE was given when told to create this Alert. FYI, every ACE email alert will have a root level file observable named ‘email.rfc882’. 
+Let's open the Alert and look at the Analysis Overview section to see the results ACE brought us. In the case of email Alerts like this one, the 'email.rfc882' file is what ACE was given when told to create this Alert. FYI, every ACE email alert will have a root level file observable named ‘email.rfc882’.
 
 Under that email.rfc882 file observable you will see the output of the Email Analysis module, and underneath Email Analysis you will see where ACE discovered more observables, such as, the email addresses.
 
 .. figure:: _static/analysis-overview-jdoe.png
 
-With respect to this Alert, ACE even rendered us a visual image of the emails HTML. How convienient.. and, I didn't purchase anything, so this email seems aweful suspicious. Note, we can also view or download that 'email.rfc822.unknown_text_html_000' file by using the dropdown next to it.
+With respect to this Alert, ACE even rendered us a visual image of the emails HTML. How convenient... and, I didn't purchase anything, so this email seems awful suspicious. Note, we can also view or download that 'email.rfc822.unknown_text_html_000' file by using the dropdown next to it.
 
-Scrolling down on the same alert from the example above, we see the ‘URL Extraction Analysis’ found some URL observables. More over, we see that ACE found additional observables in the analysis output of those url observables. Specifically, ACE downloaded that '66524177012457.zip' file and extracted it to reveal an executable named '66524177012457.exe'.
+Scrolling down on the same alert from the example above, we see the ‘URL Extraction Analysis’ found some URL observables. Moreover, we see that ACE found additional observables in the analysis output of those URL observables. Specifically, ACE downloaded that '66524177012457.zip' file and extracted it to reveal an executable named '66524177012457.exe'.
 
 .. figure:: _static/url-extraction-analysis-zip-exe-jdoe.png
 
-Hm, this email doesn't seem friendly at all. Perhaps that malicious tag was onto something... where did that Tag come from? Oh, it's next to the md5 observable of the file, which I know ACE checks VT for, and one of the analysis resutls under that md5 observable shows the VT result summary. Got it. Definitely Malicious. Someone should do something about this.
-
+Hm, this email doesn't seem friendly at all. Perhaps that malicious tag was onto something... where did that Tag come from? Oh, it's next to the md5 observable of the file, which I know ACE checks VT for, and one of the analysis results under that md5 observable shows the VT result summary. Got it. Definitely Malicious. Someone should do something about this.
 
 We got another Email Alert
 ++++++++++++++++++++++++++
 
-Here, a snarky analyst reviews a False Positive email Alert and harps on how QUICKLY we should be able to disposition it.
-
+Here, a snarky analyst reviews a False Positive Email Alert and harps on how QUICKLY we should be able to disposition it.

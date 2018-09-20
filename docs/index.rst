@@ -8,11 +8,11 @@ ACE: Analysis Correlation Engine
 
 Release v\ |release|.
 
-ACE is a detection system and automation framework. ACE's foundation is its Engine for recursive analysis, but also its intuitive presentation to the human analyst. 
+ACE is a detection system and automation framework. ACE’s foundation is its Engine for recursive analysis, but also its intuitive presentation to the human analyst.
 
-Send your Alerts to ACE, and let ACE handle the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. But not-to-worry, ACE will then contextually and intuitively present all of the right data to the human, allowing for a quick, high confidence determination to be made.
+Send your Alerts to ACE, and let ACE handle the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. ACE will then contextually and intuitively present all the right data to the human, allowing for a quick, high confidence determination to be made.
 
-Oh, and you've got some new analysis that can be automated? Awesome! Add your automation, and let ACE keep working for you.
+Got some new analysis that can be automated? Awesome! Add your automation, and let ACE keep working for you.
 
 
 .. figure:: _static/recursive-analysis-and-contextual-presentation.png
@@ -20,9 +20,9 @@ Oh, and you've got some new analysis that can be automated? Awesome! Add your au
 
    Recursive Analysis; Presentation
 
-ACE **is NOT** a SIEM... but, it *kinda*, *sorta* can act like one, if that's your thing.
+ACE **is NOT** a SIEM... but, it *kind of*, *sort of* can act like one, if that's your thing.
 
-For the most part, custom hunting tools send Alerts to ACE using ACE's client library (API wrapper). ACE then gets to work by taking whatever one sigle detectable condition its given, and spidering out through its recursive analysis of observables; hitting as many detections points as possible across the attack surface.
+For the most part, custom hunting tools send Alerts to ACE using ACE’s client library (API wrapper). ACE then gets to work by taking whatever one single detectable condition it’s given, and spirals out through its recursive analysis of observables; hitting as many detections points as possible across the attack surface.
 
 ACE **is** ..
 
@@ -32,11 +32,11 @@ ACE **is** ..
 * a recursive file scanner
 * a URL crawler and cacher
 * a system for automated, recursive, data analysis and correlation
-* more things that should be added to this list..
+* more things that could be added to this list...
 
-Built for the information security team, ACE is the implementation of a proven detection strategy, a framework for automating analysis, a central platform to launch and manage incident response and remediation activites, an email scanner, and much more.
+Built for the information security team, ACE is the implementation of a proven detection strategy, a framework for automating analysis, a central platform to launch and manage incident response activates, an email scanner, and much more.
 
-Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence determination, or as we call it, disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase the attack surface they cover, all while utilizing the same amount of analyst time and practically eliminating alert fatigue. Optimization good, alert fitigue bad.
+egardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence determination, or as we call it, disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase the attack surface they cover, all while utilizing the same amount of analyst time and practically eliminating alert fatigue. Optimization good, alert fatigue bad.
 
 Major Features
 --------------
@@ -49,7 +49,7 @@ Major Features
 + Central Analyst Interface
 + Event management
 + Intel Ingestion
-+ Modular, bolt-on Design
++ Modular Design for extending automation
 
 .. image:: _static/analyst_on_ace.png
 
@@ -60,7 +60,7 @@ Major Features
    installation
    analyst-orientation
    education 
-   user-guide
+   additional
    admin-guide
    developer-guide
 

@@ -5,7 +5,7 @@ Administration Guide
 Concepts
 --------
 
-There are several concept crucial to understanding how ACE works and how to use ACE. For the analyst, it’s important to understand observables, tagging, and dispositioning. For the administrator or developer, it’s crucial to understand ACE’s dependencies and its engine and module based architecture.
+There are several concepts crucial to understanding how ACE works and how to use ACE. For the analyst, it’s important to understand observables, tagging, and dispositioning.  The administrator and developer needs to understand those concepts as well, but additionally must understand ACE’s dependencies and its engine and modular architecture.
 
 Engines
 +++++++
@@ -45,6 +45,8 @@ Modules
 +++++++
 
 ACE modules automate something that an analyst has previously done manually. These modules do all "the work" on observables; each module knows which types of observables it works with and "knows what to do" with those observables. Modules can be built to do anything that you can automate. Each ACE Engine knows which ACE modules to work with and modules can perform work for many different Engines.
+
+... More to come here.
 
 Recursive Correlation & Analysis
 ++++++++++++++++++++++++++++++++
