@@ -2700,7 +2700,19 @@ class SSLNetworkServer(Engine):
                              #os.path.join(saq.SAQ_HOME, self.config['ssl_key_path'])))
 
                 if 'ssl_ca_path' in self.config:
+                    if not os.path.exists(self.config['ssl_ca_path']):
+                        logging.warning("missing ssl_ca_path file {}".format(self.config['ssl_ca_path']))
                     self.ssl_context.load_verify_locations(self.config['ssl_ca_path'])
+
+                certfile = os.path.join(saq.SAQ_HOME, self.config['ssl_cert_path'])
+                keyfile = os.path.join(saq.SAQ_HOME, self.config['ssl_key_path'])
+
+                if not os.path.exists(certfile):
+                    logging.warning("missing cert file {}".format(certfile))
+
+                if not os.path.exists(keyfile):
+                    logging.warning("missing key file {}".format(keyfile))
+
                 self.ssl_context.load_cert_chain(certfile=os.path.join(saq.SAQ_HOME, self.config['ssl_cert_path']), 
                                                  keyfile=os.path.join(saq.SAQ_HOME, self.config['ssl_key_path']))
                 self.server_socket = socket.socket()

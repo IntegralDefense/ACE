@@ -80,7 +80,7 @@ class EmailScanningEngine(SSLNetworkServer, MySQLCollectionEngine, Engine):
                 self.bro_consumer_execute()
             except Exception as e:
                 logging.error("unable to consume bro smtp files: {}".format(e))
-                time.sleep(60)
+                self.sleep(60)
 
     def bro_consumer_execute(self):
         for file_path in os.listdir(self.bro_smtp_dir):

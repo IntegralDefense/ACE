@@ -1,0 +1,1052 @@
+#!/usr/bin/env python3
+# vim: sw=4:ts=4:et:cc=120
+
+import configparser
+import datetime
+import io
+import logging, logging.config, logging.handlers
+import os, os.path
+import queue
+import random
+import shutil
+import signal
+import socket
+import ssl
+import stat
+import sys
+import tempfile
+import threading
+import time
+import uuid
+
+from contextlib import closing
+from subprocess import Popen, PIPE, DEVNULL
+
+import yara
+import psutil
+import pymysql
+
+FAST_SLEEP = 0.1 # seconds we consider to be a "fast sleep"
+
+def report_exception():
+    pass
+    #import traceback
+
+    #_, reported_exception, _ = sys.exc_info()
+
+    # spit it out to stdout first
+    #traceback.print_exc()
+
+def NOTIFY(message):
+    logging.error(message)
+    report_exception()
+
+# the global configuration data
+config = None
+
+# global flag for controlled shutdown
+global_shutdown_flag = False
+def global_shutdown():
+    global global_shutdown_flag
+    logging.info("shutdown")
+    global_shutdown_flag = True
+
+# email distribution engine
+engine = None
+
+# simple flag to force wakeup from sleep
+# set to true by sending SIGUSR1
+wakeup = False
+
+def sleep(seconds):
+    """Same as time.sleep but is checking for global shutdown and wakeup every FAST_SLEEP seconds."""
+    global wakeup
+
+    seconds = float(seconds)
+    while not global_shutdown_flag and not wakeup and seconds:
+        time.sleep(FAST_SLEEP)
+        seconds -= FAST_SLEEP if seconds > FAST_SLEEP else seconds
+
+    wakeup = False
+
+# the various status states
+# note that we start at 1 so if status: is interpreted as True
+STATUS_SUBMITTED = 1
+STATUS_SKIPPED = STATUS_SUBMITTED + 1
+STATUS_ERROR = STATUS_SKIPPED + 1
+STATUS_BLACKLISTED = STATUS_ERROR + 1
+STATUS_ERROR = STATUS_BLACKLISTED + 1
+STATUS_FAILED_DELIVERY = STATUS_ERROR + 1
+
+def connect_db():
+    return closing(pymysql.connect(host=config.mysql_host,
+                                   unix_socket=config.mysql_unix_socket,
+                                   user=config.mysql_username,
+                                   password=config.mysql_password,
+                                   db=config.mysql_database))
+
+class Config(object):
+    args = None
+    data_dir = 'var/incoming/amc'
+    logging_config_path = 'etc/amc_client_logging.ini'
+    base_dir = '/opt/ace'
+    mysql_host = 'localhost'
+    mysql_unix_socket = '/var/run/mysqld/mysqld.sock'
+    mysql_username = 'ace-user'
+    mysql_password = '' # yeah I know
+    mysql_database = 'amc'
+    yara_rule_path = 'etc/remote_assignments.yar'
+    blacklist_yara_rule_path = 'etc/blacklist.yar'
+    batch_size = 50
+    file_config = None # of configparser.ConfigParser
+    cooldown_time = 5
+    flush_time = 3
+    pid_path = 'var/daemon/amc.pid'
+    review_dir = 'amc_review'
+
+class Email(object):
+    """Represents an email to be submitted for scanning."""
+    def __init__(self, database_id, path):
+        # primary key index in the database for this email
+        self.database_id = database_id
+        # relative path to the email to scan
+        self.path = path
+
+        # an entry for each scan request to be completed for this email
+        self.scan_requests = [] # of EmailScanRequest
+        self.complete_count = 0 # number of scan requests completed
+
+        # the email itself could have an error (such as being unassignable or missing)
+        self.status = None
+        self.status_details = None
+
+    def set_status(self, status, details=None):
+        self.status = status
+        self.status_details = details
+        if self.status == STATUS_ERROR:
+            logging.error("detected error with email {} ({})".format(self, self.status_details))
+            report_exception()
+
+    def is_complete(self):
+        """Returns True if all scan requests have a status value."""
+        return len([_ for _ in self.scan_requests if _.status is None]) == 0
+
+    def complete(self):
+        """Deletes the email from the database if no scan requests are pending."""
+        if not self.is_complete():
+            return
+
+        # if the email itself has an error status then we try to save it for manual review
+        if self.status == STATUS_ERROR:
+            try:
+                target_path = os.path.join(config.base_dir, config.review_dir, os.path.basename(self.path))
+                shutil.copy(self.path, target_path)
+                logging.info("copied {} to {}".format(self.path, target_path))
+                if self.status_details:
+                    with open('{}.details'.format(target_path), 'w') as fp:
+                        fp.write('{}\n'.format(self.status_details))
+            except Exception as e:
+                logging.warning("unable to copy {}: {}".format(self.path, e))
+
+        # then no matter what we remove it from the system
+        try:
+            logging.debug("deleting {} from database".format(self))
+            with connect_db() as db:
+                c = db.cursor()
+                c.execute("""DELETE FROM emails WHERE id = %s""", (self.database_id,))
+                if not c.rowcount:
+                    logging.warning("rowcount returned 0 for {}".format(self.database_id))
+                db.commit()
+        except Exception as e:
+            NOTIFY("failed to delete {} from database: {}".format(self, e))
+
+        try:
+            logging.debug("deleting {}".format(self.path))
+            os.remove(self.path)
+        except Exception as e:
+            logging.error("unable to delete {}: {}".format(self.path, e))
+
+    def add_scan_request(self, group):
+        self.scan_requests.append(EmailScanRequest(self, group))
+
+    def process(self):
+        """Submits all of the scan requests for this Email to the RemoteEmailScannerGroup objects.
+           This call may block if the queue of the RemoteEmailScannerGroup is full."""
+        for scan_request in self.scan_requests:
+            scan_request.group.process(scan_request)
+
+    def __str__(self):
+        return "Email({})".format(self.path)
+
+class EmailScanRequest(object):
+    """Represents a request to scan a given Email at a given RemoteEmailScannerGroup."""
+    def __init__(self, email, group):
+        self.status = None
+        self.status_details = None
+
+        self._email = email
+        self._group = group
+        self._scanner = None
+
+    @property
+    def email(self):
+        return self._email
+
+    @email.setter
+    def email(self, value):
+        assert isinstance(value, Email)
+        self._email = value
+
+    @property
+    def group(self):
+        return self._group
+
+    @group.setter
+    def group(self, value):
+        assert isinstance(value, RemoteEmailScannerGroup)
+        self._group = value
+
+    @property
+    def scanner(self):
+        return self._scanner
+
+    @scanner.setter
+    def scanner(self, value):
+        assert isinstance(value, RemoteEmailScanner)
+        self._scanner = value
+
+    def complete(self, status):
+        self.status = status
+        self._email.complete()
+
+    def reprocess(self):
+        """Resubmits this request."""
+        self.group.reprocess(self)
+
+    def __str__(self):
+        return "EmailScanRequest({},{},{})".format(self.email, self.group, self.scanner)
+
+class EmailDistributionEngine(object):
+    """The main engine responsible for distributing the emails to be scanned."""
+    def __init__(self):
+
+        # primary execution thread
+        self.thread = None
+
+        # metrics gathering thread
+        self.metrics_thread = None
+
+        self.scanner_groups = {} # key = group_name, value = RemoteEmailScannerGroup
+
+        with open(config.yara_rule_path, 'r') as fp:
+            rule = fp.read()
+
+        with open(config.blacklist_yara_rule_path, 'r') as fp:
+            rule += '\n\n' # just make it easier to read if we ever have to look at it
+            rule += fp.read()
+
+        try:
+            self.yara_context = yara.compile(source=rule)
+        except Exception as e:
+            logging.error("unable to compile yara rule {}: {}".format(config.yara_rule_path, e))
+            sys.exit(1)
+
+        # the largest primary key value we've seen thus far
+        # we use this as a way to not retrieve items from the database we've already retrieved
+        # this assumes an auto-increment-style of primary key
+        self.last_id = 0
+
+        # load the scanner groups defined in the configuration file
+        for section in config.file_config.sections():
+            if section.startswith('group_'):
+                group_name = section[len('group_'):]
+                coverage = 100 # defaults to sending all emails to this sensor group
+                if 'coverage' in config.file_config[section]:
+                    coverage = config.file_config[section].getint('coverage')
+
+                full_delivery = True 
+                if 'full_delivery' in config.file_config[section]:
+                    full_delivery = config.file_config[section].getboolean('full_delivery')
+
+                self.scanner_groups[group_name] = RemoteEmailScannerGroup(group_name, coverage, full_delivery)
+                logging.info("added scanner group {} with coverage {}% full_delivery {}".format(
+                              group_name, coverage, full_delivery))
+
+        # load the scanners defined in the configuration file
+        for section in config.file_config.sections():
+            if section.startswith('email_scanner_'):
+                config_section = config.file_config[section]
+                scanner_name = section[len('email_scanner_'):]
+
+                remote_host = config_section['remote_host']
+                remote_port = config_section.getint('remote_port')
+                ssl_cert = config_section['ssl_cert']
+                ssl_key = config_section['ssl_key']
+                ssl_hostname = config_section['ssl_hostname']
+                ssl_ca = config_section['ssl_ca']
+                group = config_section['group']
+                
+                if group not in self.scanner_groups:
+                    NOTIFY("invalid scanner group {} specified for scanner {}".format(group, scanner_name))
+                    continue
+
+                logging.info("added remote scanner {} to group {}".format(scanner_name, group))
+                self.scanner_groups[group].add_scanner(scanner_name,
+                                                       remote_host, remote_port, 
+                                                       ssl_cert, ssl_key, ssl_hostname, ssl_ca)
+
+        # metrics
+        self.email_count = 0 # number of emails we've pulled out of the database
+        self.blacklisted_count = 0 # number of emails that were blacklisted
+        self.error_count = 0 # number of emails that received an error
+        self.assigned_count = 0 # number of emails that were assigned to one or more sensors
+
+    def dump_metrics(self):
+        message = "email count       = {}\n"\
+                  "assigned count    = {}\n"\
+                  "blacklisted count = {}\n"\
+                  "error count       = {}\n".format(self.email_count,
+                                                    self.assigned_count,
+                                                    self.blacklisted_count,
+                                                    self.error_count)
+
+        for scanner_group in self.scanner_groups.values():
+            message += "group {}\n"\
+                       "\tcoverage           = {}\n"\
+                       "\tcoverage counter   = {}\n"\
+                       "\tassigned count     = {}\n"\
+                       "\tskipped count      = {}\n"\
+                       "\tfull delivery      = {}\n"\
+                       "\tdelivery failures  = {}\n"\
+                       "\tsubmit queue       = {}\n"\
+                       "\treprocess queue    = {}\n".format(scanner_group.name,
+                                                            scanner_group.coverage,
+                                                            scanner_group.coverage_counter,
+                                                            scanner_group.assigned_count,
+                                                            scanner_group.skipped_count,
+                                                            scanner_group.full_delivery,
+                                                            scanner_group.delivery_failures,
+                                                            scanner_group.submit_queue.qsize(),
+                                                            scanner_group.reprocess_queue.qsize())
+
+            for scanner in scanner_group.scanners:
+                message += "\tscanner {}\n"\
+                           "\t\tsubmission count  = {}\n"\
+                           "\t\tbuffer size       = {}\n"\
+                           "\t\tlast submit time  = {}\n"\
+                           "\t\tcooldown release  = {}\n".format(scanner.scanner_name,
+                                                                 scanner.submission_count,
+                                                                 len(scanner._buffer),
+                                                                 scanner.last_submit_time,
+                                                                 scanner.cooldown_release)
+
+        return message
+
+    def start(self):
+        # start each scanner group
+        for scanner_group in self.scanner_groups.values():
+            scanner_group.start()
+        
+        self.thread = threading.Thread(target=self.run, name="Email Distribution Engine")
+        self.thread.start()
+
+        self.metrics_thread = threading.Thread(target=self.run_metrics, name="Email Distribution Engine Metrics")
+        self.metrics_thread.daemon = True
+        self.metrics_thread.start()
+
+    def stop(self):
+        global_stop()
+        logging.debug("waiting for threads to exit...")
+        for scanner_group in self.scanner_groups.values():
+            scanner_group.stop()
+
+        logging.info("waiting for {}".format(self))
+        self.thread.join()
+
+        try:
+            if os.path.exists('metrics'):
+                os.remove('metrics')
+        except:
+            pass
+
+    def wait(self):
+        self.thread.join()
+    
+    def run(self):
+        while not global_shutdown_flag:
+            try:
+                self.execute() # blocking
+            except Exception as e:
+                NOTIFY("uncaught exception: {}".format(e))
+                sleep(1)
+
+    def run_metrics(self):
+        while not global_shutdown_flag:
+            try:
+                self.execute_metrics()
+                sleep(3)
+            except:
+                pass
+
+    def execute(self):
+        with connect_db() as db:
+            c = db.cursor()
+            c.execute("""SELECT id, path FROM emails WHERE id > %s ORDER BY id ASC LIMIT %s""",
+                      (self.last_id, config.batch_size))
+
+            _id = None
+            _path = None
+
+            for row in c:
+                _id, _path = row
+
+                # we don't want to request emails we're already processing
+                # so we keep track of the highest primary key value we've seen
+                if _id > self.last_id:
+                    self.last_id = _id
+
+                email = Email(_id, _path)
+                self.email_count += 1
+
+                try:
+                    logging.info("processing {}".format(email))
+                    self.process(email) # blocking
+                except Exception as e:
+                    email.set_status(STATUS_ERROR, str(e))
+                    email.complete()
+                    continue
+
+                if global_shutdown_flag:
+                    break
+
+            # if we didn't find anything to do then we wait for a second
+            if not _id:
+                sleep(1)
+
+    def execute_metrics(self):
+        try:
+            if not ( os.path.exists('metrics') and stat.S_ISFIFO(os.stat('metrics').st_mode) ):
+                os.mkfifo('metrics')
+        except Exception as e:
+            logging.error("unable to create fifo for metrics: {}".format(e))
+
+        with open('metrics', 'w') as self.metrics_fp:
+            self.metrics_fp.write(self.dump_metrics())
+
+    def process(self, email): # blocking
+        assert isinstance(email, Email)
+
+        # scan the email with the yara rules
+        # this may be where we would want separate processing doing this
+        yara_matches = self.yara_context.match(email.path)
+
+        # check for blacklisting first
+        for match in yara_matches:
+            for tag in match.tags:
+                if tag == 'blacklist':
+                    logging.info("{} matched blacklist rule {}".format(email.path, match.rule))
+                    email.set_status(STATUS_BLACKLISTED, str(match.rule))
+                    email.complete()
+                    self.blacklisted_count += 1
+                    return
+
+        for match in yara_matches:
+            if not match.tags:
+                # every yara rule should have a match
+                NOTIFY("matching yara rule but not tags generated by match (see docs)")
+                global_shutdown()
+                return
+
+            for tag in match.tags:
+                if tag not in self.scanner_groups:
+                    # also a very invalid situation
+                    NOTIFY("invalid group name {} specified in yara rules".format(tag))
+                    global_shutdown()
+                    return
+
+                logging.info("assigning email {} to group {}".format(email, tag))
+                email.add_scan_request(self.scanner_groups[tag])
+
+        if not email.scan_requests:
+            email.set_status(STATUS_ERROR, "did not match any yara rules")
+            email.complete()
+            self.error_count += 1
+            return
+
+        # at this point we have a list of scan requests which assigns this email to the various groups
+        self.assigned_count += 1
+        email.process() # blocking
+
+        # after this function completes we will have lost the reference to the email in this scope
+        # they will either be deleted (in the case or errors or blacklisting)
+        # or they will be in queues (as references inside of the EmailScanRequest objects)
+        # it is the responsibility of the EmailScannerGroup to complete processing on the email
+        # see RemoteEmailScannerGroup.start 
+
+class RemoteEmailScannerGroup(object):
+    """Represents a collection of one or more RemoteEmailScanner objects that share the same group configuration
+       property."""
+
+    # remote scanners that fail submission can enter into a "cooldown" where they are excluded from selection
+    # this is a simple type of high availability mode
+
+    def __init__(self, name, coverage, full_delivery):
+        assert isinstance(name, str) and name
+        assert isinstance(coverage, int) and coverage > 0 and coverage <= 100
+
+        self.name = name
+        # this the percentage of emails that are actually sent to this scanner
+        self.coverage = coverage / 100.0
+        self.coverage_counter = 0.0
+        self.scanners = []
+
+        # if full_delivery is True then all emails assigned to the group will eventually be submitted
+        # if set to False then at least one attempt is made to deliver the email
+        # setting to False is useful for QA and development type systems
+        self.full_delivery = full_delivery
+
+        # emails are submitted to this group through this queue
+        self.submit_queue = queue.Queue(maxsize=config.batch_size)
+
+        # emails that failed to send are resubmitted through this queue (see Email.reprocess)
+        self.reprocess_queue = queue.Queue()
+
+        # metrics
+        self.assigned_count = 0 # how many emails were assigned to this group
+        self.skipped_count = 0 # how many emails have skipped due to coverage rules
+        self.delivery_failures = 0 # how many emails failed to delivery when full_delivery is disabled
+
+    def add_scanner(self, scanner_name, remote_host, remote_port, ssl_cert, ssl_key, ssl_hostname, ssl_ca):
+        assert isinstance(scanner_name, str) and scanner_name
+        assert isinstance(remote_host, str) and remote_host
+        assert isinstance(remote_port, int) and remote_port
+        assert isinstance(ssl_cert, str) and ssl_cert
+        assert isinstance(ssl_key, str) and ssl_key
+        assert isinstance(ssl_hostname, str) and ssl_hostname
+        assert isinstance(ssl_ca, str) and ssl_ca
+
+        self.scanners.append(RemoteEmailScanner(scanner_name,
+                                                remote_host, remote_port, 
+                                                ssl_cert, ssl_key, ssl_hostname, ssl_ca,
+                                                self))
+
+    def start(self):
+        # start each scanner in this group
+        for scanner in self.scanners:
+            scanner.start()
+
+        # note that the RemoteEmailScannerGroup itself doesn't run
+        # the RemoteEmailScanner each run a thread that calls get_work() to get items from the queue
+
+    def stop(self):
+        global_shutdown()
+        for scanner in self.scanners():
+            scanner.stop()
+
+        logging.info("waiting for {}".format(self))
+        self.thread.join()
+
+    # this is called from the EmailDistributionEngine
+    def process(self, scan_request): # blocking
+        """Adds the given EmailScanRequest to the processing queue."""
+        assert isinstance(scan_request, EmailScanRequest)
+
+        # the coverage setting for a group determines how many emails are actually sent to scanners for the group
+        self.coverage_counter += self.coverage
+        if self.coverage_counter >= 1.0:
+            self.coverage_counter -= 1.0
+            
+            while not global_shutdown_flag:
+                try:
+                    self.submit_queue.put(scan_request, block=self.full_delivery, timeout=1)
+                    self.assigned_count += 1
+                    logging.debug("added {} to submit_queue for {}".format(scan_request, self))
+                    break
+                except queue.Full:
+                    logging.debug("{} submit_queue is full".format(self))
+                    # if we are not in full delivery mode then we delete this email as an error
+                    if not self.full_delivery:
+                        scan_request.complete(STATUS_FAILED_DELIVERY)
+                        self.delivery_failures += 1
+                        return
+
+                    continue
+        else:
+            # if the counter did not exceed 1.0 then we mark this scan_request as skipped
+            self.skipped_count += 1
+            scan_request.complete(STATUS_SKIPPED)
+
+    def reprocess(self, scan_request):
+        """Adds the given EmailScanRequest to the reprocessing queue."""
+        assert isinstance(scan_request, EmailScanRequest)
+
+        if not self.full_delivery:
+            logging.debug("full delivery disabled on {} - skipping reprocess request for {}".format(self, scan_request))
+            scan_request.complete(STATUS_FAILED_DELIVERY)
+            self.delivery_failures += 1
+            return
+
+        self.reprocess_queue.put_nowait(scan_request)
+        logging.debug("added {} to reprocess_queue for {}".format(scan_request, self))
+
+    def get_work(self):
+        """Get the next EmailScanRequest to process.  This is called from RemoteEmailScanner objects.
+           Returns None if nothing is available."""
+        try:
+            # handle emails that need to be reprocessed first
+            return self.reprocess_queue.get_nowait()
+        except queue.Empty:
+            try:
+                # or just get the next thing to send
+                return self.submit_queue.get(block=True, timeout=1)
+            except queue.Empty:
+                # or return None if nothing is available
+                return None
+
+    def __str__(self):
+        return "RemoteEmailScannerGroup({})".format(self.name)
+
+class RemoteEmailScanner(object):
+    """Represents a remote email scanner that emails can be submitted to for scanning."""
+    def __init__(self, scanner_name, remote_host, remote_port, ssl_cert, ssl_key, ssl_hostname, ssl_ca, scanner_group):
+        self.scanner_name = scanner_name
+        self.remote_host = remote_host
+        self.remote_port = remote_port
+        self.ssl_cert = ssl_cert
+        self.ssl_key = ssl_key
+        self.ssl_hostname = ssl_hostname
+        self.ssl_ca = ssl_ca
+        
+        # the RemoteEmailScannerGroup this scanner belongs to
+        # this is where we pull the work from
+        self.scanner_group = scanner_group
+
+        # maintain a buffer of emails to send
+        # once the buffer fills up or some amount of time elapses we call flush() to actually submit the emails
+        self._buffer = [] # of Email objects
+        self.last_submit_time = datetime.datetime.now()
+        self.cooldown_release = None # a datetime.datetime object of when we release out of cooldown mode
+
+        # primary execution thread
+        self.thread = None
+
+        # metrics
+        self.submission_count = 0 # number of emails submitted
+
+    def start(self):
+        assert not self.thread
+        self.thread = threading.Thread(target=self.run, name=str(self))
+        self.thread.start()
+
+    def stop(self):
+        global_shutdown()
+        logging.info("waiting for {}".format(self))
+        self.thread.join()
+        self.thread = None
+
+    def enter_cooldown(self):
+        self.cooldown_release = datetime.datetime.now() + datetime.timedelta(seconds=config.cooldown_time)
+        logging.info("cooldown for {} set to {}".format(self.scanner_name, self.cooldown_release))
+
+    def process_cooldown(self):
+        """Checks and modifies the current state of cooldown.  Returns self.is_on_cooldown()"""
+        if self.cooldown_release and datetime.datetime.now() >= self.cooldown_release:
+            logging.info("scanner {} exiting cooldown time".format(self))
+            self.cooldown_release = None
+
+        return self.is_on_cooldown()
+
+    def is_on_cooldown(self):
+        """Returns True if this scanner is currently on cooldown."""
+        return self.cooldown_release is not None
+
+    def run(self):
+        while not global_shutdown_flag:
+            try:
+                if self.process_cooldown():
+                    # sleep for the duration of the cooldown
+                    sleep((self.cooldown_release - datetime.datetime.now()).total_seconds())
+                    continue
+                        
+                self.execute()
+
+            except Exception as e:
+                NOTIFY("uncaught exception {}".format(e))
+                self.enter_cooldown()
+
+    def execute(self):
+        scan_request = self.scanner_group.get_work() # blocking
+        if scan_request:
+            # sanity check
+            if not os.path.exists(scan_request.email.path):
+                logging.error("email path {} does not exist".format(scan_request.email.path))
+                scan_request.complete(STATUS_ERROR, "path {} does not exist".format(scan_request.email.path))
+            else:
+                self._buffer.append(scan_request)
+                logging.debug("{} got {} from queue".format(self, scan_request))
+
+        # nothing to send?
+        if not self._buffer:
+            return
+
+        submit = False
+        # has the buffer reached capacity?
+        if len(self._buffer) == config.batch_size:
+            logging.debug("buffer size {} reached for {}".format(config.batch_size, self))
+            submit = True
+
+        # or has enough time elapsed?
+        if not submit and (datetime.datetime.now() - self.last_submit_time).total_seconds() >= config.flush_time:
+            logging.debug("flush time reach for {} with buffer size {}".format(self, len(self._buffer)))
+            submit = True
+            
+        if not submit:
+            return
+
+        self.last_submit_time = datetime.datetime.now()
+
+        # submit all of the given emails to the remote system
+        logging.info("submitting {} emails to {}".format(len(self._buffer), self.scanner_name))
+        tar_command = ['tar', 'zc']
+        tar_command.extend([s.email.path for s in self._buffer])
+
+        client_socket = None
+
+        try:
+            context = ssl.create_default_context()
+            logging.debug("loading ssl certificates root ca {} client cert {} client key {}".format(
+                          self.ssl_ca, self.ssl_cert, self.ssl_key))
+            context.load_verify_locations(self.ssl_ca)
+            context.load_cert_chain(self.ssl_cert, keyfile=self.ssl_key)
+            client_socket = context.wrap_socket(socket.socket(socket.AF_INET), server_hostname=self.ssl_hostname)
+            logging.info("connecting to {}:{}".format(self.remote_host, self.remote_port))
+            client_socket.connect((self.remote_host, self.remote_port))
+            logging.info("submitting data to {}:{}".format(self.remote_host, self.remote_port))
+
+            stderr_fp = tempfile.TemporaryFile()
+            try:
+                p = Popen(tar_command, stdout=PIPE, stderr=stderr_fp)
+                total_bytes = 0
+                while True:
+                    data = p.stdout.read(io.DEFAULT_BUFFER_SIZE)
+                    if data == b'':
+                        break
+
+                    client_socket.sendall(data)
+                    total_bytes += len(data)
+
+                logging.info("sent {} bytes to {}:{}".format(total_bytes, self.remote_host, self.remote_port))
+                client_socket.shutdown(socket.SHUT_RDWR)
+                client_socket.close()
+                client_socket = None
+                p.wait()
+
+                if p.returncode:
+                    logging.error("tar command returned {}".format(p.returncode))
+
+            finally:
+                stderr_fp.flush()
+                stderr_fp.seek(0)
+                stderr = stderr_fp.read()
+                stderr_fp.close()
+
+                if stderr:
+                    logging.error("tar process stderr: {}".format(stderr))
+
+            # mark these requests as completed
+            for scan_request in self._buffer:
+                scan_request.complete(STATUS_SUBMITTED)
+
+            self.submission_count += len(self._buffer)
+            return True
+
+        except Exception as e:
+            logging.error("unable to submit to {}:{}: {}".format(self.remote_host, self.remote_port, e))
+            self.enter_cooldown()
+
+            # reprocess everything in our buffer
+            for scan_request in self._buffer:
+                scan_request.reprocess()
+
+            return False
+
+        finally:
+            if client_socket:
+                try:
+                    client_socket.shutdown(socket.SHUT_RDWR)
+                    client_socket.close()
+                except:
+                    pass
+
+            # we clear the buffer no matter what
+            self._buffer.clear()
+
+    def __str__(self):
+        return "RemoteEmailScanner({}:{}:{})".format(self.scanner_name, self.remote_host, self.remote_port)
+
+def mta(config):
+    """Submits available emails to ACE for analysis. Returns the number of emails submitted."""
+    global engine
+
+    # load distribution settings
+    engine = EmailDistributionEngine()
+
+    # set up a graceful termination handler
+    def _handler(signum, frame):
+
+        global wakeup
+
+        if signum == signal.SIGTERM:
+            logging.warning("caught SIGTERM")
+            global_shutdown()
+        elif signum == signal.SIGUSR1:
+            logging.debug("caught SIGUSR1")
+            wakeup = True
+
+    signal.signal(signal.SIGTERM, _handler)
+    signal.signal(signal.SIGUSR1, _handler)
+
+    try:
+        engine.start()
+        engine.wait()
+    except KeyboardInterrupt:
+        global_shutdown()
+        engine.wait()
+    except Exception as e:
+        logging.error("uncaught exception: {}".format(e))
+        global_shutdown()
+
+    logging.info("daemon process exited")
+
+    # END PRIMARY LOOP
+    # ========================================================================
+
+if __name__ == '__main__':
+
+    import argparse
+    global args
+    global base_dir
+
+    parser = argparse.ArgumentParser(description="ACE Mailbox Client")
+    parser.add_argument('--base-dir', required=False, dest='base_dir', default=None,
+        help="Base directory for ace mta (defaults to /opt/amc)")
+    parser.add_argument('-c', '--config', required=False, dest='config', default=os.path.join('etc', 'amc_client.ini'),
+        help="Path to configuration file (relative to base directory.) "
+             "This option is not required in MDA mode if you specify the --base-dir, --data-dir and --db-path options")
+    parser.add_argument('-L', '--logging-config-path', required=False, dest='logging_config_path', 
+        default=os.path.join('etc', 'amc_client_logging.ini'),
+        help="Path to the logging configuration file relative to base directory (defaults to etc/logging.ini)")
+    parser.add_argument('--log-level', required=False, dest='log_level', default=None,
+        help="Change the root log level.")
+
+    parser.add_argument('--data-dir', required=False, dest='data_dir', default=None,
+        help="Relative directory where emails are locally stored for transport. Defaults to 'data'."
+             "Overrides value specified in configuration file.")
+
+    parser.add_argument('--mysql-host', required=False, dest='mysql_host', default=None,
+        help="MySQL database settings. Defaults to 'localhost'.")
+    parser.add_argument('--mysql-unix-socket', required=False, dest='mysql_unix_socket', default=None,
+        help="MySQL database settings. Defaults to '/var/run/mysqld/mysqld.sock'.")
+    parser.add_argument('--mysql-user', required=False, dest='mysql_username', default=None,
+        help="MySQL database settings. Defaults to 'amc'.")
+    parser.add_argument('--mysql-password', required=False, dest='mysql_password', default=None,
+        help="MySQL database settings. Defaults to 'aoQ39dnxU'.")
+    parser.add_argument('--mysql-database', required=False, dest='mysql_database', default=None,
+        help="MySQL database settings. Defaults to 'amc'.")
+
+    parser.add_argument('-d', '--daemon', required=False, dest='daemon', default=False, action='store_true',
+        help="Run this process as a daemon in the background. Valid only with the --mta option.")
+    parser.add_argument('-k', '--kill-daemon', required=False, dest='kill_daemon', default=False, action='store_true',
+        help="Kill the currently running daemon process.")
+    args = parser.parse_args()
+
+    config = Config()
+    config.args = args
+
+    if args.base_dir:
+        config.base_dir = args.base_dir
+
+    try:
+        os.chdir(config.base_dir)
+    except Exception as e:
+        sys.stderr.write("unable to cd into {}: {}\n".format(config.base_dir, e))
+        sys.exit(1)
+
+    sys.path.append(os.path.join(config.base_dir, 'lib'))
+
+    if args.logging_config_path:
+        config.logging_config_path = args.logging_config_path
+
+    # initialize logging
+    if not os.path.exists(config.logging_config_path):
+        sys.stderr.write("logging configuration file {} does not exist\n".format(config.logging_config_path))
+        sys.exit(1)
+
+    try:
+        logging.config.fileConfig(config.logging_config_path)
+    except Exception as e:
+        sys.stderr.write("unable to initialize logging: {}\n".format(e))
+        sys.exit(1)
+
+    if args.log_level:
+        try:
+            logging.getLogger().setLevel(args.log_level)
+        except Exception as e:
+            sys.stderr.write("unable to set logging level {}: {}\n".format(args.log_level, e))
+
+    try:
+        config.file_config = configparser.ConfigParser()
+        config.file_config.read(args.config)
+
+        global_config = config.file_config['global']
+        mysql_config = config.file_config['database']
+        config.data_dir = global_config['data_dir']
+        config.mysql_host = mysql_config['host']
+        config.mysql_unix_socket = mysql_config['unix_socket']
+        config.mysql_username = mysql_config['username']
+        config.mysql_password = mysql_config['password']
+        config.mysql_database = mysql_config['database']
+        config.yara_rule_path = global_config['yara_rule_path']
+        config.blacklist_yara_rule_path = global_config['blacklist_yara_rule_path']
+        config.batch_size = global_config.getint('batch_size')
+        config.cooldown_time = global_config.getint('cooldown_time')
+        config.pid_path = global_config['pid_path']
+        config.review_dir = global_config['review_dir']
+
+    except Exception as e:
+        logging.error("unable to load configuration file {}: {}".format(args.config, e))
+        raise e
+        sys.exit(1)
+
+    if args.data_dir:
+        config.data_dir = args.data_dir
+
+    if args.mysql_host:
+        config.mysql_host = args.mysql_host
+
+    if args.mysql_unix_socket:
+        config.mysql_unix_socket = args.mysql_unix_socket
+
+    if args.mysql_username:
+        config.mysql_username = args.mysql_username
+
+    if args.mysql_password:
+        config.mysql_password = args.mysql_password
+
+    if args.mysql_database:
+        config.mysql_database = args.mysql_database
+
+    # do we want to kill the currently executing daemon process?
+    if args.kill_daemon:
+        if not os.path.exists(config.pid_path):
+            logging.info("daemon not running (pid file {} does not exist)".format(config.pid_path))
+            sys.exit(1)
+
+        with open(config.pid_path, 'r') as fp:
+            pid = int(fp.read())
+
+        # is it running?
+        p = None
+        try:
+            p = psutil.Process(pid)
+        except Exception as e:
+            logging.info("process {} is not running (removing stale pid file)".format(pid))
+
+        if p:
+            # can we stop it?
+            try:
+                logging.info("terminating daemon process {}".format(p))
+                os.kill(pid, signal.SIGTERM)
+                p.wait(timeout=5)
+            except Exception as e:
+                logging.error("unable to terminate daemon process {}: {}".format(p, e))
+                sys.exit(1)
+
+        try:
+            os.remove(config.pid_path)
+        except Exception as e:
+            logging.error("unable to remove pid file {}: {}".format(config.pid_path, e))
+            sys.exit(1)
+
+        sys.exit(0)
+
+    if not os.path.isdir(config.data_dir):
+        try:
+            os.makedirs(config.data_dir)
+            logging.info("created data directory {}".format(config.data_dir))
+        except Exception as e:
+            logging.error("unable to create data directory {}: {}".format(config.data_dir, e))
+            sys.exit(1)
+
+    if not os.path.isdir(config.review_dir):
+        try:
+            os.makedirs(config.review_dir)
+            logging.info("created failed mta directory {}".format(config.review_dir))
+        except Exception as e:
+            logging.error("unable to create review directory {}: {}".format(config.review_dir, e))
+            sys.exit(1)
+
+    if not os.path.isdir(os.path.dirname(config.pid_path)):
+        try:
+            os.makedirs(os.path.dirname(config.pid_path))
+            logging.info("created pid directory {}".format(os.path.dirname(config.pid_path)))
+        except Exception as e:
+            logging.error("unable to create pid directory {}: {}".format(os.path.dirname(config.pid_path), e))
+            sys.exit(1)
+
+    # do we want to fork into the background and run as a daemon?
+    if args.daemon:
+        # are we already running?
+        if os.path.exists(config.pid_path):
+            logging.error("daemon pid file {} already exists "
+                          "(try running with -k option first)".format(config.pid_path))
+            sys.exit(1)
+
+        # http://code.activestate.com/recipes/278731-creating-a-daemon-the-python-way/
+        try:
+            pid = os.fork()
+        except OSError as e:
+            logging.error("{0} ({1})".format(e.strerror, e.errno))
+            sys.exit(1)
+
+        if pid == 0:
+            os.setsid()
+
+            try:
+                pid = os.fork()
+            except OSError as e:
+                logging.error("{0} ({1})".format(e.strerror, e.errno))
+                sys.exit(1)
+
+            if pid > 0:
+                # write the pid to a file
+                with open(config.pid_path, 'w') as fp:
+                    fp.write(str(pid))
+
+                logging.info("executing as daemon process id {}".format(pid))
+                os._exit(0)
+        else:
+            os._exit(0)
+
+        import resource
+        maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+        if (maxfd == resource.RLIM_INFINITY):
+            maxfd = MAXFD
+
+            for fd in range(0, maxfd):
+                try:
+                    os.close(fd)
+                except OSError:   # ERROR, fd wasn't open to begin with (ignored)
+                    pass
+
+        if (hasattr(os, "devnull")):
+            REDIRECT_TO = os.devnull
+        else:
+            REDIRECT_TO = "/dev/null"
+
+        os.open(REDIRECT_TO, os.O_RDWR)
+        os.dup2(0, 1)
+        os.dup2(0, 2)
+
+    mta(config)
+    sys.exit(0)
