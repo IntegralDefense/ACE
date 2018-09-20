@@ -192,25 +192,35 @@ class BrotexSMTPStreamArchiveAction(AnalysisModule):
         analysis = self.create_analysis(_file)
         source_path = os.path.join(self.root.storage_dir, _file.value)
         archive_path = os.path.join(archive_dir, _file.value)
-        if os.path.exists('{}.gz.gpg'.format(archive_path)):
-            logging.warning("archive path {} already exists".format('{}.gz.gpg'.format(archive_path)))
+        if os.path.exists('{}.gz.e'.format(archive_path)):
+            logging.warning("archive path {} already exists".format('{}.gz.e'.format(archive_path)))
             analysis.details = archive_path
             return True
         else:
             shutil.copy2(source_path, archive_path)
 
+        archive_path += '.gz'
+
         # compress the data
         logging.debug("compressing {}".format(archive_path))
-        Popen(['gzip', '-f', archive_path]).wait()
+        try:
+            with open(source_path, 'rb') as fp_in:
+                with gzip.open(archive_path, 'wb') as fp_out:
+                    shutil.copyfileobj(fp_in, fp_out)
 
-        archive_path += '.gz'
+        except Exception as e:
+            logging.error("compression failed for {}: {}".format(archive_path, e))
+
         if not os.path.exists(archive_path):
             raise Exception("compression failed for {}".format(archive_path))
 
         # encrypt the archive file
-        Popen(['gpg', '--quiet', '--yes', '--encrypt', '-r', 
-               saq.CONFIG['gpg']['encryption_recipient'], archive_path]).wait()
-        encrypted_file = '{}.gpg'.format(archive_path)
+        encrypted_file = '{}.e'.format(archive_path)
+
+        try:
+            encrypt(archive_path, encrypted_file)
+        except Exception as e:
+            logging.error("unable to encrypt archived stream {}: {}".format(archive_path, e))
 
         if os.path.exists(encrypted_file):
             logging.debug("encrypted {}".format(archive_path))
@@ -1683,6 +1693,14 @@ class EmailArchiveAction(PostAnalysisModule):
 
         analysis.details = archive_path
         return True
+
+    @property
+    def maintenance_frequency(self):
+        return 60 # execute every 60 seconds
+
+    def execute_maintenance(self):
+        from saq.email import maintain_archive
+        maintain_archive()
 
 class EmailConversationFrequencyAnalysis(Analysis):
     """How often does this external person email this internal person?"""
