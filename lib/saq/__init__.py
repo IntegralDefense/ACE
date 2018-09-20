@@ -68,6 +68,7 @@ EXCLUDED_SLA_ALERT_TYPES = []
 
 # Yara Scanner Server base directory
 YSS_BASE_DIR = None
+YSS_SOCKET_DIR = None
 
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
@@ -198,6 +199,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     global STATS_DIR
     global MODULE_STATS_DIR
     global YSS_BASE_DIR
+    global YSS_SOCKET_DIR
 
     # go ahead and try to figure out what text encoding we're using
     DEFAULT_ENCODING = locale.getpreferredencoding()
@@ -222,6 +224,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         sys.stderr.write("invalid root SAQ directory {0}\n".format(SAQ_HOME)) 
         sys.exit(1)
 
+    # XXX not sure we need this SAQ_RELATIVE_DIR anymore -- check it out
     # this system was originally designed to run out of /opt/saq
     # later we modified to run out of anywhere for command line correlation
     # when running the GUI in apache you have no control over the current working directory
@@ -231,7 +234,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     SAQ_RELATIVE_DIR = os.getcwd()
     if relative_dir:
         SAQ_RELATIVE_DIR = relative_dir
-
 
     # load configuration file
     # defaults to $SAQ_HOME/etc/saq.ini
@@ -364,6 +366,8 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     YSS_BASE_DIR = os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'])
     if not os.path.exists(YSS_BASE_DIR):
         logging.critical("[yara][yss_base_dir] is set to {} but does not exist".format(YSS_BASE_DIR))
+
+    YSS_SOCKET_DIR = os.path.join(YSS_BASE_DIR, CONFIG['yara']['yss_socket_dir'])
 
     # initialize the database connection
     initialize_database()
