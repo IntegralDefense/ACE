@@ -1,11 +1,21 @@
-Background & Philosophy
-=======================
+Some Background
+===============
+
+If you're curious about where ACE came from, or the bigger picture of how ACE is meant to be used, the following topics cover some concepts, at a high level, that should first be understood.
+
+Additionally, John Davison gave a talk on the development of the ACE toolset at Bsides Cincinnati in 2015 and covers these same topics. You can watch his presentation here:
+
+.. raw:: html
+
+   <iframe width="560" height="315" src="https://www.youtube.com/embed/okMkF-NYCHk?rel=0" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
 
 Driving Behavior
 ----------------
 
 With the goal set at always detecting advanced attacks and attackers across an organization, you must have detection point coverage across your entire attack surface. This can be challenging in a world of constraints, such as Analyst time. Analysts cannot be inundated with an un-manageable number of alerts; nor should they be presented with the same alert repeatedly. You need to manage and optimize the volume of alerts presented to analysts. The best way to do this is to get a handle on your False Positive metrics and how those metrics should drive your Hunting and Tuning behavior. 
+
 THE METRIC TO DRIVE: Assume the majority of all alerts are False Positive, then for each alert that is analyzed, how long does it take the analyst to **realize** it is a False Positive? 
+
 Why does this metric matter? Because Detection is Hard and Analyst time is highly valuable to a successful security operation.
 
 False Positive Metrics
@@ -20,55 +30,16 @@ If your worst analyst can't disposition a False Positive in seconds, then it’s
 Hunting and Tuning!
 +++++++++++++++++++
 
-Hunting is the active process of searching for maliciousness. From hunting, we deleop hunts that are meant to detect some specific form of maliciousness. A hunt could be looking for a strange process behavioural patterns, it could be a yara signature, or just a search for some atomic indicators. When a hunt returns a result, we have a detection and we need to Alert.
+Hunting is the active process of searching for maliciousness. From hunting, we develop hunts that are meant to detect some specific form of maliciousness. A hunt could be looking for a strange process behavioral patterns, it could be a yara signature, or just a search for some atomic indicators. When a hunt returns a result, we have a detection and we need to Alert.
 
-Hunst produce True Positives and False Positives. Tunning is the process of telling a hunt not to alert on something we've already determined to be a False Positive. Tune out the False Positives.
+Hunts produce True Positives and False Positives. Tuning is the process of telling a hunt not to alert on something we've already determined to be a False Positive. Tune out the False Positives.
 
-But when to Hunt and Tune? If the detection team can handle X amount of alerts in a day, and if n = the number of alerts your tools generate in a day. Then,
+But when to Hunt and Tune? If the detection team can handle X number of alerts in a day, and if n is the number of alerts your tools generate in a day. Then,
 
   - If n >= X then **tune**.
   - If n < X then **hunt**. And introduce more alerts for the analysts
 
-Now, this hunting and tuning will increase our attack surface coverage.:
-
   Hunt + Tune == Coverage++
 
+So, with an understanding of your False Positive metrics, hunting and tuning can be used to expand your attack surface coverage.
 
-
-Tachtical
-~~~~~~~~~
-
-
-Alert Triage
-++++++++++++
-
-
-- Analysis of the initial alert.
-- Observables of identifiable _things_.
-- Research of these _things_. Build the case.
-- Possibly more observations of identifiable things from the output of the research, leading to more research.
-- Possible rabbit holes. Time disapears.
-- You begin to develop impressions of what you see, what you observe, and the relationships between those observations.
-
-::
-
-  from humans import emotions
-
-
-Analysis Correlation Engine
-
-
-
-
-Tagging
-+++++++
-
-
-
-Display - GUI
-+++++++++++++
-
-The GUI must draw the picture or an alert.
-The GUI must invoke the correct emotion in the human.
-
-Alert observable tree structure.

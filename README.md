@@ -1,29 +1,40 @@
 # ACE - Analysis Correlation Engine
 
-ACE **_is NOT_** a SIEM.
+ACE is a detection system and automation framework. ACE’s foundation is its Engine for recursive analysis, but also its intuitive presentation to the human analyst.
 
-ACE **_is_** ..
+Send your Alerts to ACE, and let ACE handle the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. ACE will then contextually and intuitively present all the right data to the human, allowing for a quick, high confidence determination to be made.
+
+Got some new analysis that can be automated? Awesome! Add your automation, and let ACE keep working for you.
+
+![Analyst using ACE](docs/_static/recursive-analysis-and-contextual-presentation.png)
+
+ACE **is NOT** a SIEM... but, it *kind of*, *sort of* can act like one, if that's your thing.
+
+For the most part, custom hunting tools send Alerts to ACE using ACE’s client library (API wrapper). ACE then gets to work by taking whatever one single detectable condition it’s given, and spirals out through its recursive analysis of observables; hitting as many detections points as possible across the attack surface.
+
+ACE **is** ..
+
 * an email scanner
-* a detection tool set
+* a detection tool set and platform
 * an automation framework
 * a recursive file scanner
 * a URL crawler and cacher
-* an automated, recursive, data analysis and correlation system
-* and more..
+* a system for automated, recursive, data analysis and correlation
+* more things that could be added to this list...
 
-ACE is a system for automating the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data, in such a way, as to present security analysts with all the right data needed to give a quick, high confidence disposition.
+ACE is the implementation of a proven detection strategy, a framework for automating analysis, a central platform to launch and manage incident response activates, an email scanner, and much more.
 
 ### Major Features
 
-+ email scanning
-+ recursive file scanning
-+ URL crawling and content caching
-+ intuitive presentation
-+ recursive data analysis and correlation
-+ modular, bolt-on design
-+ Central and singular interface
++ Email Scanning
++ Recursive File Scanning
++ URL Crawling and Content Caching
++ Intuitive Alert Presentation
++ Recursive Data Analysis & Correlation
++ Central Analyst Interface
 + Event management
-+ Intel ingestion
++ Intel Ingestion
++ Modular Design for extending automation
 
 ## The Super Fast, Getting Started
 1. Clean Ubuntu 18 install.
@@ -40,7 +51,7 @@ ACE is a system for automating the ordinary, manual, redundant, and repetitive t
 
 ## Built for the InfoSec Team
 
-Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase their attack surface coverage, all while utilizing the same amount of analyst time and practically eliminating alert fatigue.
+Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase their attack surface coverage, all while utilizing the same amount of analyst time and practically eliminating alert fatigue. Optimization good, alert fatigue bad.
 
 ![Analyst using ACE](docs/_static/analyst_on_ace.png)
 
@@ -53,5 +64,5 @@ For a more in-depth understanding of the philosophy behind ACE, see the talk tha
 
 ## Documentation
 
-View ACE's full documentaion here: [https://seanm17-ace.readthedocs.io/en/latest/](https://seanm17-ace.readthedocs.io/en/latest/)
+View ACE's full documentation here: [https://seanm17-ace.readthedocs.io/en/latest/](https://seanm17-ace.readthedocs.io/en/latest/)
 
