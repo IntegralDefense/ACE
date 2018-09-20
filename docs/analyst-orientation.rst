@@ -15,7 +15,7 @@ Keep this in mind when working ACE alerts: ACE is meant to enable the Analyst to
 Quick Concept Touchpoint
 ------------------------
 
-There are two core concepts an analyst must be familiar with when working ACE alerts, Observables and Dispositioning. If the term :ref:`Alert Triage <alert-triage>` is not familiar to you, see the :ref:`Alert Triage <alert-triage>` section first.
+There are two core concepts an analyst must be familiar with when working ACE alerts, Observables and Dispositioning.
 
 .. _observable:
 .. _Observables:
