@@ -1,0 +1,2 @@
+CREATE TABLE emails ( id BIGINT NOT NULL AUTO_INCREMENT, path VARCHAR(512) NOT NULL, PRIMARY KEY (id) );
+CREATE UNIQUE INDEX i_emails_path ON emails(path);
