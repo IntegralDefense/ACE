@@ -8,21 +8,21 @@ ACE: Analysis Correlation Engine
 
 Release v\ |release|.
 
-For every security operation, the number one metric to drive should be how long it takes to determine if an Alert is a False Positive or True Positive. Ideally, False Positive Alerts are confidently, and accurately, recognized in seconds. Allowing for analysts to focus on Alerts that require some form or a response.
+ACE is a detection system and automation framework. ACE's foundation is its Engine for recursive analysis, but also its intuitive presentation to the human analyst. 
 
-What if you had a magical tool that somehow, for each alert, gave the analyst enough information that he or she could quickly determine that the alert was a False Positive? How would that affect things?
+Send your Alerts to ACE, and let ACE handle the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. But not-to-worry, ACE will then contextually and intuitively present all of the right data to the human, allowing for a quick, high confidence determination to be made.
 
-.. figure:: _static/ace-high-level.png
-   :scale: 50%
+Oh, and you've got some new analysis that can be automated? Awesome! Add your automation, and let ACE keep working for you.
+
+
+.. figure:: _static/recursive-analysis-and-contextual-presentation.png
    :align: center
 
-   Observable Analysis & Correlation
+   Recursive Analysis; Presentation
 
-ACE **is NOT** a SIEM... but, it *kinda*, *sorta*, acts like one.
+ACE **is NOT** a SIEM... but, it *kinda*, *sorta* can act like one, if that's your thing.
 
-Other tools, hunters, smtp listeners, splunk hunters, elk hunters, take one sigle detectable condition and send an Alerts to ACE. ACE then spiders out through its recursive analysis of observables and hopefully hits as many detections points on the attack surface, as possible.
-
-Unlike a SIEM, ACE takes
+For the most part, custom hunting tools send Alerts to ACE using ACE's client library (API wrapper). ACE then gets to work by taking whatever one sigle detectable condition its given, and spidering out through its recursive analysis of observables; hitting as many detections points as possible across the attack surface.
 
 ACE **is** ..
 
@@ -32,13 +32,11 @@ ACE **is** ..
 * a recursive file scanner
 * a URL crawler and cacher
 * a system for automated, recursive, data analysis and correlation
-* and more..
+* more things that should be added to this list..
 
-Built for the information security team, ACE is the implementation of a proven detection strategy, a framework for automating analyst tasks and methods, a central platform to launch and manage incident response and remediation activites, an email scanner, and much more.
+Built for the information security team, ACE is the implementation of a proven detection strategy, a framework for automating analysis, a central platform to launch and manage incident response and remediation activites, an email scanner, and much more.
 
-ACE's core strength is the automation of the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data, in such a way, as to present security analysts with all the right data needed to give a quick, high confidence disposition.
-
-Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase their attack surface coverage, all while utilizing the same amount of analyst time and practically eliminating alert fatigue.
+Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence determination, or as we call it, disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase the attack surface they cover, all while utilizing the same amount of analyst time and practically eliminating alert fatigue. Optimization good, alert fitigue bad.
 
 Major Features
 --------------
@@ -61,7 +59,7 @@ Major Features
 
    installation
    analyst-orientation
-   work-in-progress
+   education 
    user-guide
    admin-guide
    developer-guide
