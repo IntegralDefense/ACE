@@ -3,8 +3,8 @@
    sub-section breaking down each step
 
 
-Installation
-============
+Installation + Adding Data
+==========================
 
 Super fast How-To
 -----------------
@@ -23,8 +23,7 @@ Super fast How-To
 Detailed Installation
 ---------------------
 
-Getting Started
----------------
 
 Getting Data into ACE
-~~~~~~~~~~~~~~~~~~~~~
+---------------------
+
