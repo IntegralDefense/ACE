@@ -38,8 +38,8 @@ Via the Manual Analysis page, an analyst can submit an observable for ACE to ana
 
    Observables can be submitted for analysis via the Manual Analysis page
 
-By default, the Insert Date is set to the current time and the Description set to 'Manual Correlation'. You should go ahead and change the description to something meaningful. The Target Company will also be set to default, which should be fine for most ACE installations.
+By default, the Insert Date is set to the current time, and the Description is set to 'Manual Correlation'. You can change the description to something meaningful. The Target Company will also be set to default, which should be fine for most ACE installations.
 
-Select the type of observable you wish to correlation and then provide the value. Click the Add button to correlate more than one observable type and/or value at a time.
+Select the type of observable you wish to correlate and then provide the value. Click the Add button to correlate more than one observable type and/or value at a time.
 
-Shortly, after you've submitted your observable(s) for correlation, you will see your alert appear on the Manage Alerts page with the description you provided. The alert status will change to 'Complete' once ACE is done performing its analysis. Currently, you must manually refresh the Manage Alerts page for status updates.
+Shortly after you've submitted your observable(s) for correlation, you will see your alert appear on the Manage Alerts page with the description you provided. The alert status will change to 'Complete' once ACE is finished performing its analysis. You must currently refresh the Manage Alerts page to see the alert status updates.
