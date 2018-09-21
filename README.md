@@ -1,8 +1,8 @@
 # ACE - Analysis Correlation Engine
 
-ACE is a detection system and automation framework. ACE’s foundation is its Engine for recursive analysis, but also its intuitive presentation to the human analyst.
+ACE is a detection system and automation framework. ACE’s foundation is its engine for recursive analysis and its intuitive presentation to your analysts.
 
-Send your Alerts to ACE, and let ACE handle the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. ACE will then contextually and intuitively present all the right data to the human, allowing for a quick, high confidence determination to be made.
+Send your alerts to ACE and let ACE handle the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. ACE will then contextually and intuitively present all the right data to the analyst, allowing for a quick, high confidence determination to be made.
 
 Got some new analysis that can be automated? Awesome! Add your automation, and let ACE keep working for you.
 
@@ -10,7 +10,7 @@ Got some new analysis that can be automated? Awesome! Add your automation, and l
 
 ACE **is NOT** a SIEM... but, it *kind of*, *sort of* can act like one, if that's your thing.
 
-For the most part, custom hunting tools send Alerts to ACE using ACE’s client library (API wrapper). ACE then gets to work by taking whatever one single detectable condition it’s given, and spirals out through its recursive analysis of observables; hitting as many detections points as possible across the attack surface.
+For the most part, custom hunting tools send alerts to ACE using ACE’s client library (API wrapper). ACE then gets to work by taking whatever detectable conditions it’s given and spirals out through its recursive analysis of observables, hitting as many detection points as possible across the attack surface.
 
 ACE **is** ..
 
@@ -32,11 +32,11 @@ ACE is the implementation of a proven detection strategy, a framework for automa
 + Intuitive Alert Presentation
 + Recursive Data Analysis & Correlation
 + Central Analyst Interface
-+ Event management
++ Event and Incident Management
 + Intel Ingestion
 + Modular Design for extending automation
 
-## The Super Fast, Getting Started
+## The Super Fast, Getting Started Steps
 1. Clean Ubuntu 18 install.
 2. Create username/group ace/ace.
 3. Add ace to sudo.
@@ -46,18 +46,18 @@ ACE is the implementation of a proven detection strategy, a framework for automa
 7. `./installer/source_install`
 8. `source load_environment`
 8. `./ace add-user username email_address`
-9. Goto https://127.0.0.1:5000/ace/ or what IP address you're using.
+9. Goto https://127.0.0.1:5000/ace/ or whatever IP address you're using.
 
 
 ## Built for the InfoSec Team
 
-Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase their attack surface coverage, all while utilizing the same amount of analyst time and practically eliminating alert fatigue. Optimization good, alert fatigue bad.
+Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence alert disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase their attack surface coverage, all while utilizing the same amount of analyst time and practically eliminating alert fatigue. Optimization good, alert fatigue bad.
 
 ![Analyst using ACE](docs/_static/analyst_on_ace.png)
 
 ## Philosophy
 
-For a more in-depth understanding of the philosophy behind ACE, see the talk that John Davison gave on the development of the ACE tool set at Bsides Cincinnati in 2015.
+For a more in-depth understanding of the philosophy behind ACE, see the talk that John Davison gave on the development of the ACE tool set at BSides Cincinnati in 2015.
 
 [![Automated Detection Strategies](http://img.youtube.com/vi/okMkF-NYCHk/0.jpg)](https://youtu.be/okMkF-NYCHk)
 
