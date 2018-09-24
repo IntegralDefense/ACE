@@ -648,7 +648,7 @@ class Engine(object):
                 logging.error("error executing main maintenance loop for {}: {}".format(_module.name, e))
                 report_exception()
 
-            self.sleep(_module.maintenance_frequency)
+            self.maintenance_sleep(_module.maintenance_frequency)
 
         logging.info("maintenance loop ended")
 
