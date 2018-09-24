@@ -16,6 +16,8 @@ from saq.test import *
 from saq.engine.test_engine import AnalysisEngine, TerminatingMarker
 from saq.analysis import Analysis, RootAnalysis
 
+UNITTEST_SOCKET_DIR = 'socket_unittest'
+
 def get_yara_rules_dir():
     return os.path.join(saq.SAQ_HOME, 'test_data', 'yara_rules')
 
@@ -43,6 +45,8 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
 
         self.yss_process = Popen([ 'yss', 
                                    '--base-dir', saq.YSS_BASE_DIR,
+                                   '--socket-dir', UNITTEST_SOCKET_DIR,
+                                   '--pid-file', '.yss_unittest.pid',
                                    '-L', os.path.join('etc', 'unittest_logging.ini'),
                                    '-d', get_yara_rules_dir(), ], 
                                  stdout=PIPE, stderr=PIPE, 
@@ -55,7 +59,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
                     if line == '':
                         break
 
-                    #logging.info("MARKER: {}: {}".format(marker, line.strip()))
+                    logging.info("YSS: {}: {}".format(marker, line.strip()))
                     buf.append(line.strip())
 
             except Exception as e:
@@ -87,6 +91,10 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
     
         # change the yara scanning to point to /opt/saq/yara_scanner
         #saq.CONFIG['analysis_module_yara_scanner_v3_4']['base_dir'] = YSS_BASE_DIR
+        # change the location of the unix sockets we're using
+        self.old_socket_dir = saq.YSS_SOCKET_DIR
+        saq.YSS_SOCKET_DIR = UNITTEST_SOCKET_DIR
+
         # change what rules are getting loaded
         existing_rule_dirs = [key for key in saq.CONFIG['yara'].keys() if key.startswith('signature_')]
         for key in existing_rule_dirs:
@@ -113,6 +121,9 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
             self.yss_stdout_reader_thread = None
             self.yss_stderr_reader_thread.join()
             self.yss_stderr_reader_thread = None
+
+        # set the socket dir back
+        saq.YSS_SOCKET_DIR = self.old_socket_dir
 
         # reset the config since we changed stuff
         saq.load_configuration()

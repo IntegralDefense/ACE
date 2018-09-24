@@ -32,6 +32,7 @@ apt-get -y install \
 	poppler-utils \
     rng-tools \
     memcached \
+    nodejs \
     mysql-server || fail "package installation failed"
 
 # things that have been removed
