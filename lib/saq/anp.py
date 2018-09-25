@@ -27,6 +27,7 @@ __all__ = [
     'ANP_COMMAND_AVAILABLE',
     'ANP_COMMAND_COPY_FILE',
     'ANP_COMMAND_PROCESS',
+    'ANP_COMMAND_BUSY',
     'ANP_COMMAND_STRING',
     'ANP_CLASS_LOOKUP',
     'ACENetworkProtocolServer',
@@ -245,6 +246,10 @@ class ANPCommandOK(ANPMessage):
     def __init__(self, *args, **kwargs):
         super().__init__(ANP_COMMAND_OK, *args, **kwargs)
 
+class ANPCommandBUSY(ANPMessage):
+    def __init__(self, *args, **kwargs):
+        super().__init__(ANP_COMMAND_BUSY, *args, **kwargs)
+
 class ANPCommandERROR(ANPMessage):
     def __init__(self, error_message, *args, **kwargs):
         super().__init__(ANP_COMMAND_ERROR, *args, **kwargs)
@@ -337,6 +342,7 @@ ANP_COMMAND_PONG = 6
 ANP_COMMAND_AVAILABLE = 7
 ANP_COMMAND_COPY_FILE = 8
 ANP_COMMAND_PROCESS = 9
+ANP_COMMAND_BUSY = 10
 
 ANP_COMMAND_STRING = {
     ANP_COMMAND_EXIT: 'exit',
@@ -348,6 +354,7 @@ ANP_COMMAND_STRING = {
     ANP_COMMAND_AVAILABLE: 'available',
     ANP_COMMAND_COPY_FILE: 'copy_file',
     ANP_COMMAND_PROCESS: 'process',
+    ANP_COMMAND_BUSY: 'busy',
 }
 
 ANP_CLASS_LOOKUP = {
@@ -360,6 +367,7 @@ ANP_CLASS_LOOKUP = {
     ANP_COMMAND_AVAILABLE: ANPCommandAVAILABLE,
     ANP_COMMAND_COPY_FILE: ANPCommandCOPY_FILE,
     ANP_COMMAND_PROCESS: ANPCommandPROCESS,
+    ANP_COMMAND_BUSY: ANPCommandBUSY,
 }
 
 #
@@ -367,7 +375,11 @@ ANP_CLASS_LOOKUP = {
 #
 
 class ACENetworkProtocolServer(object):
-    def __init__(self, command_handler):
+    def __init__(self, listening_host, listening_port, command_handler):
+
+        # the interface to listen on for client connections
+        self.listening_host = listening_host
+        self.listening_port = listening_port
 
         # the function that gets called when a command is received
         self.command_handler = command_handler
