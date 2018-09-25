@@ -42,6 +42,7 @@ then
         saq.test_analysis \
         saq.test_database \
         saq.test_lock \
+        saq.test_anp \
         saq.engine.test_engine \
         saq.engine.test_email \
         saq.engine.test_ace \
@@ -73,7 +74,10 @@ PYTHONPATH=lib python3 -W ignore -m unittest -f -v $1
 #PYTHONPATH=lib python3 -W ignore -m unittest -v saq.test_database.DatabaseTestCase.test_database_007_caching_processes
 
 
-grep MARKER logs/unittest.log
+if [ -f logs/unittest.log ]
+then
+    grep MARKER logs/unittest.log
+fi
 
 if [ $( ls error_reports | wc -l ) -gt "0" ]
 then

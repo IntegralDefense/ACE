@@ -46,11 +46,12 @@ function get_target_http_filename(c: connection): string {
 }
 
 event http_request(c: connection, method: string, original_URI: string, unescaped_URI: string, version: string) {
-    c$ace_http_state = http_state_type($request_method=method, 
-                                   $request_original_URI=original_URI, 
-                                   $request_unescaped_URI=unescaped_URI, 
-                                   $request_version=version,
-                                   $request_headers=vector());
+    if (! c?$ace_http_state)
+        c$ace_http_state = http_state_type($request_method=method, 
+                                       $request_original_URI=original_URI, 
+                                       $request_unescaped_URI=unescaped_URI, 
+                                       $request_version=version,
+                                       $request_headers=vector());
 }
 
 event http_reply(c: connection, version: string, code: count, reason: string) {
