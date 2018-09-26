@@ -43,9 +43,16 @@ import struct
 import io
 
 import saq
+from saq.crypto import encrypt_chunk, decrypt_chunk
 from saq.error import report_exception
 
 DEFAULT_PORT = 41433 # AC3
+
+# the size of the memory buffer when reading/writing in chunks of data
+DEFAULT_CHUNK_SIZE = 256 * 1024 # 256K
+
+# a chunk of size 0 indicates it is the last chunk
+LAST_CHUNK = b''
 
 # struct data formats
 UINT_FORMAT = '!I'
@@ -73,71 +80,43 @@ class ANPSocket(object):
         except Exception as e:
             pass
 
-    def read_n_bytes(self, count, fp=None):
-        """Read N bytes. If fp is None then return the result, otherwise write the results to fp."""
+    def read_n_bytes(self, count):
+        """Read N bytes from the socket."""
         assert count
 
-        logging.debug("reading {} bytes".format(count))
-
         bytes_read = 0
-        byte_buffer = []
+        byte_buffer = bytearray(count)
+
         while bytes_read < count:
-            # get the right chunk size - we're trying to avoid reading the whole thing into memory
             bytes_left = count - bytes_read
             chunk_size = io.DEFAULT_BUFFER_SIZE if io.DEFAULT_BUFFER_SIZE < count else count
             data = self.s.recv(chunk_size)
 
             if len(data) == 0 and bytes_read == 0:
-                logging.debug("socket closed normally")
                 return None # socket closed normally
                     
             if len(data) == 0:
                 raise ANPException("expected {} more bytes but got end of stream".format(bytes_left))
 
-            if fp is not None:
-                fp.write(data)
-            else:
-                byte_buffer.append(data)
-
+            byte_buffer[bytes_read:bytes_read + count] = data
             bytes_read += len(data)
 
-        if fp is None:
-            return b''.join(byte_buffer)
+        return bytes(byte_buffer)
 
-    def write_n_bytes(self, count, data=None, fp=None):
-        """Writes N bytes. If fp is None then the data parameter is expected to contain the data to write. Otherwise,
-           the data is read from the file descriptor fp. The count parameter is expected to contain the total number
-           of bytes to write."""
-
-        if data is not None:
-            # make sure we're not making a bunch of copies as we write
-            data = memoryview(data)
-
+    def write_n_bytes(self, data):
+        # make sure we're not making a bunch of copies as we write
+        data = memoryview(data)
         bytes_written = 0
-        while bytes_written < count:
-            bytes_left = count - bytes_written
-            chunk_size = io.DEFAULT_BUFFER_SIZE if io.DEFAULT_BUFFER_SIZE < count else count
 
-            if data is not None:
-                chunk = data[bytes_written:bytes_written + chunk_size]
-            else:
-                chunk = fp.read(chunk_size)
-                if chunk == b'':
-                    raise ANPException("reached EOF when reading file")
-
-            if len(chunk) != chunk_size:
-                raise ANPException("expected {} bytes but got {} bytes".format(chunk_size, len(chunk)))
-
-            # XXX this should not happen    
-            if len(chunk) == 0:
-                raise ANPException("have 0 bytes to send!?")
-
-            bytes_sent = self.s.send(chunk)
-            bytes_written += len(chunk)
+        while bytes_written < len(data):
+            bytes_left = len(data) - bytes_written
+            chunk_size = io.DEFAULT_BUFFER_SIZE if io.DEFAULT_BUFFER_SIZE < len(data) else len(data)
+            bytes_sent = self.s.send(data[bytes_written:bytes_written + chunk_size])
+            bytes_written += bytes_sent
 
     def read_uint(self):
         """Reads a UINT from the socket. Returns None if the socket closed."""
-        data = self.read_n_bytes(4)
+        data = self.read_n_bytes(struct.calcsize(UINT_FORMAT))
         if data is None:
             return None
 
@@ -145,38 +124,72 @@ class ANPSocket(object):
 
     def read_ulong(self):
         """Reads a ULONG from the socket. Returns None if the socket closed."""
-        data = self.read_n_bytes(8)
+        data = self.read_n_bytes(struct.calcsize(ULONG_FORMAT))
         if data is None:
             return None
 
         return struct.unpack(ULONG_FORMAT, data)[0]
 
     def read_data(self):
-        data_length = self.read_ulong()
+        data_length = self.read_uint()
         if data_length is None:
             return None
 
-        return self.read_n_bytes(data_length)
+        if data_length == 0:
+            return b''
+
+        result = self.read_n_bytes(data_length)
+        
+        # are we encrypting data?
+        if saq.ENCRYPTION_PASSWORD is None:
+            return result
+
+        return decrypt_chunk(result)
 
     def read_string(self):
-        string_length = self.read_uint()
-        if string_length is None:
+        _bytes = self.read_data()
+        if _bytes is None:
             return None
 
-        return self.read_n_bytes(string_length).decode('utf16')
+        return _bytes.decode('utf16')
+
+    def read_chunked_data(self, fp):
+        """Reads a stream of chunked data into a file."""
+
+        result = []
+        while True:
+            next_chunk = self.read_data()
+            if next_chunk == LAST_CHUNK:
+                break
+
+            fp.write(next_chunk)
 
     def write_uint(self, value):
-        self.write_n_bytes(4, struct.pack(UINT_FORMAT, value))
+        self.write_n_bytes(struct.pack(UINT_FORMAT, value))
 
     def write_ulong(self, value):
-        self.write_n_bytes(8, struct.pack(ULONG_FORMAT, value))
+        self.write_n_bytes(struct.pack(ULONG_FORMAT, value))
 
     def write_data(self, value):
+        if saq.ENCRYPTION_PASSWORD:
+            value = encrypt_chunk(value)
+
         self.write_uint(len(value))
-        self.write_n_bytes(len(value), value)
+        if len(value) > 0:
+            self.write_n_bytes(value)
 
     def write_string(self, value):
         self.write_data(value.encode('utf16'))
+
+    def write_chunked_data(self, fp):
+        """Writes the given file descriptor to the socket in chunks."""
+        
+        while True:
+            chunk = fp.read(DEFAULT_CHUNK_SIZE)
+            self.write_data(chunk)
+
+            if chunk == b'':
+                break
 
     #
     # OO command abstraction
@@ -309,17 +322,13 @@ class ANPCommandCOPY_FILE(ANPMessage):
         if os.path.exists(full_path):
             logging.warning("target file {} already exists".format(full_path))
 
-        byte_count = anp.read_ulong()
-        logging.debug("reading {} bytes into {}".format(byte_count, full_path))
         with open(full_path, 'wb') as fp:
-            anp.read_n_bytes(byte_count, fp=fp)
+            anp.read_chunked_data(fp)
 
     def send_parameters(self, anp):
         anp.write_string(self.path)
-        byte_count = os.path.getsize(self.source_path)
-        anp.write_ulong(byte_count)
         with open(self.source_path, 'rb') as fp:
-            anp.write_n_bytes(byte_count, fp=fp)
+            anp.write_chunked_data(fp)
 
 class ANPCommandPROCESS(ANPMessage):
     def __init__(self, target, *args, **kwargs):
@@ -387,8 +396,8 @@ class ACENetworkProtocolServer(object):
         # server socket objects for TCP communication
         self.tcp_server_thread = None
         self.tcp_server_socket = None
-        self.tcp_server_socket_host = saq.CONFIG['anp_server']['listen_address']
-        self.tcp_server_socket_port = saq.CONFIG['anp_server'].getint('listen_port')
+        self.tcp_server_socket_host = listening_host
+        self.tcp_server_socket_port = listening_port
 
         # list of all the threads processing tcp client requests
         self.tcp_client_threads = []
