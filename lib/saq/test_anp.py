@@ -13,6 +13,7 @@ import threading
 import time
 
 from saq.anp import *
+from saq.crypto import get_aes_key
 from saq.test import *
 
 ANP_SERVER_HOST = '127.0.0.1'
@@ -29,6 +30,9 @@ class ANPTestCase(ACEBasicTestCase):
         with open(self.source_file, 'wb') as fp:
             fp.write(b'Hello, world from fp!')
 
+        self.old_password = saq.ENCRYPTION_PASSWORD
+        saq.ENCRYPTION_PASSWORD = None
+    
     def tearDown(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
@@ -37,6 +41,8 @@ class ANPTestCase(ACEBasicTestCase):
 
         if os.path.exists(self.target_file):
             os.unlink(self.target_file)
+
+        saq.ENCRYPTION_PASSWORD = self.old_password
     
     def test_anp_000_basic_io(self):
 
@@ -58,10 +64,8 @@ class ANPTestCase(ACEBasicTestCase):
             anp_client.write_string('Hello, world!')
             anp_client.write_data(b'')
             anp_client.write_data(b'Hello, world!')
-            size = os.path.getsize(self.source_file)
-            anp_client.write_ulong(size)
             with open(self.source_file, 'rb') as fp:
-                anp_client.write_n_bytes(size, fp=fp)
+                anp_client.write_chunked_data(fp)
 
             anp_client.s.shutdown(socket.SHUT_RDWR)
             anp_client.s.close()
@@ -78,10 +82,10 @@ class ANPTestCase(ACEBasicTestCase):
         self.assertEquals(anp_server.read_ulong(), 1)
         self.assertEquals(anp_server.read_string(), '')
         self.assertEquals(anp_server.read_string(), 'Hello, world!')
+        self.assertEquals(anp_server.read_data(), b'')
         self.assertEquals(anp_server.read_data(), b'Hello, world!')
-        size = anp_server.read_ulong()
         with open(self.target_file, 'wb') as fp:
-            anp_server.read_n_bytes(size, fp=fp)
+            anp_server.read_chunked_data(fp)
 
         self.assertTrue(filecmp.cmp(self.source_file, self.target_file))
 
@@ -98,7 +102,7 @@ class ANPTestCase(ACEBasicTestCase):
 
         def client():
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect(('127.0.0.1', saq.CONFIG['anp_server'].getint('listen_port')))
+            client_socket.connect((ANP_SERVER_HOST, ANP_SERVER_PORT))
             anp_client = ANPSocket(client_socket)
 
             anp_client.send_message(ANPCommandOK())
@@ -152,6 +156,7 @@ class ANPTestCase(ACEBasicTestCase):
         client_connection.shutdown(socket.SHUT_RDWR)
         client_connection.close()
         server_socket.close()
+        client_t.join()
 
         #os.unlink(source_file)
         #os.unlink(target_file)
@@ -173,7 +178,7 @@ class ANPTestCase(ACEBasicTestCase):
 
             anp.send_message(ANPCommandOK())
 
-        server = ACENetworkProtocolServer(command_handler)
+        server = ACENetworkProtocolServer(ANP_SERVER_HOST, ANP_SERVER_PORT, command_handler)
         server.start()
 
         wait_for_log_count('listening for connections', 1, 5)
@@ -206,7 +211,7 @@ class ANPTestCase(ACEBasicTestCase):
             else:
                 anp.send_message(ANPCommandERROR("invalid command bro"))
 
-        server = ACENetworkProtocolServer(command_handler)
+        server = ACENetworkProtocolServer(ANP_SERVER_HOST, ANP_SERVER_PORT, command_handler)
         server.start()
 
         wait_for_log_count('listening for connections', 1, 5)
@@ -235,7 +240,7 @@ class ANPTestCase(ACEBasicTestCase):
             else:
                 self.fail("invalid command received")
 
-        server = ACENetworkProtocolServer(command_handler)
+        server = ACENetworkProtocolServer(ANP_SERVER_HOST, ANP_SERVER_PORT, command_handler)
         server.start()
 
         wait_for_log_count('listening for connections', 1, 5)
@@ -254,9 +259,30 @@ class ANPTestCase(ACEBasicTestCase):
             client.send_message(ANPCommandEXIT())
             client.close_socket()
 
+        client_threads = []
         for _ in range(3):
-            threading.Thread(target=run).start()
+            t = threading.Thread(target=run, name="Multiple Connections Test {}".format(_))
+            t.start()
+            client_threads.append(t)
 
         time.sleep(3)
         control.set()
         server.stop()
+        for t in client_threads:
+            t.join()
+
+    def test_anp_005_encrypted_basic_io(self):
+        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
+        self.test_anp_000_basic_io()
+
+    def test_anp_006_encrypted_message_io(self):
+        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
+        self.test_anp_001_message_io()
+        
+    def test_anp_007_encrypted_server(self):
+        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
+        self.test_anp_002_server()
+    
+    def test_anp_008_encrypted_multiple_connections(self):
+        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
+        self.test_anp_004_multiple_connections()
