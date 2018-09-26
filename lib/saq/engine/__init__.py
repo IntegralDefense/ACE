@@ -28,6 +28,7 @@ import saq.analysis
 import saq.database
 
 from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, ProfilePointAnalyzer
+from saq.anp import *
 from saq.constants import *
 from saq.database import Alert, get_db_connection, release_cached_db_connection, enable_cached_db_connections
 from saq.error import report_exception
@@ -2376,7 +2377,6 @@ class Engine(object):
                                     work_item.dependency.increment_status()
                                     work_stack.appendleft(WorkTarget(observable=self.root.get_observable(work_item.dependency.source_observable_id),
                                                                      analysis_module=self._get_analysis_module_by_generated_analysis(work_item.dependency.source_analysis_type)))
-                                    #logging.info("MARKER: first")
 
                                 # if we do have output analysis and it's not delayed then we move on to analyze
                                 # the source target again
@@ -2385,7 +2385,6 @@ class Engine(object):
                                     logging.debug("dependency status updated {}".format(work_item.dependency))
                                     work_stack.appendleft(WorkTarget(observable=self.root.get_observable(work_item.dependency.source_observable_id),
                                                                      analysis_module=self._get_analysis_module_by_generated_analysis(work_item.dependency.source_analysis_type)))
-                                    #logging.info("MARKER: second")
 
                                 # otherwise (if it's delayed) then we need to wait
                                 else:
@@ -2996,15 +2995,12 @@ class ANPNodeEngine(Engine):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # the mode that this node is in
-        self.client_server_mode = self.mode
-
         # in the case of a client mode, this is the list of servers we are sending working to
         # this is a tuple of host
         self.anp_node_addresses = []
-        for host_spec in self.config['anp_nodes'].split(',')
+        for host_spec in self.config['anp_nodes'].split(','):
             host, port = host_spec.split(':')
-            self.anp_node_addresses.append(host, int(port))
+            self.anp_node_addresses.append((host, int(port)))
 
         # the actual ANPSocket connections to these nodes
         self.anp_nodes = [None for _ in self.anp_node_addresses]
@@ -3020,7 +3016,7 @@ class ANPNodeEngine(Engine):
 
         # listening interface for server mode nodes
         self.anp_listening_address = self.config['anp_listening_address']
-        self.anp_listening_port = self.config.getint('anp_listening_address')
+        self.anp_listening_port = self.config.getint('anp_listening_port')
 
         # the ACENetworkProtocolServer for server mode engines
         self.anp_server = None
@@ -3028,15 +3024,9 @@ class ANPNodeEngine(Engine):
         # the amount of time (in seconds) that we wait to retry an anp node after failure to connect or BUSY response
         self.anp_retry_timeout = self.config.getint('anp_retry_timeout')
 
-    @property
-    def mode(self):
-        """Returns the mode this node is in: MODE_CLIENT, MODE_SERVER, or
-           MODE_LOCAL. Set by the mode configuration setting for the engine."""
-        return self.config['mode']
-        
-    def servers(self):
-        """Returns the list of one or more nodes in MODE_SERVER mode where collected work is sent to."""
-        return self.config['servers'].split(',')
+        # the mode the engine is running in
+        # valid values are MODE_CLIENT, MODE_SERVER or MODE_LOCAL (see above)
+        self.mode = self.config['mode']
 
     def submit_command(self, command):
         """Submits the given command to any valid, available ANP server and returns the result from that server."""
@@ -3069,7 +3059,7 @@ class ANPNodeEngine(Engine):
 
                 # other wise move on to the next node
                 i += 1
-                if i >_ len(self.anp_nodes):
+                if i >= len(self.anp_nodes):
                     i = 0
 
                 if i == starting_i:
@@ -3088,7 +3078,7 @@ class ANPNodeEngine(Engine):
 
                     # unable to connect -- move on to the next node
                     self.anp_nodes[i] = None
-                    self.anp_node_timeouts[i] = datetime.datetime.now() = datetime.timedelta(seconds=self.anp_retry_timeout)
+                    self.anp_node_timeouts[i] = datetime.datetime.now() + datetime.timedelta(seconds=self.anp_retry_timeout)
 
                     i += 1
                     if i >= len(self.anp_nodes):

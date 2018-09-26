@@ -10,14 +10,15 @@ import tempfile
 import unittest
 import uuid
 
-from multiprocessing import Queue, cpu_count
+from multiprocessing import Queue, cpu_count, Event
 from queue import Empty
 
 import saq, saq.test
+from saq.anp import *
 from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, Observable
 from saq.constants import *
 from saq.database import get_db_connection
-from saq.engine import Engine, DelayedAnalysisRequest, SSLNetworkServer, MySQLCollectionEngine
+from saq.engine import Engine, DelayedAnalysisRequest, SSLNetworkServer, MySQLCollectionEngine, ANPNodeEngine
 from saq.lock import LocalLockableObject
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
@@ -144,6 +145,31 @@ class MySQLEngine(MySQLCollectionEngine, AnalysisEngine):
             c = db.cursor()
             c.execute("""DELETE FROM workload""") 
             db.commit()
+
+class ANPEnabledEngine(ANPNodeEngine, AnalysisEngine):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.anp_command_handler_event = Event()
+        self.collect_client_mode_event = Event()
+        self.collect_server_mode_event = Event()
+        self.collect_local_mode_event = Event()
+
+    def anp_command_handler(self, anp, command):
+        """Called when an ANP message is received."""
+        self.anp_command_handler_event.set()
+
+    def collect_client_mode(self):
+        """Called to collect work to perform and submit it to a remote ANP node."""
+        self.collect_client_mode_event.set()
+
+    def collect_server_mode(self):
+        """Called when work is submitted from a client."""
+        self.collect_server_mode_event.set()
+
+    def collect_local_mode(self):
+        """Called when the node is operating in local mode (not using ANP at all.)"""
+        self.collect_local_mode_event.set()
 
 class EngineTestCase(ACEEngineTestCase):
 
@@ -1193,3 +1219,277 @@ class EngineTestCase(ACEEngineTestCase):
             new_observable = analysis.observables[0]
             new_analysis = new_observable.get_analysis(BasicTestAnalysis)
             self.assertFalse(new_analysis)
+
+    def test_engine_041_anp_node_engine_modes(self):
+
+        from saq.engine import MODE_CLIENT, MODE_SERVER, MODE_LOCAL
+
+        # test the various modes to ensure all the functions are called that are supposed to be called
+        engine = self.create_engine(ANPEnabledEngine)
+        engine.mode = MODE_SERVER
+        self.start_engine(engine)
+
+        self.assertTrue(engine.collect_server_mode_event.wait(5))
+        self.stop_tracked_engine()
+        
+        engine = self.create_engine(ANPEnabledEngine)
+        engine.mode = MODE_CLIENT
+        self.start_engine(engine)
+
+        self.assertTrue(engine.collect_client_mode_event.wait(5))
+        self.stop_tracked_engine()
+
+        engine = self.create_engine(ANPEnabledEngine)
+        engine.mode = MODE_LOCAL
+        self.start_engine(engine)
+
+        self.assertTrue(engine.collect_local_mode_event.wait(5))
+        self.stop_tracked_engine()
+
+    @clear_log
+    def test_engine_042_anp_mode_server(self):
+
+        from saq.engine import MODE_SERVER
+
+        # test the various modes to ensure all the functions are called that are supposed to be called
+        engine = self.create_engine(ANPEnabledEngine)
+        engine.mode = MODE_SERVER
+        self.start_engine(engine)
+
+        wait_for_log_count('listening for connections', 1, 5)
+
+        anp = anp_connect(engine.anp_listening_address, engine.anp_listening_port)
+        anp.send_message(ANPCommandPING('testing'))
+
+        self.assertTrue(engine.anp_command_handler_event.wait(5))
+        self.stop_tracked_engine()
+
+    def test_engine_043_anp_mode_client(self):
+        
+        import threading
+        from saq.engine import MODE_CLIENT
+
+        control_event = threading.Event()
+
+        def command_handler(anp, command):
+            control_event.set()
+            anp.send_message(ANPCommandOK())
+
+        listening_address = saq.CONFIG['engine_unittest']['anp_listening_address']
+        listening_port = saq.CONFIG['engine_unittest'].getint('anp_listening_port')
+
+        # create an anp server that will process the requests
+        server = ACENetworkProtocolServer(listening_address, listening_port, command_handler)
+        server.start()
+
+        wait_for_log_count('listening for connections', 1, 5)
+
+        # create an engine in client mode that will submit commands to the server
+        class custom_engine(ANPEnabledEngine):
+            def collect_client_mode(self):
+                self.submit_command(ANPCommandPING('test'))
+                self.stop_collection()
+        
+        # test the various modes to ensure all the functions are called that are supposed to be called
+        engine = self.create_engine(custom_engine)
+        engine.mode = MODE_CLIENT
+        self.start_engine(engine)
+
+        self.assertTrue(control_event.wait(5))
+        server.stop()
+
+    @reset_config
+    @clear_log
+    def test_engine_044_anp_mode_client_multiple_target_nodes(self):
+
+        import threading
+        from saq.engine import MODE_CLIENT
+
+        control_event_1 = threading.Event()
+        received_commands_1 = []
+
+        def command_handler_1(anp, command):
+            received_commands_1.append(command)
+            if len(received_commands_1) == 2:
+                control_event_1.set()
+
+            anp.send_message(ANPCommandOK())
+
+        listening_address_1 = saq.CONFIG['engine_unittest']['anp_listening_address']
+        listening_port_1 = saq.CONFIG['engine_unittest'].getint('anp_listening_port')
+
+        server_1 = ACENetworkProtocolServer(listening_address_1, listening_port_1, command_handler_1)
+        server_1.start()
+
+        control_event_2 = threading.Event()
+        received_commands_2 = []
+
+        def command_handler_2(anp, command):
+            received_commands_2.append(command)
+            control_event_2.set()
+            anp.send_message(ANPCommandOK())
+
+        listening_address_2 = saq.CONFIG['engine_unittest']['anp_listening_address']
+        listening_port_2 = saq.CONFIG['engine_unittest'].getint('anp_listening_port') + 1
+
+        server_2 = ACENetworkProtocolServer(listening_address_2, listening_port_2, command_handler_2)
+        server_2.start()
+
+        wait_for_log_count('listening for connections on {} port {}'.format(listening_address_1, listening_port_1), 1, 5)
+        wait_for_log_count('listening for connections on {} port {}'.format(listening_address_2, listening_port_2), 1, 5)
+
+        class custom_engine(ANPEnabledEngine):
+            def collect_client_mode(self):
+                self.submit_command(ANPCommandPING('test_1'))
+                self.submit_command(ANPCommandPING('test_2'))
+                self.submit_command(ANPCommandPING('test_3'))
+                self.stop_collection()
+        
+        # test the various modes to ensure all the functions are called that are supposed to be called
+        saq.CONFIG['engine_unittest']['anp_nodes'] = '{}:{},{}:{}'.format(listening_address_1, listening_port_1,
+                                                                          listening_address_2, listening_port_2)
+        engine = self.create_engine(custom_engine)
+        engine.mode = MODE_CLIENT
+        self.start_engine(engine)
+
+        self.assertTrue(control_event_1.wait(5))
+        self.assertTrue(control_event_2.wait(5))
+
+        self.assertEquals(len(received_commands_1), 2)
+        self.assertEquals(len(received_commands_2), 1)
+
+        self.assertEquals(received_commands_1[0].message, 'test_1')
+        self.assertEquals(received_commands_1[1].message, 'test_3')
+        self.assertEquals(received_commands_2[0].message, 'test_2')
+
+        server_1.stop()
+        server_2.stop()
+
+    @reset_config
+    @clear_log
+    def test_engine_045_anp_node_busy(self):
+
+        import threading
+        from saq.engine import MODE_CLIENT
+
+        control_event_1 = threading.Event()
+        control_event_3 = threading.Event()
+
+        def command_handler_1(anp, command):
+            if not control_event_1.is_set():
+                control_event_1.set()
+                anp.send_message(ANPCommandBUSY())
+                return
+
+            anp.send_message(ANPCommandOK())
+            control_event_3.set()
+
+        listening_address_1 = saq.CONFIG['engine_unittest']['anp_listening_address']
+        listening_port_1 = saq.CONFIG['engine_unittest'].getint('anp_listening_port')
+
+        server_1 = ACENetworkProtocolServer(listening_address_1, listening_port_1, command_handler_1)
+        server_1.start()
+
+        control_event_2 = threading.Event()
+        received_commands_2 = []
+
+        def command_handler_2(anp, command):
+            received_commands_2.append(command)
+            if len(received_commands_2) == 3:
+                control_event_2.set()
+            anp.send_message(ANPCommandOK())
+
+        listening_address_2 = saq.CONFIG['engine_unittest']['anp_listening_address']
+        listening_port_2 = saq.CONFIG['engine_unittest'].getint('anp_listening_port') + 1
+
+        server_2 = ACENetworkProtocolServer(listening_address_2, listening_port_2, command_handler_2)
+        server_2.start()
+
+        wait_for_log_count('listening for connections on {} port {}'.format(listening_address_1, listening_port_1), 1, 5)
+        wait_for_log_count('listening for connections on {} port {}'.format(listening_address_2, listening_port_2), 1, 5)
+
+        class custom_engine(ANPEnabledEngine):
+            def collect_client_mode(self):
+                if control_event_1.is_set():
+                    if control_event_3.is_set():
+                        self.stop_collection()
+                        return True
+
+                    self.submit_command(ANPCommandPING('test_finish'))
+                    return True
+
+                if not control_event_1.is_set():
+                    self.submit_command(ANPCommandPING('test_1')) # should go to server_1 but gets routed to server_2
+                    self.submit_command(ANPCommandPING('test_2'))
+                    self.submit_command(ANPCommandPING('test_3'))
+
+                return True
+        
+        # test the various modes to ensure all the functions are called that are supposed to be called
+        saq.CONFIG['engine_unittest']['anp_nodes'] = '{}:{},{}:{}'.format(listening_address_1, listening_port_1,
+                                                                          listening_address_2, listening_port_2)
+        saq.CONFIG['engine_unittest']['anp_retry_timeout'] = '3'
+        saq.CONFIG['engine_unittest']['collection_frequency'] = '1'
+        engine = self.create_engine(custom_engine)
+        engine.mode = MODE_CLIENT
+        self.start_engine(engine)
+
+        self.assertTrue(control_event_1.wait(5))
+        self.assertTrue(control_event_2.wait(5))
+
+        #self.assertEquals(len(received_commands_1), 0)
+        self.assertGreater(len(received_commands_2), 2)
+
+        self.assertEquals(received_commands_2[0].message, 'test_1')
+        self.assertEquals(received_commands_2[1].message, 'test_2')
+        self.assertEquals(received_commands_2[2].message, 'test_3')
+
+        self.assertTrue(control_event_3.wait(5))
+
+        server_1.stop()
+        server_2.stop()
+
+    @reset_config
+    @clear_log
+    def test_engine_046_anp_node_unavailable(self):
+
+        import threading
+        from saq.engine import MODE_CLIENT
+
+        control_event = threading.Event()
+
+        def command_handler(anp, command):
+            control_event.set()
+            anp.send_message(ANPCommandOK())
+
+        listening_address = saq.CONFIG['engine_unittest']['anp_listening_address']
+        listening_port = saq.CONFIG['engine_unittest'].getint('anp_listening_port')
+
+        # create an anp server that will process the requests
+        server = ACENetworkProtocolServer(listening_address, listening_port, command_handler)
+        #server.start() # don't start the server yet
+
+        #wait_for_log_count('listening for connections', 1, 5)
+
+        # create an engine in client mode that will submit commands to the server
+        class custom_engine(ANPEnabledEngine):
+            def collect_client_mode(self):
+                result = self.submit_command(ANPCommandPING('test'))
+                if result is None:
+                    return True
+
+                self.stop_collection()
+
+        saq.CONFIG['engine_unittest']['anp_retry_timeout'] = '2'
+        saq.CONFIG['engine_unittest']['collection_frequency'] = '1'
+        
+        # test the various modes to ensure all the functions are called that are supposed to be called
+        engine = self.create_engine(custom_engine)
+        engine.mode = MODE_CLIENT
+        self.start_engine(engine)
+
+        wait_for_log_count('unable to connect to', 1, 5)
+        server.start()
+
+        self.assertTrue(control_event.wait(5))
+        server.stop()

@@ -18,6 +18,7 @@ __all__ = [
     'ANPCommandAVAILABLE',
     'ANPCommandCOPY_FILE',
     'ANPCommandPROCESS',
+    'ANPCommandBUSY',
     'ANP_COMMAND_EXIT',
     'ANP_COMMAND_REGISTER',
     'ANP_COMMAND_OK',
@@ -274,6 +275,9 @@ class ANPCommandERROR(ANPMessage):
     def send_parameters(self, anp):
         anp.write_string(self.error_message)
 
+    def __str__(self):
+        return '{} {}'.format(ANPMessage.__str__(self), self.error_message)
+
 class ANPCommandPING(ANPMessage):
     def __init__(self, message, *args, **kwargs):
         super().__init__(ANP_COMMAND_PING, *args, **kwargs)
@@ -285,6 +289,9 @@ class ANPCommandPING(ANPMessage):
     def send_parameters(self, anp):
         anp.write_string(self.message)
 
+    def __str__(self):
+        return '{} {}'.format(ANPMessage.__str__(self), self.message)
+
 class ANPCommandPONG(ANPMessage):
     def __init__(self, message, *args, **kwargs):
         super().__init__(ANP_COMMAND_PONG, *args, **kwargs)
@@ -295,6 +302,9 @@ class ANPCommandPONG(ANPMessage):
 
     def send_parameters(self, anp):
         anp.write_string(self.message)
+
+    def __str__(self):
+        return '{} {}'.format(ANPMessage.__str__(self), self.message)
 
 class ANPCommandAVAILABLE(ANPMessage):
     def __init__(self, *args, **kwargs):
@@ -330,6 +340,9 @@ class ANPCommandCOPY_FILE(ANPMessage):
         with open(self.source_path, 'rb') as fp:
             anp.write_chunked_data(fp)
 
+    def __str__(self):
+        return '{} {}'.format(ANPMessage.__str__(self), self.path)
+
 class ANPCommandPROCESS(ANPMessage):
     def __init__(self, target, *args, **kwargs):
         super().__init__(ANP_COMMAND_PROCESS, *args, **kwargs)
@@ -340,6 +353,9 @@ class ANPCommandPROCESS(ANPMessage):
 
     def send_parameters(self, anp):
         anp.write_string(self.target)
+
+    def __str__(self):
+        return '{} {}'.format(ANPMessage.__str__(self), self.target)
 
 # the list of commands available
 ANP_COMMAND_EXIT = 1

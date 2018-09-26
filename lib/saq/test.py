@@ -579,9 +579,7 @@ class ACEEngineTestCase(ACEBasicTestCase):
         self.server_processes['cloudphish'] = CloudphishServer()
         self.server_processes['cloudphish'].start()
 
-    def tearDown(self):
-        ACEBasicTestCase.tearDown(self)
-        
+    def stop_tracked_engine(self):
         if self.tracked_engine:
             try:
                 self.tracked_engine.stop()
@@ -591,6 +589,10 @@ class ACEEngineTestCase(ACEBasicTestCase):
                 report_exception()
             finally:
                 self.tracked_engine = None
+
+    def tearDown(self):
+        ACEBasicTestCase.tearDown(self)
+        self.stop_tracked_engine()
 
         for key in self.server_processes.keys():
             self.server_processes[key].stop()
