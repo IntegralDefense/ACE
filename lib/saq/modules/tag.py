@@ -15,7 +15,7 @@ from saq.analysis import Analysis, Observable, recurse_down, TaggableObject
 from saq.database import Alert
 from saq.constants import *
 from saq.error import report_exception
-from saq.modules import AnalysisModule, TagAnalysisModule
+from saq.modules import AnalysisModule, TagAnalysisModule, PostAnalysisModule
 from saq.util import is_subdomain
 
 class TagAnalysis(Analysis):
@@ -294,9 +294,10 @@ class CorrelatedTagDefinition(object):
         return len(result) > 0
 
 class CorrelatedTagAnalysis(Analysis):
-    pass
+    def initialize_details(self):
+        self.details = None
 
-class CorrelatedTagAnalyzer(AnalysisModule):
+class CorrelatedTagAnalyzer(PostAnalysisModule):
     """Does this combination of tagging exist on objects with a common ancestry?"""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

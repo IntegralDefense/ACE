@@ -771,6 +771,20 @@ class SubprocessServer(object):
 
         try:
             self.child_process.terminate()
+
+            # connect to move it past the connect call
+            # TODO do we need a sleep here ? (is the signal async?)
+            try:
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.connect(self.unix_socket)
+            except:
+                logging.error("unable to connect to {} to close connection: {}".format(self.socket_path, e))
+            finally:
+                try:
+                    s.close()
+                except:
+                    pass
+
             self.child_process.join(5)
             if self.child_process.is_alive():
                 raise RuntimeError("unable to stop child process {}".format(self.child_process.pid))

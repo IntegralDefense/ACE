@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-cd /opt/saq || exit 1
-source /opt/saq/load_environment
-
-find splunk_logs -type f -name '*.log' -mtime +3 -delete

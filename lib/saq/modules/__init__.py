@@ -571,6 +571,16 @@ configuration."""
         """Put your custom "should I analyze this?" logic in this function."""
         return True
 
+    def execute_maintenance(self):
+        """Override this function to provide some kind of maintenance routine that is called every
+           maintenance_frequency seconds."""
+        pass
+
+    @property
+    def maintenance_frequency(self):
+        """Returns how often to execute the maintenance function, in seconds, or None to disable (the default.)"""
+        return None
+
 class PostAnalysisModule(AnalysisModule):
     """An AnalysisModule that is only expected to execute the execute_post_analysis function."""
     

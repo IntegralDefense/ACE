@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# reset or create the unittest database
+for db in ace ace-workload brocess email-archive hal9000 cloudphish vt-hash-cache
+do
+	echo "resetting db $db-unittest"
+	mysqladmin drop -f $db-unittest > /dev/null 2>&1
+	mysqladmin create $db-unittest 
+	mysql --database=$db-unittest < sql/$db\_schema.sql
+	if [ -e sql/$db\_init.sql ]
+	then
+		mysql --database=$db-unittest < sql/$db\_init.sql || fail "unable to initialize database $db"
+	fi
+done
