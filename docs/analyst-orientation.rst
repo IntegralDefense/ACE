@@ -50,7 +50,6 @@ Currently defined ACE Observables:
 Observable Type     Description
 ==================  ===================================================================================================
 asset               An F_IPV4 identified to be a managed asset
-cidr                IPv4 range in CIDR notation
 email_address       Email address
 email_conversation  A conversation between a source email address (MAIL FROM) and a destination email address (RCPT TO)
 file                Path to an attached file
@@ -59,13 +58,11 @@ file_name           A file name (no directory path)
 file_path           A file path
 fqdn                Fully qualified domain name
 hostname            Host or workstation name
-http_request        A single HTTP request
 indicator           CRITs indicator object ID
 ipv4                IP address (version 4)
 ipv4_conversation   Two F_IPV4 that were communicating formatted as aaa.bbb.ccc.ddd_aaa.bbb.ccc.ddd
 md5                 MD5 hash
 message_id          Email Message-ID
-pcap                Path to a pcap formatted file !!! DEPRECATED (use F_FILE instead)
 process_guid        CarbonBlack global process identifier
 sha1                SHA1 hash
 sha256              SHA256 hash
