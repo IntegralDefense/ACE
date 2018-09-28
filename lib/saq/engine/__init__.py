@@ -366,6 +366,12 @@ class Engine(object):
         # maximum amount of time (in seconds) that an individual analysis module should take
         self.maximum_analysis_time = saq.CONFIG['global'].getint('maximum_analysis_time')
 
+        # the threads that manages the execution of the maintenance routines of analysis modules
+        # there is one thread per analysis module that has a maintenance_frequency > 0
+        self.maintenance_threads = []
+        # an event to control the management threads
+        self.maintenance_control = None # threading.Event()
+
     @property
     def auto_refresh_frequency(self):
         """How often do we refresh the process managers (in seconds.)"""
@@ -593,6 +599,62 @@ class Engine(object):
                             logging.error("unable to load profile point module {} from {}: {}".format(
                                           name, module.__name__, e))
                             report_exception()
+
+    #
+    # MAINTENANCE
+    # ------------------------------------------------------------------------
+
+    def start_maintenance_threads(self):
+        self.maintenance_control = threading.Event()
+
+        for _module in self.analysis_modules:
+            if _module.maintenance_frequency is None or _module.maintenance_frequency <= 0:
+                continue
+
+            t = threading.Thread(target=self.maintenance_loop, 
+                                 name="Maintenance - {}".format(_module.name), 
+                                 args=(_module,))
+            t.start()
+            self.maintenance_threads.append(t)
+
+    def stop_maintenance_threads(self):
+        self.maintenance_control.set()
+        for t in self.maintenance_threads:
+            logging.info("waiting for {} to stop".format(t.name))
+            t.join()
+
+        self.maintenance_threads = []
+
+    @property
+    def maintenance_shutdown(self):
+        """Returns True if the maintenance loop should end or if the engine is shutting down."""
+        return self.shutdown or self.maintenance_control.is_set()
+
+    def maintenance_sleep(self, seconds):
+        """Utility function to sleep for N seconds without blocking shutdown."""
+        seconds = float(seconds)
+        while not self.maintenance_shutdown and seconds > 0:
+            # we also want to support sleeping for less than a second
+            time.sleep(1.0 if seconds > 0 else seconds)
+            seconds -= 1.0
+
+    def maintenance_loop(self, _module):
+        logging.info("maintenance loop started for {}".format(_module.name))
+        while not self.maintenance_shutdown:
+            try:
+                logging.info("executing maintenance for {}".format(_module.name))
+                _module.execute_maintenance()
+            except Exception as e:
+                logging.error("error executing main maintenance loop for {}: {}".format(_module.name, e))
+                report_exception()
+
+            self.maintenance_sleep(_module.maintenance_frequency)
+
+        logging.info("maintenance loop ended")
+
+    def maintenance_execute(self):
+        from saq.email import maintain_archive
+        maintain_archive()
 
     #
     # STATUS AND PERFORMANCE
@@ -1380,6 +1442,8 @@ class Engine(object):
                 self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
                                               seconds=self.auto_refresh_frequency)
 
+        self.start_maintenance_threads()
+
         # let the parent process know that we've started
         self.engine_startup_pipe_c.send(True)
         self.engine_startup_pipe_c.close()
@@ -1401,6 +1465,7 @@ class Engine(object):
                     logging.info("reloading modules")
                     self.stop_delayed_analysis()
                     self.stop_queue_manager()
+                    self.stop_maintenance_threads()
 
                     if self.sighup_received:
                         # we re-load the config when we receive SIGHUP
@@ -1413,6 +1478,7 @@ class Engine(object):
                     self.restart_process_managers() # this needs to come first here
                     self.start_queue_manager()
                     self.start_delayed_analysis()
+                    self.start_maintenance_threads()
 
                 if self.sigusr1_received:
                     try:
@@ -1473,6 +1539,7 @@ class Engine(object):
             self.stop_delayed_analysis()
             self.stop_queue_manager()
             self.stop_process_managers()
+            self.stop_maintenance_threads()
 
             # these should all be zero
             #if self.delayed_analysis_xfer_queue.qsize():
@@ -2471,7 +2538,7 @@ class Engine(object):
                     return True
 
         return False
-        
+
     def sleep(self, seconds):
         """Utility function to sleep for N seconds without blocking shutdown."""
         seconds = float(seconds)
@@ -2633,7 +2700,19 @@ class SSLNetworkServer(Engine):
                              #os.path.join(saq.SAQ_HOME, self.config['ssl_key_path'])))
 
                 if 'ssl_ca_path' in self.config:
+                    if not os.path.exists(self.config['ssl_ca_path']):
+                        logging.warning("missing ssl_ca_path file {}".format(self.config['ssl_ca_path']))
                     self.ssl_context.load_verify_locations(self.config['ssl_ca_path'])
+
+                certfile = os.path.join(saq.SAQ_HOME, self.config['ssl_cert_path'])
+                keyfile = os.path.join(saq.SAQ_HOME, self.config['ssl_key_path'])
+
+                if not os.path.exists(certfile):
+                    logging.warning("missing cert file {}".format(certfile))
+
+                if not os.path.exists(keyfile):
+                    logging.warning("missing key file {}".format(keyfile))
+
                 self.ssl_context.load_cert_chain(certfile=os.path.join(saq.SAQ_HOME, self.config['ssl_cert_path']), 
                                                  keyfile=os.path.join(saq.SAQ_HOME, self.config['ssl_key_path']))
                 self.server_socket = socket.socket()

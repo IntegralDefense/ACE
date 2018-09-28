@@ -344,6 +344,10 @@ def initialize_test_environment():
     except Exception as e:
         logging.error("unable to create temp dir {}: {}".format(test_dir, e))
 
+    # in all our testing we use the password "password" for encryption/decryption
+    from saq.crypto import get_aes_key
+    saq.ENCRYPTION_PASSWORD = get_aes_key('password')
+
     initialize_database()
     initialized = True
 

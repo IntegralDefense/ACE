@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-export TZ="America/New_York"
-cd $SAQ_HOME
-python3 saq --start --daemon -L etc/orion_logging.ini orion

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-export SAQ_HOME=/opt/saq
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
-bin/stop-engines
-bin/start-engines
+
+bin/stop-ace && bin/start-ace

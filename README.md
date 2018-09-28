@@ -55,4 +55,3 @@ For a more in-depth understanding of the philosophy behind ACE, see the talk tha
 ## Documentation
 
 View ACE's full documentation here: [https://ace-analysis.readthedocs.io/en/latest/](https://ace-analysis.readthedocs.io/en/latest/)
-

@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-cd $SAQ_HOME || exit 1
-backup_file="backups/saq-qa-$(date '+%Y%m%d').sql"
-mysqldump -u saq-user -h ace-db1.local "--password=" --quick --single-transaction saq-qa > $backup_file
-gzip $backup_file

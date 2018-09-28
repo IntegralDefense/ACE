@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+cd /opt/ace && source load_environment && ./ace update-crits-cache

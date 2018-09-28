@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#
+
+#
+# start a yss server for ACE
+#
+
+source $(dirname "$0")/common.sh
+cd ${SAQ_HOME}/yss
+stop-yss
+yss --base-dir=$(pwd) -L etc/logging.ini -d "$SAQ_HOME/etc/yara" -b
