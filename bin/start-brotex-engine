@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
-export TZ="America/New_York"
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
-python3 saq --start --daemon -L etc/brotex_logging.ini brotex
+
+decrypt=""
+if [ -e etc/FLAG_EXTRACT_ARCHIVES ]
+then
+    decrypt=" -p "
+fi
+
+python3 ace $decrypt --start --daemon -L etc/brotex_logging.ini brotex

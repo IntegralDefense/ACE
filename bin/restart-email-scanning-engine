@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-export SAQ_HOME=/opt/saq
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
+
 bin/stop-email-scanning-engine
 bin/start-email-scanning-engine

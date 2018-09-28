@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+source $(dirname "$0")/common.sh
+cd $SAQ_HOME
+
+if [ -e var/daemon/brotex_client.pid ]
+then
+    bin/brotex_client.py -k
+fi
+
+if [ -e var/daemon/brotex_client.pid ]
+then
+    echo "removing stale pid file"
+    rm var/daemon/brotex_client.pid
+fi

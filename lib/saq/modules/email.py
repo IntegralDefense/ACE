@@ -3,6 +3,7 @@ import datetime
 import email.header
 import email.parser
 import email.utils
+import gzip
 import hashlib
 import json
 import logging
@@ -21,6 +22,7 @@ import saq
 from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree
 from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_source_email
 from saq.constants import *
+from saq.crypto import encrypt, decrypt
 from saq.database import get_db_connection, execute_with_retry, Alert
 from saq.email import normalize_email_address, search_archive, get_email_archive_sections
 from saq.error import report_exception
@@ -84,7 +86,6 @@ class EncryptedArchiveAnalysis(Analysis):
 
 class EncryptedArchiveAnalyzer(AnalysisModule):
     def verify_environment(self):
-        self.verify_program_exists('gpg')
         self.verify_program_exists('zcat')
 
     @property
@@ -100,35 +101,23 @@ class EncryptedArchiveAnalyzer(AnalysisModule):
         if not saq.ENCRYPTION_PASSWORD:
             return False
 
-        # encrypted archives end with .gz.gpg
-        if not _file.value.endswith('.gz.gpg'):
+        # encrypted archives end with .gz.e
+        if not _file.value.endswith('.gz.e'):
             return False
 
-
         file_path = os.path.join(self.root.storage_dir, _file.value)
-        dest_path = '{}.rfc822'.format(file_path[:-len('.gz.gpg')])
+        gzip_path = '{}.rfc822.gz'.format(file_path[:-len('.gz.e')])
+        dest_path = '{}.rfc822'.format(file_path[:-len('.gz.e')])
 
         # decrypt and decompress the archive file
         try:
-            with open(dest_path, 'wb') as fp:
-                logging.debug("decrypting {} to {}".format(file_path, dest_path))
-                gpg_p = subprocess.Popen(['gpg', '--quiet', '--no-tty', '-d', '--passphrase-fd', '0', file_path], 
-                                        stdout=subprocess.PIPE, 
-                                        stdin=subprocess.PIPE)
-                gunzip_p = subprocess.Popen(['zcat'], stdin=gpg_p.stdout, stdout=fp)
-                gpg_p.stdin.write('{}\n'.format(saq.ENCRYPTION_PASSWORD).encode())
-                gpg_p.stdin.close()
-                gpg_p.stdout.close()
-                gunzip_p.communicate()
-                gpg_p.wait()
-
-                if gpg_p.returncode != 0:
-                    logging.error("gpg decryption failed for {} (return code {})".format(
-                                  file_path, gpg_p.returncode))
-                    return False
+            decrypt(file_path, gzip_path)
+            with gzip.open(gzip_path, 'rb') as fp_in:
+                with open(dest_path, 'wb') as fp_out:
+                    shutil.copyfileobj(fp_in, fp_out)
 
         except Exception as e:
-            logging.error("unable to process {}: {}".format(_file, e))
+            logging.error("unable to decrypt {}: {}".format(file_path, e))
             report_exception()
             return False
 
@@ -203,25 +192,35 @@ class BrotexSMTPStreamArchiveAction(AnalysisModule):
         analysis = self.create_analysis(_file)
         source_path = os.path.join(self.root.storage_dir, _file.value)
         archive_path = os.path.join(archive_dir, _file.value)
-        if os.path.exists('{}.gz.gpg'.format(archive_path)):
-            logging.warning("archive path {} already exists".format('{}.gz.gpg'.format(archive_path)))
+        if os.path.exists('{}.gz.e'.format(archive_path)):
+            logging.warning("archive path {} already exists".format('{}.gz.e'.format(archive_path)))
             analysis.details = archive_path
             return True
         else:
             shutil.copy2(source_path, archive_path)
 
+        archive_path += '.gz'
+
         # compress the data
         logging.debug("compressing {}".format(archive_path))
-        Popen(['gzip', '-f', archive_path]).wait()
+        try:
+            with open(source_path, 'rb') as fp_in:
+                with gzip.open(archive_path, 'wb') as fp_out:
+                    shutil.copyfileobj(fp_in, fp_out)
 
-        archive_path += '.gz'
+        except Exception as e:
+            logging.error("compression failed for {}: {}".format(archive_path, e))
+
         if not os.path.exists(archive_path):
             raise Exception("compression failed for {}".format(archive_path))
 
         # encrypt the archive file
-        Popen(['gpg', '--quiet', '--yes', '--encrypt', '-r', 
-               saq.CONFIG['gpg']['encryption_recipient'], archive_path]).wait()
-        encrypted_file = '{}.gpg'.format(archive_path)
+        encrypted_file = '{}.e'.format(archive_path)
+
+        try:
+            encrypt(archive_path, encrypted_file)
+        except Exception as e:
+            logging.error("unable to encrypt archived stream {}: {}".format(archive_path, e))
 
         if os.path.exists(encrypted_file):
             logging.debug("encrypted {}".format(archive_path))
@@ -1508,7 +1507,6 @@ class EmailArchiveAction(PostAnalysisModule):
     def verify_environment(self):
         self.verify_config_exists('archive_dir')
         self.verify_path_exists(self.config['archive_dir'])
-        self.verify_program_exists('gpg')
 
     @property
     def generated_analysis_type(self):
@@ -1578,40 +1576,42 @@ class EmailArchiveAction(PostAnalysisModule):
                     raise Exception("unable to create archive directory {}: {}".format(archive_dir, e))
 
         source_path = os.path.join(self.root.storage_dir, _file.value)
-        archive_path = os.path.join(archive_dir, email_md5)
-        if os.path.exists('{}.gz.gpg'.format(archive_path)):
-            # XXX why is this happening?
-            logging.warning("archive path {} already exists".format('{}.gz.gpg'.format(archive_path)))
+        archive_path = '{}.gz'.format(os.path.join(archive_dir, email_md5))
+        if os.path.exists('{}.e'.format(archive_path)):
+            logging.warning("archive path {} already exists".format('{}.e'.format(archive_path)))
             analysis.details = archive_path
             return True
-        else:
-            shutil.copy2(source_path, archive_path)
-
+            
         # compress the data
         logging.debug("compressing {}".format(archive_path))
-        Popen(['gzip', '-f', archive_path]).wait()
+        try:
+            with open(source_path, 'rb') as fp_in:
+                with gzip.open(archive_path, 'wb') as fp_out:
+                    shutil.copyfileobj(fp_in, fp_out)
 
-        archive_path += '.gz'
-        if not os.path.exists(archive_path):
-            raise Exception("compression failed for {}".format(archive_path))
+        except Exception as e:
+            logging.error("compression failed for {}: {}".format(archive_path, e))
+            return False
 
         # encrypt the archive file
-        Popen(['gpg', '--quiet', '--yes', '--encrypt', '--no-random-seed-file', '--lock-never',
-               '-r', saq.CONFIG['gpg']['encryption_recipient'], archive_path]).wait()
-        encrypted_file = '{}.gpg'.format(archive_path)
+        encrypted_file = '{}.e'.format(archive_path)
 
-        logging.info("archived email {} to {}".format(source_path, encrypted_file))
+        try:
+            encrypt(archive_path, encrypted_file)
+        except Exception as e:
+            logging.error("unable to encrypt archived email {}: {}".format(archive_path, e))
+
+        logging.info("archived email {} to {}".format(archive_path, encrypted_file))
 
         # delete the unencrypted copy
         if os.path.exists(encrypted_file):
-            logging.debug("encrypted {}".format(archive_path))
             try:
                 os.remove(archive_path)
             except Exception as e:
                 logging.error("unable to delete unencrypted archive file {}: {}".format(archive_path, e))
-                raise e
         else:
-            raise Exception("expected encrypted output file {} does not exist".format(encrypted_file))
+            logging.error("expected encrypted output file {} does not exist".format(encrypted_file))
+            return False
 
         with get_db_connection('email_archive') as db:
             c = db.cursor()
@@ -1693,6 +1693,14 @@ class EmailArchiveAction(PostAnalysisModule):
 
         analysis.details = archive_path
         return True
+
+    @property
+    def maintenance_frequency(self):
+        return 60 # execute every 60 seconds
+
+    def execute_maintenance(self):
+        from saq.email import maintain_archive
+        maintain_archive()
 
 class EmailConversationFrequencyAnalysis(Analysis):
     """How often does this external person email this internal person?"""
@@ -2239,14 +2247,14 @@ WHERE
                 continue
 
             archive_path = os.path.join(archive_base_dir, server.lower(), md5.lower()[0:3], 
-                                        '{}.gz.gpg'.format(md5.lower()))
+                                        '{}.gz.e'.format(md5.lower()))
 
             if not os.path.exists(archive_path):
                 logging.warning("archive email {} does not exist at {}".format(md5, archive_path))
                 continue
 
             # just add the encrypted file as-is
-            target_path = os.path.join(self.root.storage_dir, '{}.gz.gpg'.format(message_id.value))
+            target_path = os.path.join(self.root.storage_dir, '{}.gz.e'.format(message_id.value))
             if os.path.exists(target_path):
                 logging.warning("target file {} already exists".format(target_path))
 

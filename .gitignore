@@ -102,3 +102,20 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# vim
+.*.swp
+
+archive/
+crontab
+load_local_environment
+splunk_logs/
+ssl/
+stats/
+ace.out/
+error_reports/
+load_proxy
+yss/.yss.pid
+backups/
+data/
+extra/

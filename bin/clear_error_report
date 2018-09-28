@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+if [ -z "$SAQ_HOME" ]
+then
+    echo "missing env var SAQ_HOME"
+    exit 1
+fi
+
+if [ -z "$1" ]
+then
+    echo "usage: clear_error_report some_string"
+    exit 1
+fi
+
+( cd $SAQ_HOME && \
+find error_reports -maxdepth 1 -mindepth 1 -type f -print0 | xargs -0 grep -l "$1" | \
+while read f; do echo $f; rm "$f"; if [ -d "$f.ace" ]; then rm -rf "$f.ace"; fi; done )

@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-cd $SAQ_HOME
-echo "stopping orion engine"
-python3 saq --stop orion

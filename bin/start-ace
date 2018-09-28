@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+source $(dirname "$0")/common.sh
+cd $SAQ_HOME
+
+if [ ! -e etc/startup ]
+then
+    echo "missing $SAQ_HOME/etc/startup"
+    exit 1
+fi
+
+cat etc/startup | grep -v -e '^#' -e '^$' | while read service
+do
+    echo "starting $service"
+    bin/start-$service
+done

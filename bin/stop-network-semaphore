@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
+
 echo "stopping network semaphore"
-python3 saq --stop network-semaphore
+python3 ace --stop network-semaphore

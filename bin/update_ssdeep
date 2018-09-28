@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-source /opt/saq/load_environment
-
-cd /opt/crits_ssdeep
-git pull
-cp /opt/crits_ssdeep/ssdeep.json /opt/saq/etc/tmp_ssdeep.json
-mv /opt/saq/etc/tmp_ssdeep.json /opt/saq/etc/ssdeep.json
-
-(cd /opt/saq && ./saq compile-ssdeep)

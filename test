@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+
+if [ -z "${SAQ_HOME}" ]
+then
+    echo "missing env var SAQ_HOME"
+    exit 1
+fi
+
+cd "${SAQ_HOME}" || { echo "cannot cd to ${SAQ_HOME}"; exit 1; }
+
+rm -rf error_reports/* 2> /dev/null
+
+# make sure we're using the saq.unittest.ini config
+if [ ! -L etc/saq.ini ]
+then
+    echo "etc/saq.ini should be a symlink"
+    exit 1
+fi
+
+if [ "$(readlink etc/saq.ini)" != "saq.unittest.ini" ]
+then
+    echo "switching to saq.unittest.ini"
+    cp etc/saq.ini etc/saq.ini.saved
+    rm etc/saq.ini && ln -s saq.unittest.ini etc/saq.ini
+    if [ "$(readlink etc/saq.ini)" != "saq.unittest.ini" ]
+    then
+        echo "unable to set config"
+        exit 1
+    fi
+fi
+
+# clear logs
+if [ -e logs/unittest.log ]
+then
+    rm logs/unittest.log
+fi
+
+# if we passed no parameters then we run all the tests
+if [ "$#" -eq "0" ]
+then
+    PYTHONPATH=lib python3 -W ignore -m unittest -f -v \
+        saq.test_analysis \
+        saq.test_database \
+        saq.test_lock \
+        saq.engine.test_engine \
+        saq.engine.test_email \
+        saq.engine.test_ace \
+        saq.modules.test_asset \
+        saq.modules.test_url \
+        saq.modules.test_file_analysis \
+        saq.modules.test_email \
+        saq.engine.test_cloudphish \
+        saq.test_detection \
+
+        # TODO reintroduce these next two somehow
+
+        #saq.test_pds \
+        #saq.modules.test_pds \
+        #saq.modules.test_vx \
+
+    exit 0
+fi
+
+# otherwise we run whatever test is specified on the command line
+PYTHONPATH=lib python3 -W ignore -m unittest -f -v $1
+
+#PYTHONPATH=lib python3 -W ignore -m unittest -v saq.engine.test_cloudphish.CloudPhishEngineTestCase.test_cloudphish_engine_007_http_clear_alert
+#PYTHONPATH=lib python3 -W ignore -m unittest -v saq.modules.test_asset.AssetAnalysisModuleTestCase.test_carbon_black_asset_ident_000
+#PYTHONPATH=lib python3 -W ignore -m unittest -v saq.engine.test_ace.ACECoreEngineTestCase.test_ace_engine_002_persistent_engine
+#PYTHONPATH=lib python3 -W ignore -m unittest -v saq.engine.test_email.EmailEngineTestCase.test_email_engine_003_email_processing
+#PYTHONPATH=lib python3 -W ignore -m unittest -v saq.engine.test_engine.EngineTestCase.test_engine_024_mysql_engine_submit
+#PYTHONPATH=lib python3 -W ignore -m unittest -v saq.test_analysis.RootAnalysisTestCase.test_analysis_004_has_observable
+#PYTHONPATH=lib python3 -W ignore -m unittest -v saq.test_database.DatabaseTestCase.test_database_007_caching_processes
+
+
+grep MARKER logs/unittest.log
+
+if [ $( ls error_reports | wc -l ) -gt "0" ]
+then
+    echo
+    echo "*** ERRORS REPORTED ** "
+    echo
+    cat error_reports/* 2> /dev/null
+fi

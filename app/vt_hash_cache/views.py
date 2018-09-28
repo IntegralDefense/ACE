@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os.path
 
 import memcache
 import requests
@@ -55,7 +56,15 @@ def query():
          return "invalid hash", 500
 
     # do we already have a cached query result for this?
-    client = memcache.Client(['unix:/opt/saq/var/memcached.socket'], debug=0)
+    client_address = saq.CONFIG['memcached']['client_address']
+
+    # see if we are using a unix socket with a relative path
+    if client_address.startswith('unix:'):
+        address = client_address[len('unix:'):]
+        if not os.path.isabs(address):
+            client_address = 'unix:{}/{}'.format(saq.SAQ_HOME, address)
+
+    client = memcache.Client([client_address], debug=0)
     result_id = client.get(_hash)
 
     if result_id:
