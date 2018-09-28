@@ -18,7 +18,6 @@ Quick Concept Touchpoint
 There are two core concepts an analyst must be familiar with when working ACE alerts: Observables and Dispositioning.
 
 .. _observable:
-.. _Observables:
 
 Observables
 ~~~~~~~~~~~
@@ -135,11 +134,9 @@ When investigating an alert, there is a categorization model for analysts to fol
 |                     | + Vulnerability and port scanning                                                                            |
 |                     | + Attempts to establish trust with a user                                                                    |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
-| WEAPONIZATION       | The detection of an attempt to build or use a cyber attack weapon that was stopped or failed.                |
+| WEAPONIZATION       | The detection of an attempt to build a cyber attack weapon.                                                  |
 |                     |                                                                                                              |
-|                     | + IPS/Proxy blocks to exploit kits that stopped an attack from being delivered                               |
-|                     | + SMTP filter/IPS that blocks a phish from being delivered to an inbox                                       |
-|                     | + AV deleting a malicious file before it was written to disk, such as on an inserted USB device              |
+|                     | + Detecting an advesary building a malicious document using VT threat hunting                                |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
 | DELIVERY            | An attack was attempted, and the attack's destination was reached. Even with no indication the attack worked.|
 |                     |                                                                                                              |
@@ -149,9 +146,9 @@ When investigating an alert, there is a categorization model for analysts to fol
 +---------------------+--------------------------------------------------------------------------------------------------------------+
 | EXPLOITATION        | An attack was DELIVERED and there is evidence that the EXPLOITATION worked in whole or in part.              |
 |                     |                                                                                                              |
-|                     | + A user clicked on a malicious link from a phish, but the proxy blocked the connection                      |
-|                     | + A user opened and ran a malicious email attachment, but AV blocked the execution from completing           |
-|                     | + A user hit an exploit kit, a Flash exploit was attempted, but the firewall's IPS blocked it                |
+|                     | + A user clicked on a malicious link from a phish                                                            |
+|                     | + A user opened and ran a malicious email attachment                                                         |
+|                     | + A user hit an exploit kit, a Flash exploit was attempted                                                   |
 +---------------------+--------------------------------------------------------------------------------------------------------------+
 | INSTALLATION        | An attack was DELIVERED and the attack resulted in the INSTALLATION of something to maintain persistence on  |
 |                     | an asset/endpoint/system.                                                                                    |
@@ -335,7 +332,6 @@ On the Manage Alerts page, each alert can be expanded via its dropdown button. O
 
 Above, you can click to expand a text based example of an alerts observable structure when expanded on the Manage Alerts page.
 
-.. _filtering and grouping:
 
 Filtering and Grouping
 ++++++++++++++++++++++
@@ -379,7 +375,6 @@ ACE has a tagging system by which observables and analysis are tagged for the pu
 
 All observable tags get associated with their respective alert and show up on the alert management page. Any observable can be tagged and can have any number of tags. For instance, an email conversation between two addresses that ACE has seen a lot will be tagged as 'frequent_conversation'. Tags can also be added directly to alerts from the Manage Alerts page. This can be helpful for `Filtering and Grouping`_ alerts if an analyst needs a way to group alerts that don’t otherwise have a commonly shared tag or observable.
 
-ACE tags have a priority assigned to them. The priority of any ACE alert is the summation of its tags. For example, if ACE recognizes a Domain Controller as one of the observables, it will be tagged as such and given whatever priority is specified for Domain Controllers.
 
 Examples
 ~~~~~~~~
@@ -400,7 +395,7 @@ Under that email.rfc882 file observable you will see the output of the Email Ana
 
 .. figure:: _static/analysis-overview-jdoe.png
 
-With respect to this alert, ACE even rendered us a visual image of the email's HTML body. How convenient... and I didn't purchase anything, so this email seems awfully suspicious. Note that we can also view or download that 'email.rfc822.unknown_text_html_000' file by using the dropdown next to it.
+With respect to this alert, ACE even rendered us a visual image of the email's HTML body. That convenient rendering shows us -- I doubt the user really purchased anything, so this email seems awfully suspicious. Note that we can also view or download that 'email.rfc822.unknown_text_html_000' file by using the dropdown next to it.
 
 Scrolling down on the same alert from the example above, we see the ‘URL Extraction Analysis’ found some URL observables. Moreover, we see that ACE found additional observables in the analysis output of those URL observables. Specifically, ACE downloaded that '66524177012457.zip' file and extracted it to reveal an executable named '66524177012457.exe'.
 

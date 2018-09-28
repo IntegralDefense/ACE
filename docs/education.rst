@@ -21,6 +21,7 @@ Why does this metric matter? Because detection is hard and analyst time is highl
 False Positive Metrics
 ++++++++++++++++++++++
 
+What is a False Postive?
 Something that turns out to be nothing? Yes, but more than that, too.
 
 False Positives, False Positive rates, and the average time it takes an analyst to disposition a False Positive are crucial metrics for driving the right security ecosystem.
@@ -31,7 +32,7 @@ If your least experienced analyst can't disposition a False Positive in seconds,
 Hunting and Tuning!
 +++++++++++++++++++
 
-Hunting is the active process of searching for maliciousness. From hunting, we develop hunts that are meant to detect some specific form of maliciousness. A hunt could be looking for a strange process behavioral patterns, a Yara signature, or just a search for some atomic indicators. When a hunt returns a result, we have a detection and need to create an alert.
+Hunting is the active process of searching for maliciousness. From hunting, we develop hunts that are meant to detect some specific form of maliciousness. A hunt could be looking for a strange process behavioral pattern, a Yara signature, or just a search for some atomic indicators. When a hunt returns a result, we have a detection and need to create an alert.
 
 Hunts produce True Positives and False Positives. Tuning is the process of telling a hunt not to alert on something we've already determined to be a False Positive. Tune out the False Positives.
 

@@ -1,3 +1,5 @@
+.. _admin-guide:
+
 Administration Guide
 ====================
 
@@ -46,17 +48,36 @@ Modules
 
 ACE modules automate something that an analyst has previously done manually. These modules do all "the work" on observables; each module knows which types of observables it works with and "knows what to do" with those observables. Modules can be built to do anything that you can automate. Each ACE engine knows which ACE modules to work with, and modules can perform work for many different engines.
 
-... More to come here.
 
-Recursive Correlation & Analysis
-++++++++++++++++++++++++++++++++
+Recursive Analysis
+++++++++++++++++++
 
 .. role:: strike
    :class: strike
 
-This whole section should probably be deleted. It's covered elsewhere now.
-
 With the introduction of observables, engines, and modules, you can begin to understand how ACE performs its recursive analysis and correlation.  
 
-For example, given observable type 'file', each ACE module that acts on an observable of type file will be called to perform its analysis.  From the output of each module’s analysis, ACE will discover and create new observables, which, kicks off more modules to perform analysis.  This recursive process will continue until all observables are discovered, analyzed, and correlated, or, until a specified alert correlation timeout is reached. ACE’s default timeout limit for recursive alert analysis is 15 minutes, however, a warning will be logged if alert analysis exceeds five minutes. These values are configurable. 
+For example, given observable type 'file', each ACE module that acts on an observable of type file will be called to perform its analysis.  From the output of each module’s analysis, ACE will discover and create new observables, which, kicks off more modules to perform analysis.  This recursive process will continue until all observables are discovered, analyzed, and correlated, or, until a specified alert correlation timeout is reached. ACE’s default timeout limit for recursive alert analysis is 15 minutes, however, a warning will be logged if alert analysis exceeds five minutes. These values are configurable under ACE's 'global' configuration section.
 
+
+Turning on Engines
+------------------
+
+.. _email-scanning:
+
+Email Scanner
++++++++++++++
+
+The email scanning engine requires  
+
+CloudPhish
+++++++++++
+
+CrawlPhish
+~~~~~~~~~~
+
+Enabling Modules
+----------------
+
+Yara Scanner
+++++++++++++
