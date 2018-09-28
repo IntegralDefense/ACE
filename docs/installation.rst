@@ -100,7 +100,7 @@ There are a couple snags and gotchas that you can run into when installing ACE. 
 Getting Data into ACE
 ---------------------
 
-A bare-bones ACE install is not going to be very effective by itself, much less without data. You can use the `Manual Analysis`_ section to submit observables to ACE. However, you're going to want to turn on some of the additional :ref:`Engines` and :ref:`Modules` that come with ACE by default. Some good engines to turn on first are the :ref:`Cloudphish` engine and the :ref:`Email Scanning <email-scanning>` engine and if you've got yara signatures, definitely turn on the :ref:`Yara Scanner` module. See the :ref:`Administration Guide` for more details on the various engines, modules, and how to turn them on.
+A bare-bones ACE install is not going to be very effective by itself, much less without data. You can use the `Manual Analysis`_ section to submit observables to ACE. However, you're going to want to turn on some of the additional :ref:`Engines` and :ref:`Modules` that come with ACE by default. Firt, turning on the :ref:`Correlation Engine` is essential. Some other good engines to turn on first are the :ref:`Cloudphish` engine and the :ref:`Email Scanning <email-scanning>` engine and if you've got yara signatures, definitely turn on the :ref:`Yara Scanner` module. See the :ref:`Administration Guide` for more details on the various engines, modules, and how to turn them on.
 
 Manual Analysis
 +++++++++++++++
