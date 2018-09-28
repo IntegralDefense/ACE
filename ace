@@ -1,0 +1,3256 @@
+#!/usr/bin/env python3
+
+import argparse
+import datetime
+import getpass
+import json
+import logging
+import os
+import os.path
+import pwd
+import re
+import shutil
+import signal
+import smtplib
+import socket
+import sqlite3
+import sys
+import time
+import trace
+import traceback
+import unittest
+import uuid
+
+parser = argparse.ArgumentParser(description="Simple Alert Queue")
+parser.add_argument('--saq-home', required=False, dest='saq_home', default=None,
+    help="Sets the SAQ_HOME environment variable.")
+parser.add_argument('-L', '--logging-config-path', required=False, dest='logging_config_path', default=None,
+    help="Path to the logging configuration file.")
+parser.add_argument('-c', '--config-path', required=False, dest='config_paths', action='append', default=[],
+    help="ACE configuration files. $SAQ_HOME/etc/saq.default.ini is always loaded, additional override default settings.")
+parser.add_argument('--single-threaded', required=False, dest='single_threaded', default=False, action='store_true',
+    help="Force execution to take place in a single process and a single thread.  Useful for manual debugging.")
+parser.add_argument('--log-level', required=False, dest='log_level', default=None,
+    help="Change the root log level.")
+parser.add_argument('--start', required=False, dest='start', default=False, action='store_true',
+    help="Start the specified service.  Blocks keyboard unless --daemon (-d) is used.")
+parser.add_argument('--stop', required=False, dest='stop', default=False, action='store_true',
+    help="Stop the specified service.  Only applies to services started with --daemon (-d).")
+parser.add_argument('-d', '--daemon', required=False, dest='daemon', default=False, action='store_true',
+    help="Run this process as a daemon in the background.")
+parser.add_argument('-k', '--kill-daemon', required=False, dest='kill_daemon', default=False, action='store_true',
+    help="Kill the currently processing process.")
+parser.add_argument('--force-alerts', required=False, dest='force_alerts', default=False, action='store_true',
+    help="Force all analysis to always generate an alert.")
+parser.add_argument('--relative-dir', required=False, dest='relative_dir', default=None,
+    help="Assume all storage paths are relative to the given directory.  Defaults to current work directory.")
+parser.add_argument('-p', '--provide-decryption-password', required=False, action='store_true', dest='provide_decryption_password', default=False,
+    help="Prompt for the decryption password so that encrypted archive files can be automatically analyzed.")
+parser.add_argument('--trace', required=False, action='store_true', dest='trace', default=False,
+    help="Enable execution tracing (debugging option).")
+parser.add_argument('-D', required=False, action='store_true', dest='debug_on_error', default=False,
+    help="Break into pdb if an unhanled exception is thrown or an assertion fails.")
+
+subparsers = parser.add_subparsers(dest='cmd')
+
+# utility functions
+def disable_proxy():
+    for proxy_setting in [ 'http_proxy', 'https_proxy', 'ftp_proxy' ]:
+        if proxy_setting in os.environ:
+            logging.warning("removing proxy setting {0}".format(proxy_setting))
+            del os.environ[proxy_setting]
+
+def recurse_analysis(analysis, level=0, current_tree=[]):
+    """Used to generate a textual display of the analysis results."""
+    if not analysis:
+        return
+
+    if analysis in current_tree:
+        return
+
+    current_tree.append(analysis)
+
+    if level > 0 and len(analysis.observables) == 0 and len(analysis.tags) == 0 and analysis.summary is None:
+        return
+
+    display = '{}{}{}'.format('\t' * level, 
+                              '<' + '!' * len(analysis.detections) + '> ' if analysis.detections else '', 
+                              analysis.summary if analysis.summary is not None else str(analysis))
+    if analysis.tags:
+        display += ' [ {} ] '.format(', '.join([x.name for x in analysis.tags]))
+    
+    print(display)
+
+    for observable in analysis.observables:
+        display = '{} * {}{}:{}'.format('\t' * level, 
+                                        '<' + '!' * len(observable.detections) + '> ' if observable.detections else '', 
+                                         observable.type, 
+                                         observable.value)
+        if observable.time is not None:
+            display += ' @ {0}'.format(observable.time)
+        if observable.directives:
+            display += ' {{ {} }} '.format(', '.join([x for x in observable.directives]))
+        if observable.tags:
+            display += ' [ {} ] '.format(', '.join([x.name for x in observable.tags]))
+        print(display)
+
+        for observable_analysis in observable.all_analysis:
+            recurse_analysis(observable_analysis, level + 1, current_tree)
+
+def display_analysis(root):
+    recurse_analysis(root)
+
+    #observables = set(root.all_observables)
+    #if observables:
+        #print("{} OBSERVATIONS".format(len(observables)))
+        #for observable in observables:
+            #print("* {} - {}".format(observable.type, observable.value))
+
+    tags = set(root.all_tags)
+    if tags:
+        print("{} TAGS".format(len(tags)))
+        for tag in tags:
+            print('* {}'.format(tag))
+
+    detections = root.all_detection_points
+    if detections:
+        print("{} DETECTIONS FOUND (marked with <!> above)".format(len(detections)))
+        for detection in detections:
+            print('* {}'.format(detection))
+
+    if root.profile_points:
+        print("{} PROFILE POINTS MATCHED".format(len(root.profile_points)))
+        for profile_point in root.profile_points:
+            output = '* {}'.format(profile_point.description)
+            if profile_point.notes:
+                output = '* {} ({})'.format(profile_point.description, profile_point.notes)
+            print(output)
+
+def kill_daemon(daemon_name):
+
+    import psutil
+
+    daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
+    if not os.path.exists(daemon_pid_path):
+        logging.warning("daemon file {0} does not exist (process not running?)".format(daemon_pid_path))
+        sys.exit(1)
+
+    deamon_pid = None
+    try:
+        with open(daemon_pid_path, 'r') as fp:
+            daemon_pid = int(fp.read())
+    except Exception as e:
+        logging.error("cannot read PID from {0}: {1}".format(daemon_pid_path, str(e)))
+        sys.exit(1)
+
+    #for child in parent.children(recursive=True):
+        #try:
+            #child.kill()
+            #logging.info("killed child process {0}".format(child.pid))
+        #except Exception as e:
+            #logging.error("unable to kill child process {0}: {1}".format(child, str(e)))
+
+    try:
+        parent = psutil.Process(daemon_pid)
+
+        logging.info("sending SIGTERM to {}".format(parent.pid))
+        # this should gracefully allow the system to come to a stop
+        parent.terminate()
+
+        try:
+            parent.wait(timeout=60)
+            logging.info("system shut down")
+        except Exception as e:
+            logging.error("unable to terminate process {}: {}".format(parent.pid, e))
+
+            # but if it doesn't work then we walk the tree kill all processes
+            for child in parent.children(recursive=True):
+                try:
+                    child.kill()
+                    logging.info("killed child process {}".format(child.pid))
+                except Exception as e:
+                    logging.error("unable to kill child process {}: {}".format(child, str(e)))
+
+            try:
+                parent.kill()
+            except Exception as e:
+                logging.error("unable to kill process {}: {}".format(parent.pid, e))
+
+    except Exception as e:
+        logging.error("unable to stop process {}: {}".format(parent, str(e)))
+
+    try:
+        os.remove(daemon_pid_path)
+    except Exception as e:
+        logging.error("unable to delete PID file {}: {}".format(daemon_pid_path, str(e)))
+        sys.exit(1)
+
+    sys.exit(0)
+
+def daemonize(daemon_name):
+    # are we already running?
+    daemon_dir = os.path.join(saq.SAQ_HOME, 'var', 'daemon')
+    if not os.path.exists(daemon_dir):
+        try:
+            os.makedirs(daemon_dir)
+        except Exception as e:
+            logging.error("unable to create {}: {}".format(daemon_dir, str(e)))
+            sys.exit(1)
+
+    daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
+    if os.path.exists(daemon_pid_path):
+        logging.error("deamon PID file {} exists: run command with -k to kill existing daemon and/or delete the pid file".format(daemon_pid_path))
+        sys.exit(1)
+
+    pid = None
+
+    # http://code.activestate.com/recipes/278731-creating-a-daemon-the-python-way/
+    try:
+        pid = os.fork()
+        #print("got pid {}".format(pid))
+    except OSError as e:
+        logging.fatal("{} ({})".format(e.strerror, e.errno))
+        sys.exit(1)
+
+    if pid == 0:
+        os.setsid()
+
+        try:
+            pid = os.fork()
+            #print("got pid {}".format(pid))
+        except OSError as e:
+            logging.fatal("{} ({})".format(e.strerror, e.errno))
+            sys.exit(1)
+
+        if pid > 0:
+            # write the pid to a file
+            with open(daemon_pid_path, 'w') as fp:
+                fp.write(str(pid))
+
+            print("started background process {}".format(pid))
+            #print("pid {} exiting...".format(os.getpid()))
+            os._exit(0)
+    else:
+        #print("pid {} exiting...".format(os.getpid()))
+        os._exit(0)
+
+    import resource
+    maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+    if (maxfd == resource.RLIM_INFINITY):
+        maxfd = MAXFD
+
+        for fd in range(0, maxfd):
+            try:
+                os.close(fd)
+            except OSError:   # ERROR, fd wasn't open to begin with (ignored)
+                pass
+
+    if (hasattr(os, "devnull")):
+        REDIRECT_TO = os.devnull
+    else:
+        REDIRECT_TO = "/dev/null"
+
+    os.open(REDIRECT_TO, os.O_RDWR)
+    os.dup2(0, 1)
+    os.dup2(0, 2)
+
+# ============================================================================
+# export observables
+#
+
+def export_observables(args):
+    """Exports observables, mappings and some alert context into a sqlite database."""
+    from saq.database import get_db_connection
+
+    if os.path.exists(args.output_file):
+        try:
+            os.remove(args.output_file)
+        except Exception as e:
+            logging.error("unable to delete {}: {}".format(args.output_file, e))
+            sys.exit(1)
+
+    output_db = sqlite3.connect(args.output_file)
+    output_c = output_db.cursor()
+    output_c.execute("""CREATE TABLE observables ( type text NOT NULL, value text NOT NULL)""")
+    output_c.execute("""CREATE UNIQUE INDEX i_type_value ON observables( type, value )""")
+    output_c.execute("""CREATE INDEX i_value ON observables( value )""")
+
+    i = 0
+    skip = 0
+    with get_db_connection() as input_db:
+        input_c = input_db.cursor()
+        input_c.execute("""SELECT type, value FROM observables""")
+        for _type, _value in input_c:
+            try:
+                _value = _value.decode('utf-8')
+            except UnicodeDecodeError as e:
+                skip += 1
+                continue
+
+            output_c.execute("""INSERT INTO observables ( type, value ) VALUES ( ?, ? )""", (_type, _value))
+            i += 1
+
+    output_db.commit()
+    output_db.close()
+
+    logging.info("exported {} observables (skipped {})".format(i, skip))
+    sys.exit(0)
+
+export_observables_parser = subparsers.add_parser('export-observables',
+    help="Exports observables into a sqlite database.")
+export_observables_parser.add_argument('output_file', 
+    help="Path to the sqlite database to create. Existing files are overwritten.")
+export_observables_parser.set_defaults(func=export_observables)
+    
+
+# ============================================================================
+# ssdeep compilation
+#
+
+def compile_ssdeep(args):
+    """Compile the etc/ssdeep.json CRITS export into a usable ssdeep hash file."""
+    import saq
+
+    json_path = os.path.join(saq.SAQ_HOME, args.input)
+    output_path = os.path.join(saq.SAQ_HOME, args.output)
+    temp_output_path = '{}.tmp'.format(output_path)
+    count = 0
+    duplicate_check = set()
+
+    if not os.path.exists(json_path):
+        logging.error("missing {}".format(json_path))
+        sys.exit(1)
+
+    try:
+        with open(temp_output_path, 'w') as temp_fp:
+            temp_fp.write('ssdeep,1.1--blocksize:hash:hash,filename\n')
+            with open(json_path, 'r') as fp:
+                root = json.load(fp)
+                for _object in root['objects']:
+                    if _object['ssdeep'] in duplicate_check:
+                        logging.warning("detected duplicate ssdeep hash {}".format(_object['ssdeep']))
+                        continue
+
+                    duplicate_check.add(_object['ssdeep'])
+                    temp_fp.write('{},{}\n'.format(_object['ssdeep'], _object['id']))
+                    count += 1
+    except Exception as e:
+        logging.error("unable to create {}: {}".format(temp_output_path), str(e))
+        sys.exit(1)
+
+    # now move it over for usage
+    try:
+        logging.debug("moving {0} to {1}".format(temp_output_path, output_path))
+        shutil.move(temp_output_path, output_path)
+    except Exception as e:
+        logging.error("unable to move {0} to {1}: {2}".format(temp_output_path, output_path, str(e)))
+        sys.exit(1)
+
+    logging.info("processed {0} entries".format(count))
+    sys.exit(0)
+
+compile_ssdeep_parser = subparsers.add_parser('compile-ssdeep',
+    help="Compiles ssdeep signatures exported from CRITS.")
+compile_ssdeep_parser.add_argument('-i', '--input', required=False, default='etc/ssdeep.json', dest='input',
+    help="The CRITS export of the ssdeep hashses in JSON format.")
+compile_ssdeep_parser.add_argument('-o', '--output', required=False, default='etc/ssdeep_hashes', dest='output',
+    help="The ssdeep hash file generated by the script.")
+compile_ssdeep_parser.set_defaults(func=compile_ssdeep)
+
+
+# ============================================================================
+# command line correlation
+#
+
+def correlate(args):
+    # initialize command line engine
+    import saq.lock
+
+    from saq import CONFIG
+    from saq.analysis import RootAnalysis
+    from saq.constants import F_FILE, F_SUSPECT_FILE, VALID_OBSERVABLE_TYPES, event_time_format, \
+                              EVENT_GLOBAL_TAG_ADDED, \
+                              EVENT_GLOBAL_ANALYSIS_ADDED, \
+                              EVENT_GLOBAL_OBSERVABLE_ADDED
+    #from saq.database import Alert
+    from saq.engine import Engine
+    from saq.error import report_exception
+    from saq.network_client import submit_alerts
+    from saq.process_server import initialize_process_server
+
+    initialize_process_server()
+
+    def _tag_added_event(source, event_type, tag):
+        logging.info("tagged {} with {}".format(source, tag.name))
+
+    def _observable_added_event(source, event_type, observable):
+        logging.info("observed {} in {}".format(observable, source))
+
+    def _analysis_added_event(source, event_type, analysis):
+        logging.info("analyzed {} with {}".format(source, analysis))
+
+    class CommandLineCorrelationEngine(Engine):
+        def __init__(self, work, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.work = work
+            self.total_work_count = len(self.work)
+            self.completed_work_count = 0
+
+        @property
+        def name(self):
+            return 'cli_correlation'
+
+        def root_analysis_completed(self, root):
+            self.completed_work_count += 1
+            if self.completed_work_count == self.total_work_count:
+                self.controlled_stop()
+
+        def collect(self):
+            root = self.work.pop()
+            self.add_work_item(root.storage_dir)
+
+            if not self.work:
+                self.stop_collection()
+
+        def process(self, request):
+            try:
+                root = RootAnalysis()
+                root.storage_dir = request
+
+                root.add_event_listener(EVENT_GLOBAL_TAG_ADDED, _tag_added_event)
+                root.add_event_listener(EVENT_GLOBAL_OBSERVABLE_ADDED, _observable_added_event)
+                root.add_event_listener(EVENT_GLOBAL_ANALYSIS_ADDED, _analysis_added_event)
+
+                root.load()
+
+                # if we're skipping analysis then we just clear them out before we use them
+                if args.skip_analysis and self.analysis_modules:
+                    logging.warning("skipping analysis for {}".format(request))
+                    self.analysis_modules.clear()
+
+                self.analyze(root)
+
+            except Exception as e:
+                logging.error("unable to analyze {0}: {1}".format(root, str(e)))
+                report_exception()
+
+        def post_analysis(self, root):
+            if not args.alert:
+                return
+
+            if self.should_alert(root):
+                logging.info("sending {} as alert".format(root))
+                remote_host = args.remote_host if args.remote_host else CONFIG['network_client_ace']['remote_host']
+                remote_port = args.remote_port if args.remote_port else CONFIG['network_client_ace'].getint('remote_port')
+                ssl_key = args.ssl_key if args.ssl_key else CONFIG['network_client_ace']['ssl_key']
+                ssl_cert = args.ssl_root_cert if args.ssl_root_cert else CONFIG['network_client_ace']['ssl_cert']
+                ca_path = args.ssl_ca_path if args.ssl_ca_path else CONFIG['network_client_ace']['ca_path']
+                ssl_hostname = args.ssl_hostname if args.ssl_hostname else CONFIG['network_client_ace']['ssl_hostname']
+
+                try:
+                    submit_alerts(remote_host, remote_port, ssl_cert, ssl_hostname, ssl_key, ca_path, [root.storage_dir])
+                except Exception as e:
+                    logging.error("unable to submit alert {}: {}".format(root, e))
+                    report_exception()
+
+    if len(args.targets) % 2 != 0:
+        logging.error("odd number of arguments (you need pairs of type and value)")
+        sys.exit(1)
+
+    targets = args.targets
+    
+    # did we specify targets from stdin?
+    if args.from_stdin:
+        for o_value in sys.stdin:
+            # the type of observables coming in on stdin is also specified on the command line
+            targets.append(args.stdin_type)
+            targets.append(o_value.strip())
+
+    reference_time = None
+    if args.reference_time is not None:
+        reference_time = datetime.datetime.strptime(args.reference_time, event_time_format)
+
+    if os.path.exists(args.storage_dir) and not args.load:
+        # if the output directory is the default directory then just delete it
+        # this has been what I've wanted to happen 100% of the time
+        if args.storage_dir == 'ace.out':
+            try:
+                logging.warning("deleting existing output directory ace.out")
+                shutil.rmtree('ace.out')
+            except Exception as e:
+                logging.error("unable to delete existing output directory ace.out: {}".format(e))
+                sys.exit(1)
+        else:
+            logging.error("output directory {0} already exists".format(args.storage_dir))
+            sys.exit(1)
+
+    if os.path.exists(args.storage_dir):
+        logging.warning("storage directory {} already exists".format(args.storage_dir))
+    else:
+        # create the output directory
+        try:
+            os.makedirs(args.storage_dir)
+        except Exception as e:
+            logging.error("unable to create output directory {0}: {1}".format(args.storage_dir, str(e)))
+            sys.exit(1)
+
+    roots = []
+
+    root = RootAnalysis()
+    # create a RootAnalysis to pass to the engine for analysis
+    root.storage_dir = args.storage_dir
+
+    if args.load:
+        root.load()
+    else:
+        # set all of the properties individually
+        if args.company_name:
+            root.company_name = args.company_name
+
+        root.tool = 'ACE - Command Line Analysis'
+        root.tool_instance = socket.gethostname()
+        root.alert_type = args.alert_type
+        root.description = args.description if args.description else 'Command Line Correlation'
+        root.event_time = datetime.datetime.now() if reference_time is None else reference_time
+        root.details = { 
+            'local_user': pwd.getpwuid(os.getuid())[0],
+            'local_user_uid': os.getuid(),
+            'comment': args.comment
+        }
+
+    # create the list of observables to add to the alert for analysis
+    index = 0
+    while index < len(args.targets):
+        o_type = args.targets[index]
+        o_value = args.targets[index + 1]
+
+        if o_type not in VALID_OBSERVABLE_TYPES:
+            logging.error("invalid observable type {0}".format(o_type))
+            sys.exit(1)
+
+        # the root analysis we're currently working on (defaults to the main alert)
+        current_root = root
+
+        # are we creating a separate alert for each observable?
+        if args.split:
+            current_root = RootAnalysis()
+            subdir = os.path.join(root.storage_dir, current_root.uuid[0:3])
+            if not os.path.exists(subdir):
+                try:
+                    os.mkdir(subdir)
+                except Exception as e:
+                    logging.error("unable to create directory {}: {}".format(subdir, e))
+                    sys.exit(1)
+
+            current_root.storage_dir = os.path.join(subdir, current_root.uuid)
+            try:
+                os.mkdir(current_root.storage_dir)
+            except Exception as e:
+                logging.error("unable to create directory {}: {}".format(subdir, e))
+
+            # we'll make a little symlink if we can to help analysts know which directory is what
+            # it's ok if this fails
+            try:
+                os.symlink(os.path.join(current_root.uuid[0:3], current_root.uuid), os.path.join(root.storage_dir, str(o_value)))
+            except Exception as e:
+                logging.warning("unable to create symlink: {}".format(e))
+
+            current_root.tool = root.tool
+            current_root.tool_instance = root.tool_instance
+            current_root.alert_type = root.alert_type
+            current_root.description = "{} - {}:{}".format(root.description, o_type, o_value)
+            current_root.event_time = root.event_time
+            current_root.details = root.details
+
+        # if this is a file then we need to copy it over to the storage directory
+        if o_type == F_FILE or o_type == F_SUSPECT_FILE:
+            dest_path = os.path.join(current_root.storage_dir, os.path.basename(o_value))
+            try:
+                logging.debug("copying {0} to {1}".format(o_value, dest_path))
+                shutil.copy(o_value, dest_path)
+            except Exception as e:
+                logging.error("unable to copy {0} to {1} for analysis: {2}".format(o_value, dest_path, str(e)))
+                sys.exit(1)
+
+            o_value = os.path.basename(o_value)
+
+        observable = current_root.add_observable(o_type, o_value, reference_time)
+        for directive in args.directives:
+            observable.add_directive(directive)
+
+        index += 2
+
+        if args.split:
+            current_root.save()
+            roots.append(current_root)
+
+    # if we are not splitting up the alerts then we just have one alert to look at
+    if not args.split:
+        root.save()
+        roots.append(root)
+
+    # allow the user to control what analysis modules run
+    if args.disable_all:
+        logging.warning("disabling all analysis modules...")
+        for section in saq.CONFIG.sections():
+            if not section.startswith('analysis_module_'):
+                continue
+
+            saq.CONFIG[section]['enabled'] = 'no'
+        #saq.CONFIG['engine_cli_correlation']['module_groups'] = ''
+
+    if args.disabled_modules:
+        for section in saq.CONFIG.sections():
+            if not section.startswith('analysis_module_'):
+                continue
+
+        for name_pattern in args.disabled_modules:
+            if name_pattern in section[len('analysis_module_'):]:
+                logging.warning("disabling {}".format(section))
+                saq.CONFIG[section]['enabled'] = 'no'
+
+    # enable by group
+    if args.enable_module_group:
+        for module_group in args.enable_module_group:
+            group_section = 'module_group_{}'.format(module_group)
+            if group_section not in saq.CONFIG:
+                logging.error("module group {} does not exist".format(module_group))
+                sys.exit(1)
+
+            for module_name in saq.CONFIG[group_section].keys():
+                logging.info("enabling {} by group {}".format(module_name, module_group))
+                saq.CONFIG[module_name]['enabled'] = 'yes'
+
+        saq.CONFIG['engine_cli_correlation']['module_groups'] = ','.join(args.enable_module_group)
+
+    if args.enabled_modules:
+        for name_pattern in args.enabled_modules:
+            for section in saq.CONFIG.sections():
+                if name_pattern in section[len('analysis_module_'):]:
+                    logging.info("enabling {}".format(section))
+                    saq.CONFIG[section]['enabled'] = 'yes'
+                    saq.CONFIG['engine_cli_correlation'][section] = 'yes'
+
+    cli_engine = CommandLineCorrelationEngine(roots)
+
+    try:
+        cli_engine.start()
+        cli_engine.wait()
+    except KeyboardInterrupt:
+        logging.warning("user interrupted correlation")
+        cli_engine.stop()
+        cli_engine.wait()
+
+    for root in roots:
+        # display the results
+        root.load()
+        display_analysis(root)
+
+    sys.exit(0)
+
+# analyze-files
+correlate_parser = subparsers.add_parser('correlate',
+    help="Analyze one or more observables or alerts.")
+correlate_parser.add_argument('-D', '--disable-module', required=False, dest='disabled_modules', nargs='*',
+    help="Zero or more module names (substring match) to disable.")
+correlate_parser.add_argument('--disable-all', required=False, dest='disable_all', default=False, action='store_true',
+    help="Disable all analysis modules (use -E switch to enable specific modules.")
+correlate_parser.add_argument('-E', '--enable-module', required=False, dest='enabled_modules', nargs='*', 
+    help="Zero or more module names (substring match) to enable.")
+correlate_parser.add_argument('-G', '--enable-module-group', required=False, dest='enable_module_group', nargs='+',
+    help="One or more module group names to enable.")
+correlate_parser.add_argument('-d', '--storage-dir', required=False, dest='storage_dir', default='ace.out',
+    help="Specify an output directory.  Defaults to ace.out.")
+correlate_parser.add_argument('-t', '--reference-time', required=False, dest='reference_time', default=None,
+    help="Specify a datetime in YYYY-MM-DD HH:MM:SS format that observables (of a temporal type) should be referenced from.")
+correlate_parser.add_argument('--description', required=False, dest='description', default="ACE Manual Correlation",
+    help="Supply a description.  This will be displayed as part of the alert if this correlation is later imported as an alert.")
+correlate_parser.add_argument('--comment', required=False, dest='comment', default=None,
+    help="Optional generic comment to add to the details of the alert.")
+correlate_parser.add_argument('--add-directive', required=False, dest='directives', action='append', default=[],
+    help="Adds the given directive to all observables specified.  This option can be used multiple times.")
+correlate_parser.add_argument('--alert-type', required=False, dest='alert_type', default='cli_analysis',
+    help="Optionally set the alert type.  Some analysis is only performed for alerts of a certain type.")
+correlate_parser.add_argument('--company-name', required=False, dest='company_name', default=None,
+    help="Optionally assign ownership of this analysis to a company.")
+correlate_parser.add_argument('--alert', required=False, dest='alert', action='store_true', default=False,
+    help="Insert the correlation as an alert if it contains a detection point.")
+correlate_parser.add_argument('--remote-host', required=False, dest='remote_host', default=None,
+    help="Specify the remote host of the ACE system (defaults to the engine_ace configuration values).")
+correlate_parser.add_argument('--remote-port', required=False, dest='remote_port', default=None, type=int,
+    help="Specify the remote port of the ACE system (defaults to the engine_ace configuration values).")
+correlate_parser.add_argument('--ssl-root-cert', required=False, dest='ssl_root_cert', default=None,
+    help="Specify the path to the SSL cert for the ACE system (defaults to the engine_ace configuration values).")
+correlate_parser.add_argument('--ssl-key', required=False, dest='ssl_key', default=None,
+    help="Specify the path to the SSL key for the ACE system (defaults to the engine_ace configuration values).")
+correlate_parser.add_argument('--ssl-ca-path', required=False, dest='ssl_ca_path', default=None,
+    help="Specify the path to the CA cert for the ACE system (defaults to the engine_ace configuration values).")
+correlate_parser.add_argument('--ssl-hostname', required=False, dest='ssl_hostname', default=None,
+    help="Specify the ssl hostname of the ACE system (defaults to the engine_ace configuration values).")
+correlate_parser.add_argument('--split', required=False, dest='split', action='store_true', default=False,
+    help="Split the observables up into individual analysis.")
+correlate_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
+    help="Read observables from stanard input.  Defaults to treating them as file-type observables.")
+correlate_parser.add_argument('--stdin-type', required=False, dest='stdin_type', default='file',
+    help="Specify the observable type when reading observables from stdin. Defaults to file.")
+correlate_parser.add_argument('--skip-analysis', required=False, dest='skip_analysis', action='store_true', default=False,
+    help="Skip analyzing the alert. Useful if you just want to send a bunch of stuff to ACE for analysis.")
+correlate_parser.add_argument('--load', required=False, dest='load', action='store_true', default=False,
+    help="Instead of creating a new analysis, load the existing analysis stored at --storage-dir.")
+correlate_parser.add_argument('targets', nargs="*",
+    help="One or more pairs of indicator types and values.")
+correlate_parser.set_defaults(func=correlate)
+
+# ============================================================================
+# command line file analysis
+#
+
+def analyze_files(args):
+
+    from saq.analysis import RootAnalysis
+    from saq.constants import F_FILE, F_FILE_LOCATION, create_file_location, parse_file_location, DIRECTIVE_COLLECT_FILE
+    from saq.engine import Engine
+    from saq.error import report_exception
+
+    from multiprocessing import Queue
+    from queue import Empty
+
+    class CommandLineAnalysisEngine(Engine):
+        def __init__(self, storage_dir, files, *args, **kwargs):
+            # note that files is an iterator that returns the list of files to scan
+            # this is either a list of files (as specified on the command line) or sys.stdin
+            super(CommandLineAnalysisEngine, self).__init__(*args, **kwargs)
+            self.storage_dir = storage_dir
+            self.files = files
+
+            # keep track of what files did and did not alert
+            self.did_alert = Queue()
+            self.did_not_alert = Queue()
+
+        @property
+        def name(self):
+            return 'cli_analysis'
+
+        def collect(self):
+            for f in self.files:
+                self.add_work_item(f)
+
+            # that is all we do
+            self.stop_collection()
+
+        def process(self, work_item):
+
+            remote_host = None
+            remote_path = None
+
+            if work_item.startswith('remote:'):
+                work_item = work_item[len('remote:'):]
+                remote_host, remote_path = parse_file_location(work_item)
+                work_item = remote_path
+        
+            root = RootAnalysis()
+            root.uuid = str(uuid.uuid4())
+            root.storage_dir = os.path.join(self.storage_dir, '{}.ace'.format(os.path.basename(work_item)))
+            # set all of the properties individually
+            root.tool = 'ACE - Command Line Analysis'
+            root.tool_instance = socket.gethostname()
+            root.alert_type = 'cli_analysis' if not args.alert_type else args.alert_type
+            root.description = 'Command Line Analysis {}'.format(os.path.basename(work_item))
+            root.event_time = datetime.datetime.now()
+            root.details = { 
+                'target': work_item,
+                'local_user': pwd.getpwuid(os.getuid())[0],
+                'local_user_uid': os.getuid(),
+                'remote_host': remote_host,
+                'remote_path': remote_path }
+
+            if not os.path.exists(root.storage_dir):
+                try:
+                    os.makedirs(root.storage_dir)
+                except Exception as e:
+                    logging.error("unable to create storage directory {0}".format(root.storage_dir))
+
+            # is this a remote file?
+            if remote_host:
+                root.add_observable(F_FILE_LOCATION, create_file_location(
+                                     remote_host, remote_path)).add_directive(DIRECTIVE_COLLECT_FILE)
+            else:
+                # copy the file to be scanned into the storage directory
+                dest_path = os.path.join(root.storage_dir, os.path.basename(work_item))
+                try:
+                    shutil.copy(work_item, dest_path)
+                except Exception as e:
+                    logging.error("unable to copy file {0} to {1}: {2}".format(work_item, dest_path, str(e)))
+                    return
+
+                root.add_observable(F_FILE, os.path.basename(work_item))
+
+            try:
+                logging.info("analyzing {}".format(root))
+                self.analyze(root)
+            except Exception as e:
+                logging.error("unable to analyze {}: {}".format(root, e))
+                report_exception()
+
+        def post_analysis(self, root):
+            # display some output to the CLI
+            if root.delayed:
+                logging.info("waiting for delayed analysis on {} to complete...".format(root.details['target']))
+                return
+
+            is_alert = self.should_alert(root)
+            display_analysis(root)
+
+            if is_alert:
+                logging.warning("{} generated an alert".format(root))
+                self.did_alert.put(root.details['target'], block=False)
+            else:
+                self.did_not_alert.put(root.details['target'], block=False)
+
+    if os.path.exists(args.storage_dir) and not args.load:
+        logging.error("output directory {0} already exists".format(args.storage_dir))
+        sys.exit(1)
+
+    if args.from_stdin:
+        files = [x.strip() for x in sys.stdin.readlines()]
+        logging.info("scanning {0} files".format(len(files)))
+    else:
+        files = args.files
+
+    cli_engine = CommandLineAnalysisEngine(args.storage_dir, files)
+
+    try:
+        cli_engine.start()
+        cli_engine.wait()
+    except KeyboardInterrupt:
+        logging.warning("caught user interrupt")
+        cli_engine.stop()
+        cli_engine.wait()
+
+    did_alert_count = cli_engine.did_alert.qsize()
+    did_not_alert_count = cli_engine.did_not_alert.qsize()
+
+    print()
+    print("DETECTION SUMMARY")
+    print("-----------------")
+    while True:
+        try:
+            f = cli_engine.did_alert.get(block=False)
+            print("ALERT: {}".format(f))
+        except Empty:
+            break
+
+    while True:
+        try:
+            f = cli_engine.did_not_alert.get(block=False)
+            print("BENIGN: {}".format(f))
+        except Empty:
+            break
+
+    print("{} of {} detected".format(did_alert_count, did_alert_count + did_not_alert_count))
+    print("-----------------")
+    print()
+
+    sys.exit(0)
+
+# analyze-files
+analyze_files_parser = subparsers.add_parser('analyze-files',
+    help="Analyze one or more files using ACE.")
+analyze_files_parser.add_argument('-d', '--storage-dir', required=False, dest='storage_dir', default='ace.out',
+    help="Specify an output directory.  Defaults to ace.out.  Each analyzed file will have an output subdirectory inside this directory.")
+analyze_files_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
+    help="Read the files to scan from standard input (one per line).")
+analyze_files_parser.add_argument('--alert-type', required=False, dest='alert_type', default=None,
+    help="Specify an alternate alert type.")
+analyze_files_parser.add_argument('--skip-delayed-analysis', required=False, dest='skip_delayed_analysis', default=False, action='store_true',
+    help="Skip delayed analysis efforts.")
+analyze_files_parser.add_argument('files', nargs="*",
+    help="One or more files to analyze.  Remote files are specified as remote:hostname@file_path")
+analyze_files_parser.set_defaults(func=analyze_files)
+
+# ============================================================================
+# network server
+#
+
+def network_server(args):
+    import saq
+    import saq.server
+
+    daemon_name = 'network-server'
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        saq.server.app.run(
+            debug=True if not args.daemon else False,
+            host=saq.CONFIG.get('server', 'listen_address'),
+            port=saq.CONFIG.getint('server', 'listen_port'))
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# network-server
+network_server_parser = subparsers.add_parser('network-server',
+    help="Start/Stop the ACE Network Server.")
+network_server_parser.set_defaults(func=network_server)
+
+# ============================================================================
+# correlation engine
+#
+
+def correlation_engine(args):
+    from saq.engine.ace import ACE
+    from saq.error import report_exception
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'correlation-engine'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        initialize_process_server()
+
+        ace_engine = None
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            ace_engine.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+
+        try:
+            ace_engine = ACE()
+            ace_engine.start()
+            ace_engine.wait()
+        except KeyboardInterrupt:
+            logging.warning("caught user interrupt")
+            ace_engine.wait()
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+correlation_engine_parser = subparsers.add_parser('correlation-engine',
+    help="Start/Stop the ACE correlation analysis engine.")
+correlation_engine_parser.set_defaults(func=correlation_engine)
+
+
+# ============================================================================
+# start GUI (non-apache version)
+#
+
+def start_gui(args):
+    import saq
+    from app import create_app, db
+    from app.models import User
+    from flask.ext.script import Manager, Shell
+
+    app = create_app()
+    # add the "do" template command
+    app.jinja_env.add_extension('jinja2.ext.do')
+    app.run(saq.CONFIG.get('gui', 'listen_address'), debug=True, port=saq.CONFIG.getint('gui', 'listen_port'), 
+        ssl_context=(saq.CONFIG.get('gui', 'ssl_cert'), saq.CONFIG.get('gui', 'ssl_key')),
+        use_reloader=True)
+
+# start-gui
+start_gui_parser = subparsers.add_parser('start-gui',
+    help="Start the SAQ GUI.")
+start_gui_parser.add_argument('args', nargs=argparse.REMAINDER,
+    help="Parameters to pass to the GUI command shell.")
+start_gui_parser.set_defaults(func=start_gui)
+
+# ============================================================================
+# start Carbon Black Binary Processor
+#
+
+def carbon_black(args):
+    from saq.engine.cb_engine import CarbonBlackCollectionEngine
+    from saq.error import report_exception
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'carbon-black'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        initialize_process_server()
+
+        cb_engine = None
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            cb_engine.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    
+        try:
+            cb_engine = CarbonBlackCollectionEngine()
+            cb_engine.start()
+            cb_engine.wait()
+        except KeyboardInterrupt as e:
+            logging.warning("caught user interrupt")
+            cb_engine.wait()
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# carbon-black-binary
+carbon_black_parser = subparsers.add_parser('carbon-black',
+    help="Start/Stop the Carbon Black binary analysis engine.")
+carbon_black_parser.set_defaults(func=carbon_black)
+
+# ============================================================================
+# start Orion Internet Office File Processor
+#
+
+def orion(args):
+    from saq.engine.orion_engine import OrionCollectionEngine
+    from saq.error import report_exception
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'orion'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        initialize_process_server()
+
+        orion_engine = None
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            orion_engine.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    
+        try:
+            orion_engine = OrionCollectionEngine()
+            orion_engine.start()
+            orion_engine.wait()
+        except KeyboardInterrupt as e:
+            logging.warning("caught user interrupt")
+            orion_engine.wait()
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# orion
+orion_parser = subparsers.add_parser('orion',
+    help="Start/Stop the Orion internet office file analysis engine.")
+orion_parser.set_defaults(func=orion)
+
+# ============================================================================
+# start brotex stream engine
+#
+
+def brotex(args):
+    from saq.engine.brotex import BrotexStreamEngine
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'brotex'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        initialize_process_server()
+
+        engine = None
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            engine.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    
+        try:
+            engine = BrotexStreamEngine()
+            engine.keep_work_dir = args.keep_work_dir
+            engine.start()
+            engine.wait()
+        except KeyboardInterrupt as e:
+            logging.warning("caught user interrupt")
+            engine.wait()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# brotex
+brotex_parser = subparsers.add_parser('brotex', help="Start/Stop the brotex engines.")
+brotex_parser.add_argument('--keep-work-dir', required=False, dest='keep_work_dir', default=False, action='store_true',
+                           help="Keep the working directory files after processing.  Useful for debugging.")
+brotex_parser.set_defaults(func=brotex)
+
+# ============================================================================
+# start email scanning engine
+#
+
+def email_scanner(args):
+    from saq.engine.email import EmailScanningEngine
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'email_scanner'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        # this has to happen after daemonize
+        initialize_process_server()
+
+        engine = None
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            engine.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    
+        try:
+            engine = EmailScanningEngine()
+            engine.keep_work_dir = args.keep_work_dir
+            engine.start()
+            engine.wait()
+        except KeyboardInterrupt as e:
+            logging.warning("caught user interrupt")
+            engine.wait()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# email-scanner
+email_parser = subparsers.add_parser('email-scanner', help="Start/Stop the email scanning engine.")
+email_parser.add_argument('--keep-work-dir', required=False, dest='keep_work_dir', default=False, action='store_true',
+                           help="Keep the working directory files after processing.  Useful for debugging.")
+email_parser.set_defaults(func=email_scanner)
+
+# ============================================================================
+# start http scanning engine
+#
+
+def http_scanner(args):
+    from saq.engine.http import HTTPScanningEngine
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'http_scanner'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        initialize_process_server()
+
+        engine = None
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            engine.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    
+        try:
+            engine = HTTPScanningEngine()
+            engine.keep_work_dir = args.keep_work_dir
+            engine.start()
+            engine.wait()
+        except KeyboardInterrupt as e:
+            logging.warning("caught user interrupt")
+            engine.wait()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# http-scanner
+http_parser = subparsers.add_parser('http-scanner', help="Start/Stop the http scanning engine.")
+http_parser.add_argument('--keep-work-dir', required=False, dest='keep_work_dir', default=False, action='store_true',
+                           help="Keep the working directory files after processing.  Useful for debugging.")
+http_parser.set_defaults(func=http_scanner)
+
+# ============================================================================
+# start Cloudphish
+#
+
+def cloudphish(args):
+    from saq.engine.cloudphish import CloudPhishEngine
+    from saq.error import report_exception
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'cloudphish'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        initialize_process_server()
+
+        engine = None
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            engine.stop()
+
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    
+        try:
+            engine = CloudPhishEngine()
+            engine.start()
+            engine.wait()
+        except KeyboardInterrupt as e:
+            logging.warning("caught user interrupt")
+            engine.wait()
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# cloudphish
+cloudphish_parser = subparsers.add_parser('cloudphish',
+    help="Start/Stop the Cloudphish engine.")
+cloudphish_parser.set_defaults(func=cloudphish)
+
+# ============================================================================
+# start Network Semaphore
+#
+
+def network_semaphore(args):
+    import saq
+    from saq.network_semaphore import NetworkSemaphoreServer
+    daemon_name = 'network-semaphore'
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {}".format(daemon_name))
+            daemonize(daemon_name)
+
+        server = NetworkSemaphoreServer()
+        server.start()
+
+        # add the capability for a graceful shutdown
+        def handle_sigterm(signum, frame):
+            logging.warning("received SIGTERM")
+            server.stop()
+
+        try:
+            while True:
+                #logging.debug("process {} sleeping".format(os.getpid()))
+                time.sleep(1)
+        except KeyboardInterrupt:
+            server.stop()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# network semaphore
+network_semaphore_parser = subparsers.add_parser('network-semaphore',
+    help="Start/Stop the Network Semaphore Server on this server.")
+network_semaphore_parser.set_defaults(func=network_semaphore)
+
+# ============================================================================
+# user management
+#
+
+def add_user(args):
+    from app.models import User
+    from saq.database import get_db_connection
+    from getpass import getpass
+
+    u = User()
+    u.username = args.username
+    u.email = args.email
+
+    password = getpass("Enter password for {0}: ".format(u.username))
+    confirm = getpass("Confirm password for {0}: ".format(u.username))
+    if password != confirm:
+        logging.error("passwords do not match")
+        sys.exit(1)
+
+    u.password = password
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("""INSERT INTO users ( username, email, password_hash ) VALUES ( %s, %s, %s )""", (
+            u.username, u.email, u.password_hash))
+        db.commit()
+
+    logging.info("added user {0}".format(u.username))
+
+add_user_parser = subparsers.add_parser('add-user',
+    help="Add a new user to the system.")
+add_user_parser.add_argument('username', help="The username of the new user.")
+add_user_parser.add_argument('email', help="The email address of the new user.")
+add_user_parser.set_defaults(func=add_user)
+
+def modify_user(args):
+    from app.models import User
+    from saq.database import get_db_connection
+    from getpass import getpass
+
+    u = User()
+    u.username = args.username
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("""SELECT id FROM users WHERE username = %s""", ( u.username, ))
+        row = c.fetchone()
+        if row is None:
+            logging.error("username {0} does not exist".format(u.username))
+            sys.exit(1)
+
+        user_id = row[0]
+
+    if args.email is not None:
+        u.email = args.email
+
+    if args.password:
+        password = getpass("Enter password for {0}: ".format(u.username))
+        confirm = getpass("Confirm password for {0}: ".format(u.username))
+        if password != confirm:
+            logging.error("passwords do not match")
+            sys.exit(1)
+
+        u.password = password
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        if args.email is not None:
+            c.execute("""UPDATE users SET email = %s WHERE id = %s""", ( u.email, user_id ))
+            
+        if args.password:
+            c.execute("""UPDATE users SET password_hash = %s WHERE id = %s""", ( u.password_hash, user_id ))
+        db.commit()
+
+    logging.info("modified user {0}".format(u.username))
+
+modify_user_parser = subparsers.add_parser('modify-user',
+    help="Modifies an existing user on the system.")
+modify_user_parser.add_argument('username', help="The username of the user to modify.")
+modify_user_parser.add_argument('-e', '--email', dest='email', default=None, help="The new email address of the user.")
+modify_user_parser.add_argument('-p', '--password', action='store_true', dest='password', default=False, help="Prompt for a new password.")
+modify_user_parser.set_defaults(func=modify_user)
+
+def delete_user(args):
+    from saq.database import get_db_connection
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("""DELETE FROM users WHERE username = %s""", ( args.username, ))
+        db.commit()
+
+    logging.info("deleted user {0}".format(args.username))
+
+delete_user_parser = subparsers.add_parser('delete-user',
+    help="Deletes an existing user from the system.")
+delete_user_parser.add_argument('username', help="The username of the user to modify.")
+delete_user_parser.set_defaults(func=delete_user)
+
+# ============================================================================
+# test utilities
+#
+
+def create_alert(args):
+    from saq.database import Alert
+
+    alert = Alert()
+    alert.tool = 'command line'
+    alert.tool_instance = 'n/a'
+    alert.alert_type = 'debug'
+    alert.description = 'Manual Alert'
+    alert.event_time = datetime.datetime.now()
+    alert.storage_dir = args.dir
+
+    alert.details = { 'description': 'manually created alert' }
+    alert.save()
+
+create_alert_parser = subparsers.add_parser('create-alert',
+    help="Create a blank alert in the given directory.")
+create_alert_parser.add_argument('dir', help="The directory to store the alert in.")
+create_alert_parser.set_defaults(func=create_alert)
+
+def test_local_locking(args):
+    from saq.lock import LocalLockableObject
+    from multiprocessing import Process
+
+    class TestLock(LocalLockableObject):
+        def __init__(self, uuid, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._uuid = uuid
+
+        @property
+        def uuid(self):
+            return self._uuid
+
+        @uuid.setter
+        def uuid(self, value):
+            self._uuid = value
+
+    target_uuid = str(uuid.uuid4())
+
+    def callback(target_uuid):
+        l = TestLock(target_uuid)
+        while True:
+            if not l.lock():
+                time.sleep(1)
+                continue
+
+            break
+
+        time.sleep(3)
+        l.refresh_lock()
+        time.sleep(3)
+        l.unlock()
+
+    p1 = Process(target=callback, args=(target_uuid,))
+    p1.start()
+
+    p2 = Process(target=callback, args=(target_uuid,))
+    p2.start()
+
+    p1.join()
+    p2.join()
+    
+    sys.exit(0)
+
+test_local_locking_parser = subparsers.add_parser('test-local-locking',
+    help="Test the local locking system.")
+test_local_locking_parser.set_defaults(func=test_local_locking)
+
+def test_condition_reporting(args):
+    from saq.error import report_condition
+
+    report_condition("SOMETHING ON FIIIRAAAHHH", "j/k")
+    time.sleep(5)
+    report_condition("SOMETHING ON FIIIRAAAHHH", "j/k")
+
+test_condition_reporting_parser = subparsers.add_parser('test-condition-reporting',
+    help="Test the condition reporting system.")
+#test_condition_reporting_parser.add_argument('dir', help="The directory to store the alert in.")
+test_condition_reporting_parser.set_defaults(func=test_condition_reporting)
+
+def test_error_reporting(args):
+    from saq.error import report_exception
+    try:
+        1 / 0
+    except Exception as e:
+        report_exception()
+
+test_error_reporting_parser = subparsers.add_parser('test-error-reporting',
+    help="Throw an exception and report it.")
+test_error_reporting_parser.set_defaults(func=test_error_reporting)
+
+def test_database(args):
+    from saq.database import DatabaseSession, User, get_db_connection
+    session = DatabaseSession()
+
+    me = session.query(User).filter_by(username = 'jdavison').one()
+    logging.debug(str(me))
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("SELECT 1")
+
+    try:
+        with get_db_connection() as db:
+            raise ValueError("canary")
+    except ValueError as e:
+        pass
+
+    sys.exit(0)
+
+test_database_parser = subparsers.add_parser('test-database',
+    help="Run tests on the database.")
+test_database_parser.set_defaults(func=test_database)
+
+def test_database_connections(args):
+    import saq
+    from saq.database import get_db_connection
+
+    for key in saq.CONFIG.keys():
+        if key.startswith('database_'):
+            if not saq.CONFIG[key]['hostname'] \
+            or not saq.CONFIG[key]['database'] \
+            or not saq.CONFIG[key]['username'] \
+            or not saq.CONFIG[key]['password']:
+                logging.info("skipping {}".format(key))
+                continue
+
+            db_name = key[len('database_'):]
+            logging.info("trying {}...".format(db_name))
+            with get_db_connection(db_name) as db:
+                c = db.cursor()
+                c.execute("SELECT 1")
+                row = c.fetchone()
+
+    sys.exit(0)
+
+test_database_connections_parser = subparsers.add_parser('test-database-connections',
+    help="Test the connections to all configured databases.")
+test_database_connections_parser.set_defaults(func=test_database_connections)
+
+def test_network_semaphore(args):
+    from saq.network_semaphore import NetworkSemaphoreClient
+    import time
+
+    client = NetworkSemaphoreClient()
+    if client.acquire(args.semaphore_name):
+        time.sleep(args.timeout)
+        client.release()
+    else:
+        logging.error("test failed")
+
+network_semaphore_test = subparsers.add_parser('test-network-semaphore',
+    help="Test the Network Semaphore Server by requesting a semaphore.")
+network_semaphore_test.add_argument('semaphore_name', help="The name of the semaphore to acquire.")
+network_semaphore_test.add_argument('-t', '--timeout', required=False, default=60, type=int, dest='timeout',
+    help="The number of seconds to wait until the semaphore is released.  Defaults to 60.")
+network_semaphore_test.set_defaults(func=test_network_semaphore)
+
+# ============================================================================
+# alert management
+#
+
+def resync_alert(args):
+    """Remaps observables, tags, and profile points to the alert."""
+    from saq.database import Alert, DatabaseSession
+    from saq.error import report_exception
+
+    storage_dirs = []
+    if args.resync_all:
+        session = DatabaseSession()
+        for alert in session.query(Alert).with_entities(Alert.storage_dir).filter(Alert.location == saq.SAQ_NODE):
+            storage_dirs.append(alert.storage_dir)
+    else:
+        storage_dirs = args.dirs
+
+    logging.info("resyncing {} alerts".format(len(storage_dirs)))
+
+    for storage_dir in storage_dirs:
+        logging.info("resyncing {}".format(storage_dir))
+        json_path = os.path.join(storage_dir, 'data.json')
+        if not os.path.exists(json_path):
+            logging.error("{} does not exist".format(json_path))
+            continue
+
+        # load the alert
+        alert = None
+        session = None
+
+        try:
+            session = DatabaseSession()
+            alert = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
+        except Exception as e:
+            logging.error("unable to load alert from database with storage_dir {}: {}".format(storage_dir, e))
+        finally:
+            if session:
+                session.close()
+
+        try:
+            if not alert.load():
+                logging.error("unable to load {}".format(alert))
+                continue
+
+        except Exception as e:
+            logging.error("unable to load alert {}: {}".format(alert, e))
+            continue
+
+        try:
+            alert.rebuild_index()
+            alert.sync()
+        except Exception as e:
+            logging.error("resync failure on {}: {}".format(alert, e))
+
+    sys.exit(0)
+
+resync_alert_parser = subparsers.add_parser('resync-alerts',
+    help="Remaps observables and tags to the alert.")
+resync_alert_parser.add_argument('--all', default=False, action='store_true', dest='resync_all',
+    help="Resyncs all alerts that belong to this node. This can take a long time.")
+resync_alert_parser.add_argument('dirs', nargs='*', default=[], help="One ore more alert directories to resync.")
+resync_alert_parser.set_defaults(func=resync_alert)
+
+def import_alerts(args):
+    """Imports one or more alerts from the given directories."""
+    import saq
+    from saq.database import Alert, DatabaseSession
+
+    for _dir in args.dirs:
+        json_path = os.path.join(_dir, 'data.json')
+        if not os.path.exists(json_path):
+            logging.error("{} does not exist".format(json_path))
+            continue
+
+        # load the alert
+        alert = Alert()
+        alert.storage_dir = _dir
+        if not alert.load():
+            logging.error("unable to load {}: try running saq upgrade {}".format(_dir, _dir))
+            continue
+
+        # has this already already been imported?
+        dest_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['data_dir'], saq.SAQ_NODE, alert.uuid[0:3], alert.uuid)
+        if os.path.exists(dest_dir):
+            logging.error("ACE storage directory {} already exists".format(dest_dir))
+            continue
+
+        try:
+            # copy that directory over
+            shutil.copytree(_dir, dest_dir)
+        except Exception as e:
+            logging.error("unable to copy {0} to {1}: {2}".format(
+                _dir, dest_dir, str(e)))
+            continue
+
+        # remove the old database id if it has one
+        alert.id = None
+        # and change the storage area
+        alert.storage_dir = os.path.relpath(dest_dir, start=saq.SAQ_HOME)
+
+        # are we resetting the alerts?
+        if args.reset:
+            alert.reset()
+
+        # change a few more things
+        alert.location = saq.SAQ_NODE
+        alert.company_id = saq.CONFIG['global'].getint('company_id')
+        alert.company_name = saq.CONFIG['global']['company_name']
+        alert.disposition = None
+        alert.disposition_user_id = None
+        alert.disposition_time = None
+        alert.owner_id = None
+        alert.owner_time = None
+
+        # sync it to the database
+        alert.sync()
+
+        # request analysis
+        alert.request_correlation()
+
+        logging.info("imported alert {}".format(alert))
+
+import_alert_parser = subparsers.add_parser('import-alerts',
+    help="Import one or more alert directories.")
+import_alert_parser.add_argument('-r', '--reset', action='store_true', default=False, dest='reset',
+    help="Reset imported alerts.")
+import_alert_parser.add_argument('dirs', nargs='+', default=[], help="One ore more alert directories to import.")
+import_alert_parser.set_defaults(func=import_alerts)
+
+def forward_alerts(args):
+    """Imports one or more alerts from the given directories."""
+    import saq
+    from saq.network_client import submit_alerts
+
+    # just make sure each directory has the data.json file in it
+    for _dir in args.dirs:
+        json_path = os.path.join(_dir, 'data.json')
+        if not os.path.exists(json_path):
+            logging.error("{} does not exist".format(json_path))
+            continue
+
+    try:
+        # submit them all at once
+        submit_alerts(args.remote_host, args.remote_port,
+                      args.ssl_cert, args.ssl_hostname, args.ssl_key, args.ca_path, args.dirs)
+    except Exception as e:
+        logging.error("alert submission failed: {}".format(e))
+        traceback.print_exc()
+        sys.exit(1)
+
+    logging.info("submitted {} alerts".format(len(args.dirs)))
+    sys.exit(0)
+
+forward_alert_parser = subparsers.add_parser('forward-alerts',
+    help="Forward one or more alerts to another ACE system.")
+forward_alert_parser.add_argument('-r', '--remote-host', dest='remote_host', required=True,
+    help="Network location of remote ACE system.")
+forward_alert_parser.add_argument('-p', '--remote-port', dest='remote_port', type=int, required=True,
+    help="Network port of remote ACE system.")
+forward_alert_parser.add_argument('--ssl-cert', dest='ssl_cert', required=True,
+    help="Path to the SSL certificate to use when submitting (SSL parameter.)")
+forward_alert_parser.add_argument('--ssl-key', dest='ssl_key', required=True,
+    help="Path to the SSL key to use when submitting (SSL parameter.)")
+forward_alert_parser.add_argument('--ssl-hostname', dest='ssl_hostname', required=True,
+    help="The common name expected from the SSL server (SSL parameter).  This may be different than the hostname.")
+forward_alert_parser.add_argument('--ca-path', dest='ca_path', required=True,
+    help="Path to the root certificate chain to use when submitting (SSL parameter.)")
+forward_alert_parser.add_argument('dirs', nargs='+', default=[], help="One ore more alert directories to forward.")
+forward_alert_parser.set_defaults(func=forward_alerts)
+
+def delete_alerts(args):
+    """Completely deletes the given alerts from both the storage system and the database."""
+    import saq
+    from saq.database import Alert, DatabaseSession
+
+    for uuid in args.uuids:
+        try:
+            # we do them one at a time in case one of them fails
+            session = DatabaseSession()
+            session.execute(Alert.__table__.delete().where(Alert.uuid == uuid))
+            session.commit()
+            session.close()
+        except Exception as e:
+            logging.error("unable to delete alert {0}: {1}".format(uuid, str(e)))
+
+    for uuid in args.uuids:
+        storage_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['data_dir'], uuid[0:3], uuid)
+        if not os.path.exists(storage_dir):
+            logging.warning("storage directory {0} does not exist".format(storage_dir))
+            continue
+
+        try:
+            shutil.rmtree(storage_dir)
+        except Exception as e:
+            logging.error("unable to delete storage directory {0}: {1}".format(storage_dir, str(e)))
+
+    sys.exit(0)
+
+delete_alert_parser = subparsers.add_parser('delete-alerts',
+    help="Delete one or more alerts by UUID.")
+delete_alert_parser.add_argument('uuids', nargs='+', default=[], help="One ore more alert UUIDs to delete.")
+delete_alert_parser.set_defaults(func=delete_alerts)
+
+def reset_alerts(args): 
+    import saq
+    from saq.analysis import RootAnalysis
+    from saq.database import Alert, DatabaseSession
+
+    for storage_dir in args.dirs:
+        # get the storage directory of the alert
+        if not os.path.exists(storage_dir):
+            logging.error("storage directory {0} does not exist".format(storage_dir))
+            continue
+
+        session = None
+
+        # try to load it from the database first
+        try:
+            session = DatabaseSession()
+            root = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
+            logging.info("loaded {} from database".format(storage_dir))
+        except:
+            root = RootAnalysis()
+            root.storage_dir = storage_dir
+        finally:
+            if session:
+                session.close()
+
+        try:
+            root.load()
+        except Exception as e:
+            logging.error("unable to load {}: {}".format(root.storage_dir, e))
+            continue
+
+        root.reset()
+        root.save()
+
+# reset-alerts
+reset_alert_parser = subparsers.add_parser('reset-alerts',
+    help="Reset the given alerts allowing for re-analysis.")
+reset_alert_parser.add_argument('dirs', nargs='+', help="One or more alert directories to reset.")
+reset_alert_parser.set_defaults(func=reset_alerts)
+
+def archive_alerts(args):
+    import saq
+    from saq.analysis import RootAnalysis
+    from saq.database import Alert, DatabaseSession
+
+    for storage_dir in args.dirs:
+        # get the storage directory of the alert
+        if not os.path.exists(storage_dir):
+            logging.error("storage directory {} does not exist".format(storage_dir))
+            continue
+
+        session = None
+
+        # try to load it from the database first
+        try:
+            session = DatabaseSession()
+            root = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
+            logging.info("loaded {} from database".format(storage_dir))
+        except:
+            root = RootAnalysis()
+            root.storage_dir = storage_dir
+        finally:
+            if session:
+                session.close()
+
+        try:
+            root.load()
+        except Exception as e:
+            logging.error("unable to load {}: {}".format(root.storage_dir, e))
+            continue
+
+        root.archive()
+        root.save()
+
+        # mark the alert as archived
+        try:
+            session = DatabaseSession()
+            root = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
+            root.archived = True
+            session.add(root)
+            session.commit()
+        except Exception as e:
+            logging.error("unable to mark alert {} as archived: {}".format(root, e))
+        finally:
+            if session:
+                session.close()
+
+# reset-alerts
+reset_alert_parser = subparsers.add_parser('archive-alerts',
+    help="Archives a given alert by deleting analysis details and external files but keeping observations and tags.")
+reset_alert_parser.add_argument('dirs', nargs='+', help="One or more alert directories to archive.")
+reset_alert_parser.set_defaults(func=archive_alerts)
+
+def analyze_alerts(args):
+    """Re-analyze alerts that already exist inside ACE."""
+    # initialize command line engine
+    from saq.engine import Engine
+    from saq.database import Alert
+
+    class CustomEngine(Engine):
+        def __init__(self, storage_dirs, reset_alerts, *args, **kwargs):
+            super(CustomEngine, self).__init__(*args, **kwargs)
+            # the UUIDs of the alerts to analyze
+            self.storage_dirs = storage_dirs
+            # set to True to reset the alerts before analysis
+            self.reset_alerts = reset_alerts
+
+        @property
+        def name(self):
+            return 'ace'
+
+        def collect(self):
+            for storage_dir in self.storage_dirs:
+                self.add_work_item(storage_dir)
+
+            # that is all we do
+            self.stop_collection()
+
+        def process(self, storage_dir):
+            if not os.path.exists(storage_dir):
+                logging.error("storage directory {} does not exist".format(storage_dir))
+                return
+
+            alert = Alert()
+            alert.storage_dir = storage_dir
+            if not alert.lock():
+                logging.error("unable to acquire lock for {}".format(alert))
+                return
+
+            try:
+                alert.load()
+
+                if self.reset_alerts:
+                    logging.info("resetting {}".format(alert))
+                    alert.reset()
+                
+                try:
+                    logging.info("analyzing {}".format(alert))
+                    self.analyze(alert)
+                except Exception as e:
+                    logging.error("unable to analyze {}: {}".format(alert, str(e)))
+            finally:
+                alert.unlock()
+
+        def post_analysis(self, analysis):
+            pass
+
+    cli_engine = CustomEngine(args.dirs, args.reset_alerts)
+
+    try:
+        cli_engine.start()
+        cli_engine.wait()
+    except KeyboardInterrupt:
+        cli_engine.stop()
+        cli_engine.wait()
+
+    sys.exit(0)
+
+analyze_alert_parser = subparsers.add_parser('analyze-alerts',
+    help="Run the analysis engine on the given alerts specified by UUID.")
+analyze_alert_parser.add_argument('--reset', dest='reset_alerts', action='store_true', required=False, default=False,
+    help="Reset all the alerts before analysis.")
+analyze_alert_parser.add_argument('dirs', nargs='+', help="One or more alerts directories to analyze.")
+analyze_alert_parser.set_defaults(func=analyze_alerts)
+
+def add_observable(args):
+    import saq
+    import saq.constants
+    from saq.analysis import RootAnalysis
+    from saq.lock import initialize_locking
+
+    initialize_locking()
+
+    if args.observable_type not in saq.constants.VALID_OBSERVABLE_TYPES:
+        logging.error("invalid observable type {}".format(args.observable_type))
+        sys.exit(1)
+
+    # get the alert to modify
+    alert = RootAnalysis()
+    alert.storage_dir = args.dir
+    if not alert.lock():
+        logging.error("unable to lock alert {}".format(alert))
+        sys.exit(1)
+
+    try:
+        alert.load()
+
+        if args.observable_type == saq.constants.F_FILE or args.observable_type == saq.constants.F_SUSPECT_FILE:
+            try:
+                dest_path = os.path.join(alert.storage_dir, os.path.basename(args.observable_value))
+                shutil.copy(args.observable_value, dest_path)
+                args.observable_value = os.path.relpath(dest_path, start=alert.storage_dir)
+            except Exception as e:
+                logging.error("unable to copy file into storage directory: {0}".format(str(e)))
+
+        alert.add_observable(args.observable_type, args.observable_value, o_time=args.reference_time)
+        alert.save()
+
+    except Exception as e:
+        logging.error(str(e))
+        traceback.print_exc()
+        sys.exit(1)
+
+    finally:
+        alert.unlock()
+
+# add-observable
+add_observable_parser = subparsers.add_parser('add-observable',
+    help="Add an observable to an existing alert and re-analyze.")
+add_observable_parser.add_argument('dir', help="The path to the alert to modify.")
+add_observable_parser.add_argument('observable_type', help="The type of the observable to add.")
+add_observable_parser.add_argument('observable_value', help="The value of the observable.")
+add_observable_parser.add_argument('-t', '--reference-time', required=False, dest='reference_time', default=None,
+    help="Specify a datetime in YYYY-MM-DD HH:MM:SS format the observable should be referenced from.")
+add_observable_parser.set_defaults(func=add_observable)
+
+def reload_alerts(args):
+    from saq.database import Alert, DatabaseSession
+
+    # generate the list of alerts to reload
+    session = DatabaseSession()
+    for uuid in args.uuids:
+        alert = session.query(Alert).filter(Alert.uuid == uuid).one()
+        alert.request_correlation()
+
+reload_alert_parser = subparsers.add_parser('reload-alerts',
+    help="Force analysis (again) on one or more existing alert(s).")
+reload_alert_parser.add_argument('uuids', nargs='+',
+    help="One or more alert UUIDs to analyze.")
+reload_alert_parser.set_defaults(func=reload_alerts)
+
+# ============================================================================
+# general utility commands
+#
+
+def submit_failed_submissions(args):
+    import saq
+    from saq.network_client import submit_alerts
+
+    failed_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['network_client_ace']['failed_dir'])
+    if not os.path.isdir(failed_dir):
+        logging.warning("{} does not exist (no submissions available?".format(failed_dir))
+        sys.exit(0)
+
+    storage_dirs = [os.path.join(failed_dir, d) for d in os.listdir(failed_dir)]
+    if not storage_dirs:
+        logging.warning("nothing available to submit")
+        sys.exit(0)
+
+    logging.info("{} submissions available".format(len(storage_dirs)))
+
+    try:
+        remote_host = saq.CONFIG['network_client_ace']['remote_host']
+        remote_port = saq.CONFIG['network_client_ace'].getint('remote_port')
+        ssl_cert = os.path.join(saq.SAQ_HOME, saq.CONFIG['network_client_ace']['ssl_cert'])
+        ssl_key = os.path.join(saq.SAQ_HOME, saq.CONFIG['network_client_ace']['ssl_key'])
+        ca_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['network_client_ace']['ca_path'])
+        remote_hostname = saq.CONFIG['network_client_ace']['ssl_hostname']
+
+        submit_alerts(remote_host, remote_port, ssl_cert, remote_hostname, ssl_key, ca_path, storage_dirs)
+
+        if args.remove:
+            for storage_dir in storage_dirs:
+                try:
+                    shutil.rmtree(storage_dir)
+                    logging.info("removed {}".format(storage_dir))
+                except Exception as e:
+                    logging.error("unable to remove {}: {}".format(storage_dir))
+
+        sys.exit(0)
+
+    except Exception as e:
+        logging.error("unable to submit: {}".format(e))
+        sys.exit(1)
+
+submit_failed_submissions_parser = subparsers.add_parser('submit-failed-submissions',
+    help="Submit any failed submissions stored in the directory defined in the network_client_ace configuration section.")
+submit_failed_submissions_parser.add_argument('-r', '--remove', required=False, default=False, action='store_true', dest='remove',
+    help="Remove the directories that were submitted after a succuessful submissions.")
+submit_failed_submissions_parser.set_defaults(func=submit_failed_submissions)
+
+def search_archive(args):
+    import saq
+    from saq.database import _get_db_connection
+
+    # are we exporting into a directory?
+    if args.output_dir:
+        if not os.path.isdir(args.output_dir):
+            try:
+                os.mkdir(args.output_dir)
+            except Exception as e:
+                logging.error("unable to create output directory {}: {}".format(args.output_dir, e))
+                sys.exit(0)
+
+    search_items = args.search_items
+    
+    # are we reading search from standard input?
+    if args.from_stdin:
+        for search_item in sys.stdin:
+            search_items.append(search_item.strip())
+
+    db = _get_db_connection('email_archive')
+    c = db.cursor()
+    query = """
+SELECT
+    archive_server.hostname, HEX(archive.md5)
+FROM
+    archive JOIN archive_server ON archive.server_id = archive_server.server_id
+    {extended_from_clause}
+WHERE 
+    {where_clauses}
+"""
+    
+    where_clauses = []
+    parameters = []
+
+    extended_from_clause = "JOIN archive_search ON archive.archive_id = archive_search.archive_id"
+    if args.exact:
+        extended_from_clause = "JOIN archive_index ON archive.archive_id = archive_index.archive_id"
+    
+    for search_item in search_items:
+        if not any([args.env_from, args.env_to, args.mail_from, args.mail_to, args.subject, args.message_id]):
+            if args.exact:
+                where_clauses.append("archive_index.hash = UNHEX(MD5(%s))")
+                parameters.append(search_item)
+            else:
+                where_clauses.append("archive_search.value LIKE %s")
+                parameters.append('%%{}%%'.format(search_item))
+        else:
+            _archive_index_template = "(archive_index.field = '{field}' AND archive_index.hash = UNHEX(MD5(%s)))"
+            _archive_index_value = search_item
+            _archive_search_template = "(archive_search.field = '{field}' AND archive_search.value LIKE %s)"
+            _archive_search_value = '%%{}%%'.format(search_item)
+
+            if args.env_from:
+                if args.exact:
+                    where_clauses.append(_archive_index_template.format(field='env_from'))
+                    parameters.append(_archive_index_value)
+                else:
+                    where_clauses.append(_archive_search_template.format(field='env_from'))
+                    parameters.append(_archive_search_value)
+
+            if args.env_to:
+                if args.exact:
+                    where_clauses.append(_archive_index_template.format(field='env_to'))
+                    parameters.append(_archive_index_value)
+                else:
+                    where_clauses.append(_archive_search_template.format(field='env_to'))
+                    parameters.append(_archive_search_value)
+
+            if args.mail_from:
+                if args.exact:
+                    where_clauses.append(_archive_index_template.format(field='mail_from'))
+                    parameters.append(_archive_index_value)
+                else:
+                    where_clauses.append(_archive_search_template.format(field='mail_from'))
+                    parameters.append(_archive_search_value)
+
+            if args.mail_to:
+                if args.exact:
+                    where_clauses.append(_archive_index_template.format(field='mail_to'))
+                    parameters.append(_archive_index_value)
+                else:
+                    where_clauses.append(_archive_search_template.format(field='mail_to'))
+                    parameters.append(_archive_search_value)
+
+            if args.subject:
+                if args.exact:
+                    where_clauses.append(_archive_index_template.format(field='subject'))
+                    parameters.append(_archive_index_value)
+                else:
+                    where_clauses.append(_archive_search_template.format(field='subject'))
+                    parameters.append(_archive_search_value)
+
+            if args.message_id:
+                if args.exact:
+                    where_clauses.append(_archive_index_template.format(field='message_id'))
+                    parameters.append(_archive_index_value)
+                else:
+                    where_clauses.append(_archive_search_template.format(field='message_id'))
+                    parameters.append(_archive_search_value)
+
+    query = query.format(extended_from_clause=extended_from_clause, 
+                         where_clauses=' OR '.join(where_clauses))
+    #print(query)
+    #print(','.join(parameters))
+    c.execute(query, parameters)
+    for server, md5 in c:
+        # does this archive file exist?
+        archive_base_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'])
+        if args.archive_dir:
+            archive_base_dir = args.archive_dir
+
+        if not os.path.isdir(archive_base_dir):
+            logging.error("archive directory {} does not exist".format(archive_base_dir))
+            sys.exit(1)
+
+        archive_path = os.path.join(archive_base_dir, server.lower(), md5.lower()[0:3], 
+                                    '{}.gz.gpg'.format(md5.lower()))
+        if not os.path.exists(archive_path):
+            logging.warning("archive email {} does not exist at {}".format(md5, archive_path))
+            continue
+
+        # are we just listing the paths?
+        if not args.output_dir:
+            print(archive_path)
+            continue
+
+        # are we just copying the entire encrypted email?
+        if not saq.ENCRYPTION_PASSWORD:
+            try:
+                shutil.copy(archive_path, args.output_dir)
+            except Exception as e:
+                logging.warning("unable to copy {} to {}: {}".format(archive_path, args.output_dir, e))
+                continue
+
+            print(os.path.join(args.output_dir, os.path.basename(archive_path)))
+            continue
+
+        # decrypt and decompress the emails
+        dest_path = os.path.join(args.output_dir, md5.lower())
+        with open(dest_path, 'wb') as fp:
+            gpg_p = Popen(['gpg', '--no-tty', '-d', '--passphrase-fd', '0', archive_path], 
+                          stdout=PIPE, stderr=PIPE, stdin=PIPE)
+            gunzip_p = Popen(['zcat'], stdin=gpg_p.stdout, stdout=fp)
+            gpg_p.stdin.write('{}\n'.format(saq.ENCRYPTION_PASSWORD).encode())
+            gpg_p.stdin.close()
+            gpg_p.stdout.close()
+            gunzip_p.communicate()
+            gpg_p.wait()
+
+            if gpg_p.returncode != 0:
+                logging.warning("gpg decryption failed for {} (return code {})".format(archive_path, gpg_p.returncode))
+                continue
+
+        print(dest_path)
+
+    db.close()
+    sys.exit(0)
+
+# search-archive
+search_archive_parser = subparsers.add_parser('search-archive',
+    help="Search the email archives.")
+search_archive_parser.add_argument('--env-from', required=False, default=False, action='store_true', dest='env_from',
+    help="Narrow searching to the envelope MAIL FROM field.")
+search_archive_parser.add_argument('--env-to', required=False, default=False, action='store_true', dest='env_to',
+    help="Narrow searching to the envelope RCPT TO field.")
+search_archive_parser.add_argument('--mail-from', required=False, default=False, action='store_true', dest='mail_from',
+    help="Narrow searching to the message body From field.")
+search_archive_parser.add_argument('--mail-to', required=False, default=False, action='store_true', dest='mail_to',
+    help="Narrow searching to the message body To field.")
+search_archive_parser.add_argument('--subject', required=False, default=False, action='store_true', dest='subject',
+    help="Narrow searching to the message body Subject field.")
+search_archive_parser.add_argument('--message-id', required=False, default=False, action='store_true', dest='message_id',
+    help="Narrow searching to the message body Message-ID field.")
+search_archive_parser.add_argument('--exact', required=False, default=False, action='store_true', dest='exact',
+    help="Perform an exact match (ignores options to narrow down search.) This is the fastest search.")
+search_archive_parser.add_argument('--from-stdin', required=False, default=False, action='store_true', dest='from_stdin',
+    help="Read search items from standard input (one per line.)")
+search_archive_parser.add_argument('-d', '--output-dir', required=False, default=None, dest='output_dir',
+    help="Export selected emails into the given directory. Also see the -p option in the main command.")
+search_archive_parser.add_argument('-a', '--archive-dir', required=False, default=None, dest='archive_dir',
+    help="Specify an alternative email archive directory. Defaults to what is specified in the analysis_module_email_archiver configuration.")
+search_archive_parser.add_argument('search_items', nargs='*',
+    help="One or more things to search for.  Each query will be searhed for individually.")
+search_archive_parser.set_defaults(func=search_archive)
+
+def remediate_email(args):
+    from saq.remediation import _create_remediation_email, _remediate_email_lotus, _remediate_email_o365
+    message_ids = args.message_ids
+    if args.from_stdin:
+        for message_id in sys.stdin:
+            message_ids.append(message_id.strip())
+
+    logging.debug("remediating {} emails")
+    
+    env_mail_from = args.env_mail_from
+    env_rcpt_to = []
+    if args.env_rcpt_to:
+        env_rcpt_to.append(args.env_rcpt_to)
+    mail_from = args.mail_from
+    mail_to = []
+    if args.mail_to:
+        mail_to.append(args.mail_to)
+    subject = args.subject
+    decoded_subject = args.decoded_subject
+
+    for message_id in message_ids:
+        try:
+            _remediate_email_lotus([_create_remediation_email(env_mail_from=env_mail_from,
+                                                              env_rcpt_to=env_rcpt_to,
+                                                              mail_from=mail_from,
+                                                              decoded_mail_from=None,
+                                                              mail_to=mail_to,
+                                                              subject=subject,
+                                                              decoded_subject=decoded_subject,
+                                                              message_id=message_id)])
+        except Exception as e:
+            logging.error("unable to remediate {} in lotus: {}".format(message_id, e))
+            report_exception()
+
+    try:
+        _remediate_email_o365(message_ids)
+    except Exception as e:
+        logging.error("unable to remediate in office365: {}".format(e))
+        report_exception()
+
+    sys.exit(0)
+
+# remediate-email
+remediate_email_parser = subparsers.add_parser('remediate-email',
+    help="Remediate the given emails by message-id.")
+remediate_email_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
+    help="Read the message-ids from standard input.")
+remediate_email_parser.add_argument('--env-mail-from', required=False, dest='env_mail_from', default=None,
+    help="(LOTUS NOTES ONLY) Envelope MAIL FROM")
+remediate_email_parser.add_argument('--env-rcpt-to', required=False, dest='env_rcpt_to', default=None,
+    help="(LOTUS NOTES ONLY) Envelope RCPT TO")
+remediate_email_parser.add_argument('--mail-from', required=False, dest='mail_from', default=None,
+    help="(LOTUS NOTES ONLY) Mail From")
+remediate_email_parser.add_argument('--mail-to', required=False, dest='mail_to', default=None,
+    help="(LOTUS NOTES ONLY) Mail To")
+remediate_email_parser.add_argument('--subject', required=False, dest='subject', default=None,
+    help="(LOTUS NOTES ONLY) Subject")
+remediate_email_parser.add_argument('--decoded-subject', required=False, dest='decoded_subject', default=None,
+    help="(LOTUS NOTES ONLY) Subject (Decoded)")
+remediate_email_parser.add_argument('message_ids', nargs='*',
+    help="One or more message-ids to remediate. You can also specify --from-stdin.")
+remediate_email_parser.set_defaults(func=remediate_email)
+
+def manage_lock(args):
+    from saq.analysis import Alert
+    
+    alert = Alert()
+    alert.storage_dir = os.path.abspath(args.dir)
+
+    if args.lock_action == 'lock':
+        if not alert.lock():
+            logging.error("unable to lock {}".format(alert))
+            sys.exit(0)
+
+    elif args.lock_action == 'unlock':
+        if not alert.unlock():
+            logging.error("unable to unlock {}".format(alert))
+            sys.exit(0)
+
+    logging.info("operation completed successfully")
+
+manage_lock_parser = subparsers.add_parser('lock-alert',
+    help="Locks a given alert preventing analysis until unlocked.")
+manage_lock_parser.add_argument('dir', help="The storage directory of the alert to lock.")
+manage_lock_parser.set_defaults(func=manage_lock, lock_action='lock')
+
+manage_lock_parser = subparsers.add_parser('unlock-alert',
+    help="Unlocks a given alert if locked.")
+manage_lock_parser.add_argument('dir', help="The storage directory of the alert to unlock.")
+manage_lock_parser.set_defaults(func=manage_lock, lock_action='unlock')
+
+def update_organization(args):
+
+    from saq.modules import LDAPAnalysisModule
+    import saq
+
+    # load the organization information
+    config = saq.CONFIG['analysis_module_user_tagger']
+
+    dest_file = os.path.join(saq.SAQ_HOME, config['json_path'])
+    temp_file = os.path.join(saq.SAQ_HOME, '{0}.tmp'.format(config['json_path']))
+
+    # key = userID (lowercase), value = set(tags...)
+    mapping = {}
+
+    # horrible copy-pasta (sorry)
+    # load ldap settings from configuration file
+    ldap_server = saq.CONFIG.get('ldap', 'ldap_server')
+    ldap_port = saq.CONFIG.getint('ldap', 'ldap_port') or 389
+    ldap_bind_user = saq.CONFIG.get('ldap', 'ldap_bind_user')
+    ldap_bind_password = saq.CONFIG.get('ldap', 'ldap_bind_password')
+    ldap_base_dn = saq.CONFIG.get('ldap', 'ldap_base_dn')
+
+    def ldap_query(query):
+
+        from ldap3 import Server, Connection, SIMPLE, SYNC, ASYNC, SUBTREE, ALL, ALL_ATTRIBUTES
+        import json
+
+        try:
+            with Connection(
+                Server(ldap_server, port = ldap_port, get_info = ALL), 
+                auto_bind = True,
+                client_strategy = SYNC,
+                user=ldap_bind_user,
+                password=ldap_bind_password,
+                authentication=SIMPLE, 
+                check_names=True) as c:
+
+                logging.debug("running ldap query for ({0})".format(query))
+                c.search(ldap_base_dn, '({0})'.format(query), SUBTREE, attributes = ALL_ATTRIBUTES)
+
+                # a little hack to move the result into json
+                response = json.loads(c.response_to_json())
+                result = c.result
+
+                if len(response['entries']) < 1:
+                    return None
+
+                # XXX not sure about the 0 here, I guess only if we only looking for one thing at a time
+                return response['entries'][0]['attributes']
+
+                # look for the result with the 'type' set to 'searchResEntry'
+                #for r in response['entries']:
+                    #if r['type'] == 'searchResEntry':
+                        # and the what we're looking for should be in here
+                    #return r['attributes']
+
+                return None
+
+        except Exception as e:
+            logging.error("unable to perform ldap query: {0}".format(str(e)))
+            report_exception()
+            return None
+
+    if os.path.exists(temp_file):
+        try:
+            os.remove(temp_file)
+        except Exception as e:
+            logging.error("unable to remove temp file {0}".format(temp_file))
+            sys.exit(1)
+
+    def recurse_org(group_name, limit, tag, current_user_id, current_level=0):
+        # add this user
+        if current_user_id.lower() not in mapping:
+            mapping[current_user_id.lower()] = set()
+
+        mapping[current_user_id.lower()].add(tag)
+
+        current_level += 1
+        if limit != 'all' and current_level > int(limit):
+            return
+
+        # figure out who works for this guy
+        query_results = ldap_query("cn={0}*".format(current_user_id))
+        if query_results is None:
+            return
+
+        if 'directReports' in query_results:
+            for direct_report in query_results['directReports']:
+                # extract the userID from this thing
+                m = re.search(r'CN=([^,]+),', direct_report)
+                if m is None:
+                    logging.warning("unable to extract direct report info from {0}".format(direct_report))
+
+                user_id = m.group(1)
+                if user_id is not None:
+                    # add this guy (and possibly all his direct reports too)
+                    logging.debug("adding {0} as a direct report to {1} for group {2}".format(user_id, current_user_id, group_name))
+                    recurse_org(group_name, limit, tag, user_id, current_level)
+
+    # load all the hierarchy definitions
+    for section in config.keys():
+        if section.startswith('group_'):
+            m = re.match(r'^group_([^_]+)$', section)
+            if m is None:
+                logging.error("unable to parse group name from {0}".format(section))
+                continue
+
+            group_name = m.group(1)
+            parent_id, limit, tag = [x.strip() for x in config[section].split(',')]
+            
+            recurse_org(group_name, limit, tag, parent_id)
+
+    # write out the json
+    for key in mapping.keys():
+        mapping[key] = list(mapping[key])
+
+    with open(temp_file, 'w') as fp:
+        json.dump(mapping, fp)
+
+    # finally update the production file
+    try:
+        shutil.move(temp_file, dest_file)
+    except Exception as e:
+        logging.error("unable to move {0} to {1}: {2}".fomrat(temp_file, dest_file, str(e)))
+
+update_organization_parsers = subparsers.add_parser('update-organization',
+    help="Updates the files used by the UserTaggingAnalyzer module.")
+update_organization_parsers.set_defaults(func=update_organization)
+
+def update_crits_cache(args):
+
+    import saq
+    import sqlite3
+    from pymongo import MongoClient
+
+    cache_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['crits']['cache_db_path'])
+
+    # the actual file should be a symlink
+    if os.path.exists(cache_path) and not os.path.islink(cache_path):
+        logging.error("{} should be a symlink but it's not!".format(cache_path))
+        sys.exit(1)
+
+    # get the file the symlink points to
+    current_cache_path = None
+    if os.path.exists(cache_path):
+        current_cache_path = os.path.realpath(cache_path)
+    else:
+        current_cache_path = '{}.b'.format(cache_path)
+    
+    # there are two files that end with .a and .b
+    if not current_cache_path.endswith('.a') and not current_cache_path.endswith('.b'):
+        logging.error("expecting {} to end with .a or .b!".format(current_cache_path))
+        sys.exit(1)
+
+    # we edit the other one
+    base_cache_path = current_cache_path[:-2]
+    if current_cache_path.endswith('.a'):
+        target_cache_path = '{}.b'.format(base_cache_path)
+    else:
+        target_cache_path = '{}.a'.format(base_cache_path)
+
+    logging.info("updating {}".format(target_cache_path))
+    
+    if os.path.exists(target_cache_path):
+        try:
+            logging.info("deleting existing crits cache {}".format(target_cache_path))
+            os.remove(target_cache_path)
+        except Exception as e:
+            logging.error("unable to delete {}: {}".format(target_cache_path, e))
+            sys.exit(1)
+
+    cache_db = sqlite3.connect(target_cache_path)
+    db_cursor = cache_db.cursor()
+    db_cursor.execute("""CREATE TABLE indicators ( 
+                           id TEXT PRIMARY KEY, 
+                           type TEXT NOT NULL,
+                           value TEXT NOT NULL )""")
+    db_cursor.execute("CREATE INDEX i_type_value_index ON indicators ( type, value )")
+
+    client = MongoClient(saq.CONFIG['crits']['mongodb_uri'])
+    db = client['crits']
+    collection = db['indicators']
+    c = 0
+
+    logging.info("caching indicators...")
+    for indicator in collection.find({'status': 'Analyzed'}):
+        value = indicator['value']
+        """
+        # Doing this invalidates many of our URI - Path indicators
+        # need to fix this on the fly
+        if indicator['type'] == 'URI - Path':
+            if not value.startswith('/'):
+                value = '/{}'.format(value)
+        """
+        db_cursor.execute("INSERT INTO indicators ( id, type, value ) VALUES ( ?, ?, LOWER(?) )", 
+                         (str(indicator['_id']), indicator['type'], value))
+        c += 1
+
+    logging.info("comitting changes to database...")
+    cache_db.commit()
+    logging.info("updating symlink...")
+    # now point current link to our new database
+    # leaving the old one in place for current processes to keep using
+    try:
+        try:
+            os.remove(cache_path)
+        except:
+            pass
+
+        os.symlink(os.path.basename(target_cache_path), cache_path)
+
+    except Exception as e:
+        logging.error("failed to update symlink: {}".format(e))
+
+    logging.info("done")
+
+    logging.debug("loaded {} indicators".format(c))
+    sys.exit(0)
+
+update_crits_cache_parser = subparsers.add_parser('update-crits-cache',
+    help="Updates the local CRITS cache used by the analysis modules.")
+update_crits_cache_parser.set_defaults(func=update_crits_cache)
+
+def list_observables(args):
+    from saq.constants import VALID_OBSERVABLE_TYPES, OBSERVABLE_DESCRIPTIONS
+    print() 
+    print("SAQ Valid Observable Types")
+    print()
+    for o_type in VALID_OBSERVABLE_TYPES:
+        print('{0}{1}'.format(o_type.ljust(20), OBSERVABLE_DESCRIPTIONS[o_type]))
+    print()
+
+list_observables_parsers = subparsers.add_parser('list-observables',
+    help="List available observable types and their descriptions.")
+list_observables_parsers.set_defaults(func=list_observables)
+
+
+def crits_activity_sync(args):
+    import saq
+    from saq.constants import DISPOSITION_IGNORE
+    from saq.crits import sync_crits_activity
+    from saq.database import Alert, DatabaseSession
+    session = DatabaseSession()
+    alerts = session.query(Alert).filter(
+        Alert.location == saq.CONFIG['global']['node'],
+        Alert.disposition != DISPOSITION_IGNORE,
+        Alert.disposition_time >= datetime.datetime.now() + datetime.timedelta(days=-args.numdays))
+
+    session.commit()
+
+    for alert in alerts:
+        try:
+            alert.load()
+        except Exception as e:
+            logging.error("unable to load alert {}: {}".format(alert, e))
+            continue
+
+        if "indicator" in alert.observable_types:
+            sync_crits_activity(alert)
+
+crits_activity_sync_parsers = subparsers.add_parser('crits-activity-sync',
+    help="Sync activity from this alert to CRITS alert activity")
+crits_activity_sync_parsers.add_argument('-d','--number-days-to-sync',dest='numdays',default=1,type=int,
+    help="Number of days in the past to sync activity to CRITS, default is previous day")
+crits_activity_sync_parsers.set_defaults(func=crits_activity_sync)
+
+def sync_profile_points(args):
+    """Syncs the profile points as configured in etc/pp/profile_points with the ACE databases."""
+    import saq
+    from saq.database import get_db_connection
+
+    all_profile_points = []
+    profile_points = {} # (key = descrption)
+    all_profiles = set()
+
+    json_dir = os.path.join(saq.SAQ_HOME, 'etc', 'pp', 'profile_points')
+    for json_path in [os.path.join(json_dir, d) for d in os.listdir(os.path.join(json_dir))]:
+        if not json_path.endswith('.json'):
+            continue
+
+        logging.info("loading profile points from {}".format(json_path))
+        with open(json_path, 'r') as fp:
+            parsed_json = json.load(fp)
+
+        all_profile_points.extend(parsed_json)
+
+    for profile_point in all_profile_points:
+        for profile in profile_point['profiles']:
+            all_profiles.add(profile)
+
+        # build a little in-memory database
+        profile_points[profile_point['description']] = profile_point
+
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        # first make sure we have all the tags we're using in json in ace
+        # these becomes "tags" in ace
+        try:
+            for profile in all_profiles:
+                logging.debug("checking profile {}".format(profile))
+                c.execute("""SELECT id FROM tags WHERE name = %s""", (profile,))
+                result = c.fetchone()
+                if result is None:
+                    logging.info("adding profile {}".format(profile))
+                    c.execute("""INSERT INTO tags ( name ) VALUES ( %s )""", (profile,))
+        except Exception as e:
+            db.rollback()
+            traceback.print_exc()
+            logging.error(str(e))
+            return
+
+        db.commit()
+
+        # then make sure we've got all the profile points
+        for profile_point in all_profile_points:
+            #logging.info("updating profile point {} profiles {}".format(profile_point['description'], profile_point['profiles']))
+            try:
+                c.execute("""SELECT id FROM profile_points WHERE description = %s""",
+                         (profile_point['description'],))
+                result = c.fetchone()
+                if result is None:
+                    logging.info("adding profile point {}".format(profile_point['description']))
+                    c.execute("""INSERT INTO profile_points ( description ) VALUES ( %s )""", 
+                             (profile_point['description'],))
+            except Exception as e:
+                db.rollback()
+                traceback.print_exc()
+                logging.error(str(e))
+                return
+
+        db.commit()
+
+        # now sync the other way (updating existing and delete deleted entries)
+        try:
+            existing_profile_points = []
+            deleted_profile_points = [] # of profile_points.id
+            deleted_profile_mappings = []
+            new_profile_mappings = []
+
+            c.execute("""SELECT id, description FROM profile_points""")
+            for row in c:
+                existing_profile_points.append(row)
+
+            db.commit()
+
+            for _id, description in existing_profile_points:
+                logging.debug("checking for {}".format(description))
+                if description not in profile_points:
+                    logging.info("removing stale profile point {} ({})".format(description, _id))
+                    deleted_profile_points.append(_id)
+                else:
+                    profile_point = profile_points[description]
+                    # if it is in the json, then make sure that all the profile mappings we have for it match what is in the json
+                    logging.debug("checking profile mappings for profile point {} ({})".format(description, _id))
+                    c.execute("""SELECT t.name, t.id FROM pp_tag_mapping pptm JOIN tags t ON pptm.tag_id = t.id 
+                                 WHERE pptm.profile_point_id = %s""", (_id,))
+                    existing_profiles = set()
+                    for row in c:
+                        profile_name, profile_id = row
+                        existing_profiles.add(profile_name)
+                        if profile_name not in profile_point['profiles']:
+                            logging.info("removing profile mapping {} for {}".format(profile_name, description))
+                            deleted_profile_mappings.append((_id, profile_id))
+
+                    logging.debug("existing profiles for {} ({}): {}".format(description, _id, existing_profiles))
+
+                    # then check for new profile mappings in json that are not in the database yet
+                    for json_profile in profile_point['profiles']:
+                        if json_profile not in existing_profiles:
+                            # get the profile_id we need
+                            c.execute("""SELECT id FROM tags WHERE name = %s""", (json_profile,))
+                            row = c.fetchone()
+                            profile_id = row[0]
+                            # create the mapping with this id
+                            new_profile_mappings.append((_id, profile_id))
+                            logging.info("updated profile mapping for {} -> {}".format(_id, profile_id))
+
+            db.commit()
+
+            for _id in deleted_profile_points:
+                logging.info("deleting profile point {}".format(_id))
+                c.execute("""DELETE FROM profile_points WHERE id = %s""", (_id,))
+
+            db.commit()
+
+            for profile_point_id, profile_id in deleted_profile_mappings:
+                logging.info("deleting profile point mapping from {} to {}".format(profile_point_id, profile_id))
+                c.execute("""DELETE FROM pp_tag_mapping WHERE profile_point_id = %s AND tag_id = %s""",
+                          (profile_point_id, profile_id))
+
+            db.commit()
+
+            for profile_point_id, profile_id in new_profile_mappings:
+                logging.info("inserting profile point mapping from {} to {}".format(profile_point_id, profile_id))
+                c.execute("""INSERT INTO pp_tag_mapping ( profile_point_id, tag_id ) VALUES ( %s, %s )""",
+                          (profile_point_id, profile_id))
+
+            db.commit()
+
+        except Exception as e:
+            logging.error(str(e))
+            traceback.print_exc()
+            db.rollback()
+            return
+
+sync_profile_points_parser = subparsers.add_parser('sync-profile-points',
+    help="Syncs the profile points as configured in etc/pp/profile_points with CRITS with ACE databases.""")
+sync_profile_points_parser.set_defaults(func=sync_profile_points)
+
+def cleanup_alerts(args):
+    """Performs system maintenance.  This is meant to be called from a cron job."""
+    import saq
+    from saq.constants import DISPOSITION_FALSE_POSITIVE, DISPOSITION_IGNORE
+    from saq.database import Alert, DatabaseSession
+
+    # delete alerts dispositioned as IGNORE and older than N days
+    session = DatabaseSession()
+    alerts = session.query(Alert).filter(
+        Alert.location == saq.CONFIG['global']['node'],
+        Alert.disposition == DISPOSITION_IGNORE,
+        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=saq.CONFIG['global'].getint('ignore_days'))).all()
+
+    session.commit()
+
+    if args.dry_run:
+        logging.info("{} alerts would be deleted".format(len(alerts)))
+    else:
+        for alert in alerts:
+            # delete the files backing the alert
+            try:
+                target_path = os.path.join(saq.SAQ_HOME, alert.storage_dir)
+                logging.info("deleting files {}".format(target_path))
+                shutil.rmtree(target_path)
+            except Exception as e:
+                logging.error("unable to delete alert storage directory {0}: {1}".format(alert.storage_dir, str(e)))
+
+            # delete the alert from the database
+            logging.info("deleting database entry {}".format(alert))
+            query = Alert.__table__.delete().where(Alert.id == alert.id)
+            session.execute(query)
+
+        session.commit()
+
+    # reset alerts dispositioned as False Positive older than N days
+    session = DatabaseSession()
+    alerts = session.query(Alert).filter(
+        Alert.location == saq.CONFIG['global']['node'],
+        Alert.archived == False,
+        Alert.disposition == DISPOSITION_FALSE_POSITIVE,
+        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=saq.CONFIG['global'].getint('fp_days'))).all()
+    
+    if args.dry_run:
+        logging.info("{} alerts would be archived".format(len(alerts)))
+    else:
+        for alert in alerts:
+            logging.info("resetting false positive {}".format(alert))
+            try:
+                alert.load()
+            except Exception as e:
+                logging.error("unable to load {}: {}".format(alert, e))
+                continue
+
+            alert.archive()
+            alert.save()
+
+            # mark the alert as "archived"
+            alert.archived = True
+            session.add(alert)
+            
+        session.commit()
+
+    sys.exit(0)
+
+cleanup_alerts_parsers = subparsers.add_parser('cleanup-alerts',
+    help="Removes alerts dispositioned as ignore or false positive and older than some amount of time.")
+cleanup_alerts_parsers.add_argument('--dry-run', required=False, dest='dry_run', default=False, action='store_true',
+    help="Just report how many would be deleted and archived.")
+cleanup_alerts_parsers.set_defaults(func=cleanup_alerts)
+
+def cleanup_email_archive(args):
+    from saq.email import maintain_archive
+    maintain_archive(verbose=True)
+    sys.exit(0)
+
+cleanup_email_archive_parser = subparsers.add_parser('cleanup-email-archive',
+    help="Removes emails from the archive that have expired.")
+cleanup_email_archive_parser.set_defaults(func=cleanup_email_archive)
+
+def display_alert(args):
+    from saq.analysis import RootAnalysis
+    
+    alert = RootAnalysis()
+    alert.storage_dir = args.dir
+    try:
+        alert.load()
+    except Exception as e:
+        logging.error("unable to load alert from {}: {}".format(args.dir, str(e)))
+        traceback.print_exc()
+        sys.exit(1)
+
+    display_analysis(alert)
+    sys.exit(0)
+
+display_alert_parser = subparsers.add_parser('display-alert',
+    help="Displays the results of the analysis for a given alert.")
+display_alert_parser.add_argument('dir', 
+    help="The directory of the alert to display")
+display_alert_parser.set_defaults(func=display_alert)
+
+def initialize_delayed_analysis(args):
+    from saq.delayed_analysis import DelayedAnalysisManager
+    db_path = os.path.join('var', '{}.db'.format(args.engine_name))
+    if os.path.exists(db_path):
+        os.remove(db_path)
+
+    mgr = DelayedAnalysisManager(os.path.join('var', '{}.db'.format(args.engine_name)))
+    mgr.initialize()
+
+initialize_delayed_analysis_parser = subparsers.add_parser('initialize-delayed-analysis',
+    help="Initialize the delayed analysis database for a given engine.")
+initialize_delayed_analysis_parser.add_argument('engine_name',
+    help="The name of the engine to initialize (ex: ace).")
+initialize_delayed_analysis_parser.set_defaults(func=initialize_delayed_analysis)
+
+# ============================================================================
+# company management
+#
+
+def list_companies(args):
+    from saq.database import get_db_connection
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("SELECT id, name FROM company ORDER BY name")
+        print()
+        print("ID\tNAME")
+        for company_id, company_name in c:
+            print("{}\t{}".format(company_id, company_name))
+
+    print()
+    print("use ./saq add-company and ./saq delete-company to manage companies")
+    print()
+    sys.exit(0)
+
+list_companies_parser = subparsers.add_parser('list-companies',
+    help="Lists the available companies and their IDs.")
+list_companies_parser.set_defaults(func=list_companies)
+
+def add_company(args):
+    from saq.database import get_db_connection
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("INSERT INTO company ( `id`, `name` ) VALUES ( %s, %s )", (args.company_id, args.company_name))
+        db.commit()
+        logging.info("company added")
+
+    sys.exit(0)
+
+add_companies_parser = subparsers.add_parser('add-company',
+    help="Adds a new company entry.")
+add_companies_parser.add_argument('company_id', type=int, help="The ID of the new company (a number that is not already being used as an ID.)")
+add_companies_parser.add_argument('company_name', help="The name of the new company.")
+add_companies_parser.set_defaults(func=add_company)
+
+def delete_company(args):
+    import saq
+    from saq.constants import INSTANCE_TYPE_PRODUCTION
+    from saq.database import get_db_connection
+
+    print("***************************************************************")
+    print("Deleting a company will delete all associated EVENTS and ALERTS.")
+    confirm = input("Are you SURE? (Y/n)")
+    if confirm != 'Y':
+        print("Action not taken.")
+        sys.exit(0)
+
+    confirm = input("Are you DAMN SURE? Seriously. If you're wrong it will be a disaster. (Y/n)")
+    if confirm != 'Y':
+        print("Action not taken.")
+        sys.exit(0)
+
+    # see if we are on the production system
+    if saq.INSTANCE_TYPE == INSTANCE_TYPE_PRODUCTION:
+        confirm = input("You are in a PRODUCTION SERVER. Are you SURE you know what you are doing? Type YES if you are sure.")
+        if confirm != 'YES':
+            print("Action not taken. Pay attention to what you're doing please.")
+            sys.exit(0)
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("DELETE FROM company WHERE `name` = %s", (args.company_name,))
+        db.commit()
+        logging.info("company deleted")
+
+    sys.exit(0)
+
+delete_companies_parser = subparsers.add_parser('delete-company',
+    help="Deletes a given company and all associated events and alerts.")
+delete_companies_parser.add_argument('company_name', help="The name of the company to delete.")
+delete_companies_parser.set_defaults(func=delete_company)
+
+# ============================================================================
+# testing utilities
+#
+
+def check_url(args):
+    from saq.crawlphish import CrawlphishURLFilter
+
+    cw = CrawlphishURLFilter()
+    cw.load()
+
+    if cw.is_filtered(args.url):
+        print("url filtered (reason {})".format(cw.reason))
+    else:
+        print("url OK (reason {})".format(cw.reason))
+
+    sys.exit(0)
+
+check_url_parser = subparsers.add_parser('check-url',
+    help="Check the given URL against crawlphish URL selection logic.")
+check_url_parser.add_argument('url', help="The URL to check.")
+check_url_parser.set_defaults(func=check_url)
+
+def test_daemonize(args):
+    if args.kill_daemon:
+        kill_daemon('test-daemon')
+
+    if args.daemon:
+        daemonize('test-daemon')
+
+    while True:
+        logging.info('running')
+        time.sleep(1)
+
+test_daemonize_parsers = subparsers.add_parser('test-daemonize',
+    help="Test daemonization.")
+test_daemonize_parsers.set_defaults(func=test_daemonize)
+
+def test_proxies(args):
+    import requests
+    import saq
+    proxy_configs = saq.OTHER_PROXIES.copy()
+    proxy_configs['GLOBAL'] = saq.PROXIES
+
+    for proxy_name, proxy_config in proxy_configs.items():
+        print("testing proxy {} ({})".format(proxy_name, proxy_config))
+        session = requests.session()
+        session.proxies = proxy_config
+        response = session.request('GET', args.url,
+                                   timeout=20,
+                                   allow_redirects=True,
+                                   verify=False)
+
+        print("result: ({}) - {}".format(response.status_code, response.reason))
+
+    sys.exit(0)
+
+test_proxies_parser = subparsers.add_parser('test-proxies',
+    help="Test the configured proxies to make sure ACE can use them.")
+test_proxies_parser.add_argument('url', help="A sample URL to attempt to download through each proxy.")
+test_proxies_parser.set_defaults(func=test_proxies)
+
+def test_process_server(args):
+    from saq.process_server import initialize_process_server, Popen, PIPE, TimeoutExpired
+    initialize_process_server()
+
+    try:
+        p = Popen(['./test_sleep',], stdout=PIPE, stderr=PIPE)
+        _stdout, _stderr = p.communicate(timeout=2)
+        print("_stdout = {}".format(_stdout))
+        print("_stderr = {}".format(_stderr))
+        print("returncode = {}".format(p.returncode))
+    except TimeoutExpired as e:
+        print("timeout OK")
+
+    p = Popen(['cat'], stdin=PIPE, stdout=PIPE, universal_newlines=True)
+    p.stdin.write('Hello world!')
+    _stdout, _stderr = p.communicate()
+    print("_stdout = {}".format(_stdout))
+    print("_stderr = {}".format(_stderr))
+
+    p = Popen(['cat'], stdin=PIPE, stdout=PIPE)
+    p.stdin.write(b'Hello world!')
+    _stdout, _stderr = p.communicate()
+    print("_stdout = {}".format(_stdout))
+    print("_stderr = {}".format(_stderr))
+
+    p = Popen(['/bin/false'])
+    p.wait(timeout=5)
+    print("rcode = {}".format(p.returncode))
+
+    with open('large_file_copy.stderr', 'wb') as fp_stderr:
+        with open('large_file_copy', 'wb') as fp:
+            p = Popen(['bash', '-c', 'cat large_file 1>&2'], stdout=fp, stderr=fp_stderr)
+            p.wait()
+
+test_process_server_parser = subparsers.add_parser('test-process-server',
+    help="Test process server.")
+test_process_server_parser.set_defaults(func=test_process_server)
+
+def verify_modules(args):
+    """Executes verify_environment() on all modules that are enabled."""
+    # we run the same code the engines run to load the modules
+    # COPY-PASTA!!
+    import importlib
+
+    for section in saq.CONFIG.sections():
+        if not section.startswith('analysis_module_'):
+            continue
+
+        # is this module disabled globally?
+        # modules that are disable globally are not used anywhere
+        if not saq.CONFIG.getboolean(section, 'enabled'):
+            logging.warning("analysis module {} disabled (globally)".format(section))
+            continue
+
+        logging.debug("verifying analysis module from {}".format(section))
+        module_name = saq.CONFIG.get(section, 'module')
+        try:
+            _module = importlib.import_module(module_name)
+        except Exception as e:
+            logging.error("unable to import module {}".format(module_name, e))
+            traceback.print_exc()
+            continue
+
+        class_name = saq.CONFIG.get(section, 'class')
+        try:
+            module_class = getattr(_module, class_name)
+        except AttributeError as e:
+            logging.error("class {} does not exist in module {} in analysis module {}".format(
+                          class_name, module_name, section))
+            traceback.print_exc()
+            continue
+
+        try:
+            analysis_module = module_class(section)
+        except Exception as e:
+            logging.error("unable to load analysis module {}: {}".format(section, e))
+            traceback.print_exc()
+            continue
+
+        # make sure the module has everything it needs
+        try:
+            analysis_module.verify_environment()
+        except Exception as e:
+            logging.error("analysis module {} failed environment verification: {}".format(analysis_module, e))
+            traceback.print_exc()
+            continue
+
+        logging.info("analysis module {} verification OK".format(section))
+    
+verify_modules_parsers = subparsers.add_parser('verify-modules',
+    help="Executes verify_environment() on all modules that are enabled.")
+verify_modules_parsers.set_defaults(func=verify_modules)
+
+def verify_test_imports(args):
+    import saq.test_database
+    pass
+
+verify_test_imports_parser = subparsers.add_parser('verify-test-imports',
+    help="Verify import of test modules.")
+verify_test_imports_parser.set_defaults(func=verify_test_imports)
+
+def set_encryption_password(args):
+    from saq.crypto import set_encryption_password
+    while True:
+        password = getpass.getpass("Enter the decryption password:")
+        password_2 = getpass.getpass("Re-enter the decryption password for verification:")
+
+        if password != password_2:
+            logging.error("passwords do not match")
+            continue
+
+        break
+
+    set_encryption_password(password)
+    sys.exit(0)
+
+set_encryption_password_parser = subparsers.add_parser('set-encryption-password',
+    help="Sets the password used to encrypt and decrypt archived emails.")
+set_encryption_password_parser.set_defaults(func=set_encryption_password)
+
+def test_encryption_password(args):
+    from saq.crypto import test_encryption_password
+    password = getpass.getpass("Enter the decryption password:")
+    if test_encryption_password(password):
+        logging.info("password OK")
+    else:
+        logging.error("invalid password")
+
+    sys.exit(0)
+
+test_encryption_password_parser = subparsers.add_parser('test-encryption-password',
+    help="Tests the given password to see if it matches what is currently set as the encryption password.")
+test_encryption_password_parser.set_defaults(func=test_encryption_password)
+
+def encrypt_file(args):
+    from saq.crypto import encrypt
+    encrypt(args.source_path, args.target_path)
+    sys.exit(0)
+
+encrypt_file_parser = subparsers.add_parser('encrypt-file',
+    help="Encrypts the given file with the password set with set-encryption-password.")
+encrypt_file_parser.add_argument('source_path', help="The file to encrypt from.")
+encrypt_file_parser.add_argument('target_path', help="The file to saved the decrypted data to.")
+encrypt_file_parser.set_defaults(func=encrypt_file)
+
+def decrypt_file(args):
+    from saq.crypto import decrypt
+    decrypt(args.source_path, args.target_path)
+    sys.exit(0)
+
+decrypt_file_parser = subparsers.add_parser('decrypt-file',
+    help="Decrypts the given file with the password set with set-decryption-password.")
+decrypt_file_parser.add_argument('source_path', help="The file to decrypt from.")
+decrypt_file_parser.add_argument('target_path', help="The file to saved the decrypted data to.")
+decrypt_file_parser.set_defaults(func=decrypt_file)
+
+#def execute_unittests(args):
+    #unittest.main(module=saq.test_analysis, exit=False)
+    #sys.exit(0)
+    
+#test_parsers = subparsers.add_parser('test',
+    #help="Executes all unit tests.")
+#test_parsers.set_defaults(func=execute_unittests)
+
+if __name__ == '__main__':
+
+    # there is no reason to run anything as root
+    if os.geteuid() == 0:
+        print("do not run ace as root please")
+        sys.exit(1)
+
+    # was this command called as a symlink?
+    if os.path.basename(sys.argv[0]) == 'analyze':
+        sys.argv.insert(1, 'analyze-files')
+    elif os.path.basename(sys.argv[0]) == 'correlate':
+        sys.argv.insert(1, 'correlate')
+
+    # parse the command line arguments
+    args = parser.parse_args()
+
+    # where is ACE?
+    saq_home = '/opt/ace' # default installation directory
+    if 'SAQ_HOME' in os.environ:
+        saq_home = os.environ['SAQ_HOME'] # should be in this env variable
+    if args.saq_home is not None:
+        saq_home = args.saq_home # otherwise pull it from the command line
+
+    # XXX I would like to get rid of this
+    # adjust search path
+    if args.saq_home is not None:
+        sys.path.append(os.path.join(args.saq_home, 'lib'))
+    elif 'SAQ_HOME' in os.environ:
+        sys.path.append(os.path.join(os.environ['SAQ_HOME'], 'lib'))
+
+    # initialize saq
+    import saq
+    saq.initialize(saq_home=saq_home, config_paths=[], logging_config_path=None, args=args, relative_dir=args.relative_dir)
+
+    # are we prompting for the decryption password?
+    if args.provide_decryption_password:
+        import tempfile
+        from subprocess import Popen, PIPE
+        from saq.crypto import test_encryption_password, get_aes_key
+
+        while True:
+            password = getpass.getpass("Enter the decryption password:")
+            # first check to see if the given password matches the sha256 hash
+            if not test_encryption_password(password):
+                logging.error("invalid encryption password")
+                continue
+
+            break
+
+        saq.ENCRYPTION_PASSWORD = get_aes_key(password)
+
+    if args.debug_on_error:
+        def info(type, value, tb):
+           if hasattr(sys, 'ps1') or not sys.stderr.isatty() or type != AssertionError:
+              # we are in interactive mode or we don't have a tty-like
+              # device, so we call the default hook
+              sys.__excepthook__(type, value, tb)
+           else:
+              import traceback, pdb
+              # we are NOT in interactive mode, print the exception...
+              traceback.print_exception(type, value, tb)
+              print
+              # ...then start the debugger in post-mortem mode.
+              pdb.pm()
+
+        sys.excepthook = info
+
+    # call the handler for the given command
+    args.func(args)

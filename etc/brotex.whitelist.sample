@@ -1,0 +1,8 @@
+# blank lines and lines starting with # are ignored
+# syntax = whitelist_type:whitelist_value
+# supported whitelist_type
+# smtp_from:
+# smtp_to:
+# smtp_subject:
+# http_host
+

@@ -24,7 +24,7 @@ from urllib.parse import urlparse, urljoin
 
 #from subprocess import Popen, PIPE, DEVNULL, TimeoutExpired
 
-from urltools.urltools import find_urls
+from urlfinderlib import find_urls
 
 import saq
 import yara_scanner
@@ -462,6 +462,9 @@ class ArchiveAnalysis(Analysis):
 
         return None
 
+# 2018-02-19 12:15:48          319534300    299585795  155 files, 47 folders
+Z7_SUMMARY_REGEX = re.compile(rb'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+\d+\s+\d+\s+(\d+)\s+files.*?')
+
 class ArchiveAnalyzer(AnalysisModule):
     def verify_environment(self):
         self.verify_config_exists('max_file_count')
@@ -534,6 +537,7 @@ class ArchiveAnalyzer(AnalysisModule):
         # we don't know it anyways
 
         if is_rar_file:
+            logging.debug("using unrar to extract files from {}".format(local_file_path))
             p = Popen(['unrar', 'la', local_file_path], stdout=PIPE, stderr=PIPE)
             try:
                 (stdout, stderr) = p.communicate(timeout=self.timeout)
@@ -560,6 +564,7 @@ class ArchiveAnalyzer(AnalysisModule):
                 count += 1
 
         elif is_zip_file:
+            logging.debug("using unzip to extract files from {}".format(local_file_path))
             p = Popen(['unzip', '-l', '-P', 'infected', local_file_path], stdout=PIPE, stderr=PIPE)
             try:
                 (stdout, stderr) = p.communicate(timeout=self.timeout)
@@ -604,7 +609,8 @@ class ArchiveAnalyzer(AnalysisModule):
             is_office_document |= (ole_object_regex.search(stdout) is not None)
                 
         else:
-            p = Popen(['7z', '-y', '-pinfected', 't', local_file_path], stdout=PIPE, stderr=PIPE)
+            logging.debug("using 7z to extract files from {}".format(local_file_path))
+            p = Popen(['7z', '-y', '-pinfected', 'l', local_file_path], stdout=PIPE, stderr=PIPE)
             try:
                 (stdout, stderr) = p.communicate(timeout=self.timeout)
             except TimeoutExpired as e:
@@ -616,8 +622,12 @@ class ArchiveAnalyzer(AnalysisModule):
 
             count = 0
             for line in stdout.split(b'\n'):
-                if line.startswith(b'Testing'):
-                    count += 1
+                m = Z7_SUMMARY_REGEX.match(line)
+                if m:
+                    count = int(m.group(1))
+
+                #if line.startswith(b'Testing'):
+                    #count += 1
 
                 if b'ppt/slides/_rels' in line:
                     is_office_document = True
@@ -643,7 +653,10 @@ class ArchiveAnalyzer(AnalysisModule):
                     local_file_path, count, self.max_file_count))
                 return False
 
-        logging.debug("extracting {} files from archive {}".format(count, local_file_path))
+        if count == 0:
+            return False
+
+        logging.info("extracting {} files from archive {}".format(count, local_file_path))
 
         # we need a place to store these things
         extracted_path = '{}.extracted'.format(local_file_path).replace('*', '_') # XXX need a normalize function
@@ -2106,7 +2119,7 @@ class PDFTextAnalyzer(AnalysisModule):
             return False
         
         if len(analysis.stderr) > 0:
-            logging.warning("pdfparser returned errors for {}".format(local_file_path))
+            logging.debug("pdftotext returned errors for {}".format(local_file_path))
 
         # add the output file as a new file to scan
         # the FILE type indicators are relative to the alert storage directory
@@ -2170,8 +2183,13 @@ class YaraScanner_v3_4(AnalysisModule):
 
     @property
     def base_dir(self):
-        """Base directory of the yara_scanner library."""
-        return self.config['base_dir']
+        """Base directory of the yara_scanner server."""
+        return saq.YSS_BASE_DIR
+
+    @property
+    def socket_dir(self):
+        """Relative directory of the socket directory of the yara scanner server."""
+        return saq.YSS_SOCKET_DIR
 
     @property
     def generated_analysis_type(self):
@@ -2287,7 +2305,7 @@ class YaraScanner_v3_4(AnalysisModule):
                 _full_path = local_file_path
                 if not os.path.isabs(local_file_path):
                     _full_path = os.path.join(os.getcwd(), local_file_path)
-                result = yara_scanner.scan_file(_full_path, base_dir=self.base_dir)
+                result = yara_scanner.scan_file(_full_path, base_dir=self.base_dir, socket_dir=self.socket_dir)
                 matches_found = bool(result)
 
                 logging.debug("scanned file {} with yss (matches found: {})".format(_full_path, matches_found))

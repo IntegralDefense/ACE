@@ -114,6 +114,7 @@ class CritsObservableAnalyzer(AnalysisModule):
                 'value': observable.value }):
                 indicators.add(str(indicator['_id']))
 
+            # IP addresses do not have letters, so no need for re.IGNORECASE here.
             for indicator in collection.find({
                 '$or': [ {'type': 'URI - Domain Name'}, {'type': 'URI - URL'}, {'type': 'URI - Path'} ],
                 'status': 'Analyzed',
@@ -125,10 +126,11 @@ class CritsObservableAnalyzer(AnalysisModule):
             if '.' not in observable.value:
                 logging.debug("{} is not actually an FQDN".format(observable))
             else:
+                # Need to use re.IGNORECASE for domains.
                 for indicator in collection.find({
                     '$or': [ {'type': 'Email - Address'}, {'type': 'URI - Domain Name'}, {'type': 'URI - URL'}, {'type': 'URI - Path'} ],
                     'status': 'Analyzed',
-                    'value': {'$regex': '{}'.format(re.escape(observable.value))}}):
+                    'value': re.compile(re.escape(observable.value), re.IGNORECASE)}):
                     indicators.add(str(indicator['_id']))
 
                 # is the observed domain equal to or a subdomain of anything in crits?
@@ -138,11 +140,12 @@ class CritsObservableAnalyzer(AnalysisModule):
                         indicators.add(str(indicator['_id']))
 
         elif observable.type == F_URL:
-            # URI - URL have to be an exact match
+            # URI - URL have to be an exact match (with re.IGNORECASE)
             for indicator in collection.find({
                 'status': 'Analyzed',
                 'type': 'URI - URL',
-                'value': observable.value.lower() }):
+                'value': re.compile('^{}$'.format(re.escape(observable.value)), re.IGNORECASE)}):
+                #logging.debug("MARKER: exact match {}".format(indicator['_id']))
                 indicators.add(str(indicator['_id']))
 
             # for this part we have to parse the URL if we can
@@ -150,39 +153,44 @@ class CritsObservableAnalyzer(AnalysisModule):
                 parsed_url = urllib.parse.urlparse(observable.value)
 
                 if parsed_url.path is not None and len(parsed_url.path) > 0:
-                    # look for just the path
+                    # look for just the path (with re.IGNORECASE)
                     for indicator in collection.find({
                         'status': 'Analyzed',
                         'type': 'URI - Path',
-                        'value': parsed_url.path.lower() }):
+                        'value': re.compile('^{}$'.format(re.escape(parsed_url.path)), re.IGNORECASE)}):
+                        #logging.debug("MARKER: path match {} - {}".format(parsed_url.path, indicator['_id']))
                         indicators.add(str(indicator['_id']))
 
-                # and then look for the hostname/path
+                # and then look for the hostname/path (with re.IGNORECASE)
                 if parsed_url.netloc is not None and len(parsed_url.netloc) > 0 and parsed_url.path is not None and len(parsed_url.netloc) > 0:
                     #logging.debug("looking up {}{}".format(parsed_url.netloc.lower(), parsed_url.path.lower()))
                     for indicator in collection.find({
                         'status': 'Analyzed',
                         'type': 'URI - Path',
-                        'value': '{}{}'.format(parsed_url.netloc.lower(), parsed_url.path.lower()) }):
+                        'value': re.compile(re.escape('{}{}'.format(parsed_url.netloc, parsed_url.path)), re.IGNORECASE)}):
+                        #logging.debug("MARKER: hostname path match {}".format(indicator['_id']))
                         indicators.add(str(indicator['_id']))
 
             except Exception as e:
                 logging.debug("unable to parse url {}: {}".format(observable.value, str(e)))
 
+        # File names need re.IGNORECASE
         elif observable.type == F_FILE_NAME:
             for indicator in collection.find({
                 'status': 'Analyzed',
                 'type': 'Windows - FileName',
-                'value': observable.value.lower() }):
+                'value': re.compile(re.escape(observable.value), re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
+        # File paths need re.IGNORECASE
         elif observable.type == F_FILE_PATH:
             for indicator in collection.find({
                 'status': 'Analyzed',
                 'type': 'Windows - FilePath',
-                'value': observable.value.lower() }):
+                'value': re.compile(re.escape(observable.value), re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
+        # E-mail addresses need re.IGNORECASE
         elif observable.type == F_EMAIL_ADDRESS:
             # make sure this is really an email address
             if '@' not in observable.value:
@@ -194,31 +202,32 @@ class CritsObservableAnalyzer(AnalysisModule):
                     for indicator in collection.find({
                         'status': 'Analyzed',
                         'type': 'Email - Address',
-                        'value': address.lower() }):
+                        'value': re.compile(re.escape(address), re.IGNORECASE)}):
                         indicators.add(str(indicator['_id']))
                     
                 except Exception as e:
                     logging.debug("unable to parse {} as an email address: {}".format(observable.value, str(e)))
 
+        # All Hash - * indicators need re.IGNORECASE but can skip re.escape since they can't have regex chars in them.
         elif observable.type == F_MD5:
             for indicator in collection.find({
                 'status': 'Analyzed',
                 'type': 'Hash - MD5',
-                'value': observable.value.lower() }):
+                'value': re.compile(observable.value, re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
         elif observable.type == F_SHA1:
             for indicator in collection.find({
                 'status': 'Analyzed',
                 'type': 'Hash - SHA1',
-                'value': observable.value.lower() }):
+                'value': re.compile(observable.value, re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
         elif observable.type == F_SHA256:
             for indicator in collection.find({
                 'status': 'Analyzed',
                 'type': 'Hash - SHA256',
-                'value': observable.value.lower() }):
+                'value': re.compile(observable.value, re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
             
         analysis.indicators.extend(list(indicators))

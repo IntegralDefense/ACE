@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#
+
+#
+# stop the yss server for ACE
+#
+
+source $(dirname "$0")/common.sh
+
+if [ -e "$SAQ_HOME/yss/.yss.pid" ]
+then
+    ( cd $SAQ_HOME/yss && yss --base-dir=$(pwd) -L etc/logging.ini -k )
+fi

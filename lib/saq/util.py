@@ -68,3 +68,4 @@ def human_readable_size(size):
     # (.4g results in rounded numbers for exact matches and max 3 decimals, 
     # should never resort to exponent values)
     return '{:.4g} {}'.format(size / (1 << (order * 10)), _suffixes[order])
+

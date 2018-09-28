@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-if [ -z "$SAQ_HOME" ]
-then
-    echo "missing SAQ_HOME env variable"
-    exit 1
-fi
-
-( cd $SAQ_HOME && bin/stop && bin/start )

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
-export TZ="America/New_York"
+source $(dirname "$0")/common.sh
 cd $SAQ_HOME
-python3 saq --start --daemon -L etc/network_server_logging.ini network-server
+
+python3 ace --start --daemon -L etc/network_server_logging.ini network-server

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#
+
+#
+# we keep site-specific files inside the /opt/site and /opt/site_common directories
+# each file in these repos are stored as full paths to their targets
+# for example, an ace config file that would be /opt/ace/etc/saq.local.ini
+# would be /opt/site/opt/ace/etc/saq.local.ini in this repository
+#
+# this script goes through all of them and inserts them as symlinks
+#
+
+for site_dir in /opt/site /opt/site_common
+do
+    if [ ! -d "${site_dir}" ]; then continue; fi
+    find "${site_dir}" -type f -ipath '*/opt/ace/*' ! -ipath '*.swp' | while read target
+    do
+        link_name="${target#${site_dir}}"
+        if [ -e "${link_name}" ] && [ ! -L "${link_name}" ]
+        then
+            echo "ERROR: path ${link_name} exists but is not a symlink"
+            continue
+        fi
+
+        if [ ! -e "${link_name}" ]
+        then
+            dir_path=$(dirname "${link_name}")
+            if [ ! -d "${dir_path}" ]; then mkdir -p "${dir_path}"; fi
+            ln -s ${target} ${link_name} && echo "symlinked ${link_name} to ${target}"
+        fi
+    done
+done

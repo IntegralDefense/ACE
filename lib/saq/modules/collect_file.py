@@ -6,7 +6,6 @@ import saq
 from saq.analysis import Analysis
 from saq.constants import *
 from saq.modules import AnalysisModule
-from chronosapi import Chronos
 import ntpath
 import os
 
@@ -64,6 +63,8 @@ class CollectFileAnalyzer(AnalysisModule):
         return [ DIRECTIVE_COLLECT_FILE ]
 
     def execute_analysis(self, file_location):
+        from chronosapi import Chronos
+
         # create analysis object if it does not already exist
         analysis = file_location.get_analysis(CollectFileAnalysis)
         if analysis is None:

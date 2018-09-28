@@ -8,6 +8,7 @@ import shutil
 import socket
 import ssl
 import tempfile
+import unittest
 
 from email.message import EmailMessage
 from subprocess import Popen, PIPE, DEVNULL
@@ -159,11 +160,10 @@ class EmailEngineTestCase(ACEEngineTestCase):
         engine.stop()
         self.wait_engine(engine)
 
+    # TODO first check to see if cloudphish is available before running this test
+    @unittest.skip
     @clear_log
     def test_email_engine_004_cloudphish_tracking(self):
-
-        # set the decryption password
-        saq.ENCRYPTION_PASSWORD = 'password'
 
         self.reset_cloudphish()
         self.reset_correlation()
@@ -260,7 +260,7 @@ class EmailEngineTestCase(ACEEngineTestCase):
         self.start_engine(cloudphish_engine)
 
         # wait for both to finish
-        wait_for_log_count(log_message, 3)
+        wait_for_log_count(log_message, 3, timeout=15)
     
         cloudphish_engine.stop()
         self.wait_engine(cloudphish_engine)
