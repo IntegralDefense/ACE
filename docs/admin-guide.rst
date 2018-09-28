@@ -63,21 +63,102 @@ For example, given observable type 'file', each ACE module that acts on an obser
 Turning on Engines
 ------------------
 
+When installed, ACE likely started several engines and modules by default. Almost certainly, the correlation engine was started. You can see below how to stop and start several different engines and modules. If you want to try and start all engines at the same time, the following command will accomplish that::
+
+  $ /opt/ace/bin/start-ace
+
+Correlation Engine
+++++++++++++++++++
+
+The correlation engine is essential::
+
+  $ /opt/ace/bin/start-correlation-engine
+
 .. _email-scanning:
 
 Email Scanner
 +++++++++++++
 
-The email scanning engine requires  
+The email scanning engine will detect any file observable that is compliant with rfc822.
+
+::
+
+  $ /opt/ace/bin/start-email-scanning-engine
 
 CloudPhish
 ++++++++++
 
-CrawlPhish
-~~~~~~~~~~
+Make sure **engine_cloudphish** is enabled in ``saq.default.ini``::
+
+  [engine_cloudphish]
+  enabled = yes
+
+Also in ``saq.default.ini``, make sure the following config item has this value; unless you know your situation is different::
+
+  cloudphish.1 = https://localhost/ace/cloudphish
+
+The CloudPhish engine depend on the CrawlPhish analysis module. So make sure the **analysis_module_crawlphish** is turned on in ``saq.default.ini``:: 
+
+    [analysis_module_crawlphish]
+    enabled = yes
+
+Next, make sure the following three files exist. Example content is given for each file. First, ``/opt/ace/etc/crawlphish.whitelist``::
+
+    # url shorteners and more
+    anonfile.xyz
+    bit.ly
+    goo.gl
+    ow.ly
+    is.gd
+    dd.tt
+    dropbox.com
+    tinyurl.com
+    zip.net
+    drive.google.com
+    wetransfer.com
+    hyperurl.co
+    1drv.ms
+    onedrive.live.com
+    amazonaws.com
+
+Second, ``etc/crawlphish.path_regex:``::
+
+    # possible file extensions for trojans
+    \.(pdf|zip|scr|js|cmd|bat|ps1|doc|docx|xls|xlsx|ppt|pptx|exe|vbs|vbe|jse|wsh|cpl|rar|ace|hta)$
+
+Finally, ``etc/crawlphish.blacklist``::
+
+    # ignore loopback
+    127.0.0.1
+    # RFC 1918
+    10.0.0.0/8
+    172.16.0.0/12
+    192.168.0.0/16
+    # put more domains and IPs you want to avoide
+
+Finally, everything is ready to turn on the cloudphish engine::
+
+  $ bin/start-cloudphish
+
 
 Enabling Modules
 ----------------
 
 Yara Scanner
 ++++++++++++
+
+First, make sure the **analysis_module_yara_scanner_v3_4** section in ``/opt/ace/etc/saq.ini`` is enabled. Then create a ``/opt/signatures`` directory::
+
+  $ mkdir /opt/signatures
+  $ cd /opt/signatures
+  
+Now place your yara signature directories in `/opt/signatures/<your yara directories>`.
+
+Create a symlink for ACE to find your signatures::
+
+  $ ln -s /opt/signatures $SAQ_HOME/etc/yara
+
+Start the yara module::
+
+  $ /opt/ace/bin/start-yss
+

@@ -8,9 +8,11 @@ ACE: Analysis Correlation Engine
 
 Release v\ |release|.
 
-ACE is a detection system and automation framework. At ACE’s foundation are its engines for recursive analysis and intuitive presentation to the analyst.
+ACE is a detection system and automation framework. At ACE’s foundation are its engines for recursive analysis and its delivery of an intuitive presentation to the analyst. ACE's goal is to reduce the analyst's time-to-disposition to as close to zero as humanly possible.
 
-Alerts are sent to ACE, and ACE handles the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. ACE will then contextually and intuitively present all the right data to the human, allowing for a quick, high confidence determination to be made.
+While ACE is a powerful detection system, and does have built in detections, ACE does not ship with all of the yara signatures and intel detections that teams have built around it. However, ACE makes it easy to load your own yara signatures and atomic indicator detections.
+
+Alerts are sent to ACE, and ACE handles the ordinary, manual, redundant, and repetitive tasks of collecting, combining, and relating data. ACE will then contextually and intuitively present all the right data to the analyst, allowing for a quick, high confidence determination to be made. 
 
 Got some new analysis that can be automated? Awesome! Add your automation, and let ACE keep working for you.
 
@@ -23,10 +25,11 @@ For the most part, custom hunting tools send alerts to ACE using ACE’s client 
 
 Regardless of skill level, ACE greatly reduces the time it takes an analyst to make a high confidence determination, or as we call it, disposition. This reduction in time-to-disposition, coupled with the appropriate hunting and tuning mindset, means that security teams can greatly increase the attack surface they cover, all while utilizing the same amount of analyst time and practically eliminating alert fatigue. Optimization good, alert fatigue bad.
 
-ACE is the implementation of a proven detection strategy, a framework for automating analysis, a central platform to launch and manage incident response activates, an email scanner, and much more.
 
 Major Features
 --------------
+
+ACE is the implementation of a proven detection strategy, a framework for automating analysis, a central platform to launch and manage incident response activates, an email scanner, and much more.
 
 + Email Scanning
 + Recursive File Scanning
@@ -34,7 +37,7 @@ Major Features
 + Intuitive Alert Presentation
 + Recursive Data Analysis & Correlation
 + Central Analyst Interface
-+ Event management
++ Event/Incident management
 + Intel Ingestion
 + Modular Design for extending automation
 

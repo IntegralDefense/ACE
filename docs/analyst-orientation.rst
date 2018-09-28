@@ -395,7 +395,7 @@ Under that email.rfc882 file observable you will see the output of the Email Ana
 
 .. figure:: _static/analysis-overview-jdoe.png
 
-With respect to this alert, ACE even rendered us a visual image of the email's HTML body. That convenient rendering shows us -- I doubt the user really purchased anything, so this email seems awfully suspicious. Note that we can also view or download that 'email.rfc822.unknown_text_html_000' file by using the dropdown next to it.
+With respect to this alert, ACE conveniently rendered us a visual image of the email's HTML body. That rendering lets us quickly see that the sender is thanking the recipient for their purchase. It seems doubtful to me that the user really purchased anything, so this email seems awfully suspicious. Note that we can also view or download that 'email.rfc822.unknown_text_html_000' file by using the dropdown next to it.
 
 Scrolling down on the same alert from the example above, we see the ‘URL Extraction Analysis’ found some URL observables. Moreover, we see that ACE found additional observables in the analysis output of those URL observables. Specifically, ACE downloaded that '66524177012457.zip' file and extracted it to reveal an executable named '66524177012457.exe'.
 
