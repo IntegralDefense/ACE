@@ -389,7 +389,7 @@ We just got this alert in the queue. Huh, looks like this email might be related
 .. figure:: _static/example-alert-in-gueue.png
    :align: center
  
-Let's open the alert and look at the Analysis Overview section to see the results ACE brought us. In the case of email alerts like this one, the 'email.rfc882' file is what ACE was given when told to create this alert. FYI, every ACE email alert will have a root level file observable named ‘email.rfc882’.
+Let's open the alert and look at the Analysis Overview section to see the results ACE brought us. In the case of email alerts like this one, the 'email.rfc882' file is what ACE was given when told to create this alert.
 
 Under that email.rfc882 file observable you will see the output of the Email Analysis module, and underneath Email Analysis you will see where ACE discovered more observables, such as the email addresses.
 
@@ -406,4 +406,30 @@ Hm, this email doesn't seem friendly at all. Perhaps that malicious tag was onto
 We got another Email Alert
 ++++++++++++++++++++++++++
 
-Here, a snarky analyst reviews a False Positive email alert and harps on how QUICKLY we should be able to disposition it.
+We just got this email alert. Judging by the tags, I'm assuming an office document is attached. It's probably an open xml office document too, since the zip tag is present. I’m assuming this because I know open xml office documents are zipped up. Of course, there could be a stand-alone zip file in the email too. Let's look and see.
+
+.. figure:: _static/email_fp_queue.png
+   :align: center
+
+When we open the alert, we see the alert header at the top. Hmm, this email alert only has one detection. Either this is really good phish and something we barely catch, or it's a false positive.
+
+.. figure:: _static/email_fp_alert_header.png
+   :align: center
+
+Let's scroll down and find that single detection. Oh, I just noticed that we're only viewing this alert's critical analysis.
+
+.. figure:: _static/email_fp_critical_view_fixed.png
+   :align: center
+
+We could click on the "View All Analysis" button if we wanted to view all of its analysis results. However, for this alert, the critical view sure makes it easy to find our only detection. Detections are marked in ACE alerts by a little red flame icon. Here we see that the flame is highlighting a yara rule that detected something in the analysis of the "Glenn Resume.docx" file. Speaking of that file, we were right about assuming it was an open xml office document.
+
+Look at this, ACE tagged the `rels_remote_references` yara rule with `high_fp_frequency`. That tells us that this specific yara rule has a high frequency of showing up in false positive alerts. Below the rule, we see that the "Malicious Frequency Analysis" module found the `rels_remote_references` yara rule only appeared in four true-positive alerts out of two hundred and ten! I don't know about you, but my gut is telling me this email alert is a false positive. Let's make sure though and click to view the "Yara Scan Results".
+
+.. figure:: _static/email_fp_yara_results.png
+   :align: center
+
+Above we can see what the yara rule detected in this docx file. And what do we see? A target reference to a file, and when looking closer we see that the file being referenced was named "Resume Template.dotm". I bet this dotm file is a leftover artifact from Glenn  using a resume template when creating this "Glenn Resume.docx" file. I'm already clicking the "Disposition" button and marking this alert FALSE_POSITIVE.
+
+Now that we've reviewed this email alert, I want to harp on how QUICKLY we should be able to disposition it.
+
+If you’re curious, the `rels_remote_references` yara rule was created to detect references to URLs or files in an open xml document's template. Such references can and have been malicious. An example would be a Microsoft Word document that references a URL and causes word to display an authentication dialog to the end-user for the purpose of harvesting the user’s credentials. This repository contains a GO script that makes it easy to do that very thing: https://github.com/ryhanson/phishery
