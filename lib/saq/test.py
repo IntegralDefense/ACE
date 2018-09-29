@@ -470,6 +470,7 @@ class GUIServer(ServerProcess):
 class ACEBasicTestCase(TestCase):
 
     def setUp(self):
+        saq.DUMP_TRACEBACKS = True
         logging.info("TEST: {}".format(self.id()))
         initialize_test_environment()
         saq.load_configuration()
@@ -480,6 +481,8 @@ class ACEBasicTestCase(TestCase):
 
         # anything logged at CRITICAL log level will cause the test the fail
         self.assertIsNone(memory_log_handler.search(lambda e: e.levelno == logging.CRITICAL))
+
+        saq.DUMP_TRACEBACKS = False
 
     def wait_for_log_entry(self, *args, **kwargs):
         try:
@@ -636,6 +639,13 @@ class ACEEngineTestCase(ACEBasicTestCase):
             engine.wait()
         except Exception as e:
             self.fail("engine failure: {}".format(e))
+
+    def disable_all_modules(self):
+        """Disables all the modules specified in the configuration file. Requires a @reset_config."""
+        for key in saq.CONFIG.keys():
+            if key.startswith('analysis_module_'):
+                saq.CONFIG[key]['enabled'] = 'no'
+        
 
 class CloudphishServer(EngineProcess):
     def __init__(self):

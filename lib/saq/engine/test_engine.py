@@ -1309,11 +1309,14 @@ class EngineTestCase(ACEEngineTestCase):
         received_commands_1 = []
 
         def command_handler_1(anp, command):
+            if command.command == ANP_COMMAND_AVAILABLE:
+                return anp.send_message(ANPCommandOK())
+
             received_commands_1.append(command)
             if len(received_commands_1) == 2:
                 control_event_1.set()
 
-            anp.send_message(ANPCommandOK())
+            anp.send_message(ANPCommandPONG(command.message))
 
         listening_address_1 = saq.CONFIG['engine_unittest']['anp_listening_address']
         listening_port_1 = saq.CONFIG['engine_unittest'].getint('anp_listening_port')
@@ -1325,9 +1328,12 @@ class EngineTestCase(ACEEngineTestCase):
         received_commands_2 = []
 
         def command_handler_2(anp, command):
+            if command.command == ANP_COMMAND_AVAILABLE:
+                return anp.send_message(ANPCommandOK())
+
             received_commands_2.append(command)
             control_event_2.set()
-            anp.send_message(ANPCommandOK())
+            anp.send_message(ANPCommandPONG(command.message))
 
         listening_address_2 = saq.CONFIG['engine_unittest']['anp_listening_address']
         listening_port_2 = saq.CONFIG['engine_unittest'].getint('anp_listening_port') + 1
@@ -1370,18 +1376,22 @@ class EngineTestCase(ACEEngineTestCase):
     def test_engine_045_anp_node_busy(self):
 
         import threading
+        import multiprocessing
         from saq.engine import MODE_CLIENT
 
-        control_event_1 = threading.Event()
-        control_event_3 = threading.Event()
+        control_event_1 = multiprocessing.Event()
+        control_event_3 = multiprocessing.Event()
 
         def command_handler_1(anp, command):
-            if not control_event_1.is_set():
-                control_event_1.set()
-                anp.send_message(ANPCommandBUSY())
-                return
+            if command.command == ANP_COMMAND_AVAILABLE:
+                if not control_event_1.is_set():
+                    control_event_1.set()
+                    return anp.send_message(ANPCommandBUSY())
+                else:
+                    return anp.send_message(ANPCommandOK())
 
-            anp.send_message(ANPCommandOK())
+            anp.send_message(ANPCommandPONG(command.message))
+            logging.info("MARKER: set control_event_3")
             control_event_3.set()
 
         listening_address_1 = saq.CONFIG['engine_unittest']['anp_listening_address']
@@ -1394,10 +1404,14 @@ class EngineTestCase(ACEEngineTestCase):
         received_commands_2 = []
 
         def command_handler_2(anp, command):
+            if command.command == ANP_COMMAND_AVAILABLE:
+                return anp.send_message(ANPCommandOK())
+
             received_commands_2.append(command)
             if len(received_commands_2) == 3:
                 control_event_2.set()
-            anp.send_message(ANPCommandOK())
+
+            anp.send_message(ANPCommandPONG(command.message))
 
         listening_address_2 = saq.CONFIG['engine_unittest']['anp_listening_address']
         listening_port_2 = saq.CONFIG['engine_unittest'].getint('anp_listening_port') + 1
@@ -1412,6 +1426,7 @@ class EngineTestCase(ACEEngineTestCase):
             def collect_client_mode(self):
                 if control_event_1.is_set():
                     if control_event_3.is_set():
+                        logging.info("MARKER: end collection")
                         self.stop_collection()
                         return True
 
@@ -1445,6 +1460,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(received_commands_2[2].message, 'test_3')
 
         self.assertTrue(control_event_3.wait(5))
+        self.kill_engine(engine)
 
         server_1.stop()
         server_2.stop()
@@ -1459,8 +1475,11 @@ class EngineTestCase(ACEEngineTestCase):
         control_event = threading.Event()
 
         def command_handler(anp, command):
+            if command.command == ANP_COMMAND_AVAILABLE:
+                return anp.send_message(ANPCommandOK())
+
             control_event.set()
-            anp.send_message(ANPCommandOK())
+            anp.send_message(ANPCommandPONG(command.message))
 
         listening_address = saq.CONFIG['engine_unittest']['anp_listening_address']
         listening_port = saq.CONFIG['engine_unittest'].getint('anp_listening_port')

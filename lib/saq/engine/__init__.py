@@ -139,6 +139,11 @@ class Engine(object):
         raise NotImplementedError()
 
     @property
+    def workload_count(self):
+        """Returns the current size of the workload."""
+        raise NotImplementedError()
+
+    @property
     def name(self):
         """This must be overridden and have a matching engine_ENGINE_NAME section in the configuration file."""
         raise NotImplementedError()
@@ -196,6 +201,9 @@ class Engine(object):
             sys.exit(1)
 
         self.config = saq.CONFIG[section_name]
+
+        # we just cache the current hostname of this engine here
+        self.hostname = socket.gethostname()
 
         # a work directory where we can find the files to work on
         self.work_dir = os.path.join(saq.SAQ_HOME, 'work', self.name)
@@ -2982,6 +2990,14 @@ class MySQLCollectionEngine(Engine):
         """Adds the given path to the sql database for collection later."""
         submit_sql_work_item(self.workload_name, path)
 
+    @property
+    def workload_count(self):
+        """Returns the current size of the workload."""
+        with get_db_connection(DB_CONFIG) as db:
+            c = db.cursor()
+            c.execute("""SELECT COUNT(*) FROM workload WHERE name = %s""", (self.workload_name,))
+            result = c.fetchone()[0]
+
 MODE_CLIENT = 'client'
 MODE_SERVER = 'server'
 MODE_LOCAL = 'local'
@@ -3010,7 +3026,7 @@ class ANPNodeEngine(Engine):
 
         # this is the index to the next server node to send work to
         # typically this just round robins
-        self.next_target_node = 0
+        self.current_node_id = 0
 
         logging.info("loaded {} anp nodes for engine {}".format(len(self.anp_node_addresses), self.name))
 
@@ -3024,26 +3040,64 @@ class ANPNodeEngine(Engine):
         # the amount of time (in seconds) that we wait to retry an anp node after failure to connect or BUSY response
         self.anp_retry_timeout = self.config.getint('anp_retry_timeout')
 
+        # the maximum size of the workload until the engine starts reporting BUSY to AVAILABLE requests
+        self.anp_workload_max_size = self.config.getint('anp_workload_max_size')
+
         # the mode the engine is running in
         # valid values are MODE_CLIENT, MODE_SERVER or MODE_LOCAL (see above)
         self.mode = self.config['mode']
 
-    def submit_command(self, command):
-        """Submits the given command to any valid, available ANP server and returns the result from that server."""
+    def submit_command(self, command, node_id=None):
+        """Submits the given command to the given ANP server specified by node_id and returns the result from that server.
+           If node_id is None then get_available_node() will be called to get the next available node.
+           Returns the command (response) received from the remote ANP server, or None if no ANP nodes are available."""
+
+        # the reason node_id can be passed in is to support the ability to perform an AVAILABLE check first
+        # otherwise the AVAILABLE check would use one node and then automatically move on to the next node
+
+        if node_id is None:
+            node_id = self.get_available_node()
+            if node_id is None:
+                return None
+
+        try:
+            self.anp_nodes[node_id].send_message(command)
+        except Exception as e:
+            logging.warning("error sending command to {} port {}: {}".format(
+                            self.anp_node_addresses[node_id][0],
+                            self.anp_node_addresses[node_id][1],
+                            e))
+
+            self.anp_nodes[node_id].close_socket()
+            self.anp_nodes[node_id] = None
+
+        try:
+            return self.anp_nodes[node_id].recv_message()
+        except Exception as e:
+            logging.warning("error receiving result from {} port {}: {}".format(
+                            self.anp_node_addresses[node_id][0],
+                            self.anp_node_addresses[node_id][1],
+                            e))
+
+            self.anp_nodes[node_id].close_socket()
+            self.anp_nodes[node_id] = None
+        
+    def next_target_node(self):
+        """Returns the next anp node_id in round robin."""
+        result = self.current_node_id
+        self.current_node_id += 1
+        if self.current_node_id >= len(self.anp_nodes):
+            self.current_node_id = 0
+
+        return result
+
+    def get_available_node(self):
+        """Return the first available ANP node, or None if none are available."""
 
         # get the next index to use
-        i = self.next_target_node
-
-        # move the current index to the next node for next time
-        # we only increment the next target node once
-        if self.next_target_node + 1 >= len(self.anp_nodes):
-            self.next_target_node = 0
-        else:
-            self.next_target_node += 1
-
         # remember the first node we tried
         # if we wrap back around to it then we're done
-        starting_i = i
+        starting_i = i = self.next_target_node()
 
         # we may end up trying more than one node...
         while True:
@@ -3058,13 +3112,12 @@ class ANPNodeEngine(Engine):
                     break
 
                 # other wise move on to the next node
-                i += 1
-                if i >= len(self.anp_nodes):
-                    i = 0
-
+                i = self.next_target_node()
                 if i == starting_i:
                     logging.warning("all anp remote nodes are in timeout")
                     return None
+
+                continue
 
             # have we initialized this connection yet?
             if self.anp_nodes[i] is None:
@@ -3080,10 +3133,7 @@ class ANPNodeEngine(Engine):
                     self.anp_nodes[i] = None
                     self.anp_node_timeouts[i] = datetime.datetime.now() + datetime.timedelta(seconds=self.anp_retry_timeout)
 
-                    i += 1
-                    if i >= len(self.anp_nodes):
-                        i = 0
-
+                    i = self.next_target_node()
                     if i == starting_i:
                         logging.error("unable to connect to any anp nodes")
                         return None
@@ -3091,8 +3141,9 @@ class ANPNodeEngine(Engine):
                     continue
 
             # at this point self.anp_nodes[i] is our node connection we want to try to use
+            # check to see if the node is available for work
             try:
-                self.anp_nodes[i].send_message(command)
+                self.anp_nodes[i].send_message(ANPCommandAVAILABLE())
             except Exception as e:
                 logging.warning("error sending command to {} port {}: {}".format(
                                 self.anp_node_addresses[i][0],
@@ -3102,16 +3153,14 @@ class ANPNodeEngine(Engine):
                 self.anp_nodes[i].close_socket()
                 self.anp_nodes[i] = None
 
-                i += 1
-                if i >= len(self.anp_nodes):
-                    i = 0
-
+                i = self.next_target_node()
                 if i == starting_i:
                     logging.error("exhausted all anp nodes")
                     return None
 
                 continue
 
+            # get the result of the availability check
             try:
                 result = self.anp_nodes[i].recv_message()
             except Exception as e:
@@ -3123,27 +3172,27 @@ class ANPNodeEngine(Engine):
                 self.anp_nodes[i].close_socket()
                 self.anp_nodes[i] = None
 
-                i += 1
-                if i >= len(self.anp_nodes):
-                    i = 0
-
+                self.next_target_node()
                 if i == starting_i:
                     logging.error("exhausted all anp nodes")
                     return None
 
                 continue
 
-            if result.command == ANP_COMMAND_BUSY:
+            if result.command == ANP_COMMAND_OK:
+                logging.debug("found available node at {} port {} index {}".format(
+                              self.anp_node_addresses[i][0],
+                              self.anp_node_addresses[i][1], i))
+                            
+                return i
+
+            elif result.command == ANP_COMMAND_BUSY:
                 logging.warning("anp node {} port {} reported busy".format(
                                 self.anp_node_addresses[i][0],
                                 self.anp_node_addresses[i][1]))
 
                 self.anp_node_timeouts[i] = datetime.datetime.now() + datetime.timedelta(seconds=self.anp_retry_timeout)
-
-                i += 1
-                if i >= len(self.anp_nodes):
-                    i = 0
-
+                i = self.next_target_node()
                 if i == starting_i:
                     logging.error("exhausted all anp nodes")
                     return None
@@ -3151,8 +3200,9 @@ class ANPNodeEngine(Engine):
                 continue
 
             else:
-                # otherwise we're done 
-                return result
+                # invalid result
+                logging.error("unexpected result from AVAILABLE request: {}".format(result))
+                return None
 
     def initialize_collection(self, *args, **kwargs):
         super().initialize_collection(*args, **kwargs)
@@ -3170,6 +3220,23 @@ class ANPNodeEngine(Engine):
 
         if self.mode == MODE_SERVER:
             self.anp_server.stop()
+        elif self.mode == MODE_CLIENT:
+            logging.info("MARKER: here")
+            # gracefully exit all existing client connections
+            for index, node in enumerate(self.anp_nodes):
+                if node is None:
+                    continue
+
+                try:
+                    logging.info("disconnecting from anp node {} port {}".format(self.anp_node_addresses[index][0],
+                                                                                 self.anp_node_addresses[index][1]))
+                    node.send_message(ANPCommandEXIT())
+                    node.close_socket()
+                except Exception as e:
+                    logging.warning("unable to close connection to {} port {}: {}".format(
+                                    self.anp_node_addresses[index][0],
+                                    self.anp_node_addresses[index][1],
+                                    e))
 
     def collect(self):
         if self.mode == MODE_CLIENT:
@@ -3186,6 +3253,11 @@ class ANPNodeEngine(Engine):
         
         if command.command == ANP_COMMAND_PING:
             anp.send_message(ANPCommandPONG(command.message))
+        elif command.command == ANP_COMMAND_AVAILABLE:
+            if self.workload_count >= self.anp_workload_max_size:
+                anp.send_message(ANPCommandBUSY())
+            else:
+                anp.send_message(ANPCommandOK())
         else:
             anp.send_message(ANPCommandERROR("unsupported command {}".format(command)))
 

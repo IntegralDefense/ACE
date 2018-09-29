@@ -3,6 +3,7 @@
 # cryptography functions used by ACE
 #
 
+import io
 import logging
 import os.path
 import random
@@ -132,7 +133,10 @@ def encrypt_chunk(chunk, password=None):
     if len(chunk) % 16 != 0:
         chunk += b' ' * (16 - len(chunk) % 16)
 
-    return struct.pack('<Q', original_size) + iv + encryptor.encrypt(chunk)
+    logging.debug("MARKER: (encrypt_chunk) original_size = {} padded_size = {}".format(original_size, len(chunk)))
+    result = struct.pack('<Q', original_size) + iv + encryptor.encrypt(chunk)
+    logging.debug("MARKER: (encrypt_chunk) total encrypted data block = {}".format(len(result)))
+    return result
 
 def decrypt(source_path, target_path=None, password=None):
     """Decrypts the given file at source_path with the given password and saves the results in target_path.
@@ -172,9 +176,17 @@ def decrypt_chunk(chunk, password=None):
     assert isinstance(password, bytes)
     assert len(password) == 32
 
-    original_size = struct.unpack('<Q', chunk[0:struct.calcsize('Q')])[0]
-    iv = chunk[struct.calcsize('Q'):struct.calcsize('Q') + 16]
-    chunk = chunk[struct.calcsize('Q') + 16:]
+    logging.debug("MARKER: (decrypt_chunk) total chunk size = {}".format(len(chunk)))
+
+    _buffer = io.BytesIO(chunk)
+    original_size = struct.unpack('<Q', _buffer.read(struct.calcsize('Q')))[0]
+    iv = _buffer.read(16)
+    chunk = _buffer.read()
+
+    #original_size = struct.unpack('<Q', chunk[0:struct.calcsize('Q')])[0]
+    #iv = chunk[struct.calcsize('Q'):struct.calcsize('Q') + 16]
+    #chunk = chunk[struct.calcsize('Q') + 16:]
     decryptor = AES.new(password, AES.MODE_CBC, iv)
+    logging.debug("MARKER: (decrypt_chunk) original_size = {} padded_size = {}".format(original_size, len(chunk)))
     result = decryptor.decrypt(chunk)
     return result[:original_size]
