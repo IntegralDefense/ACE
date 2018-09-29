@@ -33,6 +33,7 @@ __all__ = [
     'ANP_CLASS_LOOKUP',
     'ACENetworkProtocolServer',
     'anp_connect',
+    'DEFAULT_CHUNK_SIZE',
 ]
 
 import logging
@@ -83,7 +84,7 @@ class ANPSocket(object):
 
     def read_n_bytes(self, count):
         """Read N bytes from the socket."""
-        assert count
+        logging.debug("MARKER: reading {} bytes".format(count))
 
         bytes_read = 0
         byte_buffer = bytearray(count)
@@ -105,6 +106,7 @@ class ANPSocket(object):
         return bytes(byte_buffer)
 
     def write_n_bytes(self, data):
+        logging.debug("MARKER: writing {} bytes".format(len(data)))
         # make sure we're not making a bunch of copies as we write
         data = memoryview(data)
         bytes_written = 0
@@ -136,9 +138,7 @@ class ANPSocket(object):
         if data_length is None:
             return None
 
-        if data_length == 0:
-            return b''
-
+        logging.debug("MARKER: reading data block of {} bytes".format(data_length))
         result = self.read_n_bytes(data_length)
         
         # are we encrypting data?
@@ -177,9 +177,11 @@ class ANPSocket(object):
 
         self.write_uint(len(value))
         if len(value) > 0:
+            logging.debug("MARKER: writing data block of {} bytes".format(len(value)))
             self.write_n_bytes(value)
 
     def write_string(self, value):
+        logging.debug("MARKER: writing string {}".format(value))
         self.write_data(value.encode('utf16'))
 
     def write_chunked_data(self, fp):
@@ -204,10 +206,12 @@ class ANPSocket(object):
         if command is None:
             # connetion was closed
             return None
+
+        logging.debug("MARKER: read command byte {}".format(ANP_COMMAND_STRING[command]))
         
         # return the ANPMessage object corresponding to this command
         try:
-            result = ANP_CLASS_LOOKUP[command](self)
+            result = ANP_CLASS_LOOKUP[command]()
         except KeyError:
             raise ANPException("unknown command {}".format(command))
 
@@ -218,6 +222,8 @@ class ANPSocket(object):
 
         # send the 4 byte command
         self.write_uint(message.command)
+
+        logging.debug("MARKER: sent command byte {}".format(ANP_COMMAND_STRING[message.command]))
 
         # send any required parameters for the command
         message.send_parameters(self)
@@ -265,7 +271,7 @@ class ANPCommandBUSY(ANPMessage):
         super().__init__(ANP_COMMAND_BUSY, *args, **kwargs)
 
 class ANPCommandERROR(ANPMessage):
-    def __init__(self, error_message, *args, **kwargs):
+    def __init__(self, error_message=None, *args, **kwargs):
         super().__init__(ANP_COMMAND_ERROR, *args, **kwargs)
         self.error_message = error_message
 
@@ -279,7 +285,7 @@ class ANPCommandERROR(ANPMessage):
         return '{} {}'.format(ANPMessage.__str__(self), self.error_message)
 
 class ANPCommandPING(ANPMessage):
-    def __init__(self, message, *args, **kwargs):
+    def __init__(self, message=None, *args, **kwargs):
         super().__init__(ANP_COMMAND_PING, *args, **kwargs)
         self.message = message
 
@@ -293,7 +299,7 @@ class ANPCommandPING(ANPMessage):
         return '{} {}'.format(ANPMessage.__str__(self), self.message)
 
 class ANPCommandPONG(ANPMessage):
-    def __init__(self, message, *args, **kwargs):
+    def __init__(self, message=None, *args, **kwargs):
         super().__init__(ANP_COMMAND_PONG, *args, **kwargs)
         self.message = message
 
@@ -311,10 +317,27 @@ class ANPCommandAVAILABLE(ANPMessage):
         super().__init__(ANP_COMMAND_AVAILABLE, *args, **kwargs)
 
 class ANPCommandCOPY_FILE(ANPMessage):
-    def __init__(self, path, source_path=None, *args, **kwargs):
+    def __init__(self, path=None, source_path=None, *args, **kwargs):
         super().__init__(ANP_COMMAND_COPY_FILE, *args, **kwargs)
-        self.path = path
+
+        # the path to the file to be copied to the remote system
         self.source_path = source_path
+
+        # target path the file will be copied to remotely
+        self.path = path
+
+    @property
+    def path(self):
+        return self._path
+    
+    @path.setter
+    def path(self, value):
+        # this must be relative to SAQ_HOME, if it's not then it will be made relative to SAQ_HOME
+        if value is not None and os.path.isabs(value):
+            if value.startswith(saq.SAQ_HOME):
+                self._path = os.path.relpath(value, start=saq.SAQ_HOME)
+        else:
+            self._path = value
 
     def recv_parameters(self, anp):
         self.path = anp.read_string()
@@ -322,6 +345,7 @@ class ANPCommandCOPY_FILE(ANPMessage):
         # TODO make sure this relative path is valid
         # like make sure the target directory is valid for COPY_FILE command destinations
 
+        #logging.info("MARKER: home {} path {}".format(saq.SAQ_HOME, self.path))
         full_path = os.path.join(saq.SAQ_HOME, self.path)
         logging.debug("target file is {}".format(full_path))
         dir_path = os.path.dirname(full_path)
@@ -344,7 +368,7 @@ class ANPCommandCOPY_FILE(ANPMessage):
         return '{} {}'.format(ANPMessage.__str__(self), self.path)
 
 class ANPCommandPROCESS(ANPMessage):
-    def __init__(self, target, *args, **kwargs):
+    def __init__(self, target=None, *args, **kwargs):
         super().__init__(ANP_COMMAND_PROCESS, *args, **kwargs)
         self.target = target
 
@@ -456,11 +480,11 @@ class ACENetworkProtocolServer(object):
             self.tcp_server_socket.settimeout(1)
             self.tcp_server_socket.bind((self.tcp_server_socket_host, self.tcp_server_socket_port))
             self.tcp_server_socket.listen(5)
+            logging.debug("listening for connections on {} port {}".format(self.tcp_server_socket_host,
+                                                                           self.tcp_server_socket_port))
 
         # get the next client connection
         try:
-            logging.debug("listening for connections on {} port {}".format(self.tcp_server_socket_host,
-                                                                           self.tcp_server_socket_port))
             client_socket, client_address = self.tcp_server_socket.accept()
             logging.info("got connection from {}".format(client_address[0]))
         except socket.timeout:
@@ -478,7 +502,8 @@ class ACENetworkProtocolServer(object):
         anp = ANPSocket(client_socket)
         while not socket_closed and not self.control_event.is_set():
             try:
-                self.tcp_client_execute(anp, client_address)
+                if not self.tcp_client_execute(anp, client_address):
+                    break
             except Exception as e:
                 logging.warning("error when handling client request: {}".format(e))
                 #report_exception() # TODO remove this
@@ -492,20 +517,26 @@ class ACENetworkProtocolServer(object):
         self.tcp_client_threads.remove(threading.current_thread())
 
     def tcp_client_execute(self, anp, client_address):
+        # read the command issued by the client
         command = anp.recv_message()
+        # did the connection die?
         if command is None:
             return False
 
         logging.info("received command {} from {}".format(command, client_address))
 
+        # if we received the EXIT command then the server is NOT expected to send anything in response
+        # and the socket should close
         if command.command == ANP_COMMAND_EXIT:
-            return False
+            return False # returning False causes the tcp client thread to close the socket and exit
 
         try:
             self.command_handler(anp, command)
+            return True
         except Exception as e:
             logging.error("error processing command {}: {}".format(command, e))
             report_exception()
+            return False
 
     def close_tcp_server_socket(self):
         if self.tcp_server_socket:

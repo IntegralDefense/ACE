@@ -158,7 +158,8 @@ event http_message_done(c: connection, is_orig: bool, stat: http_message_stat) {
     if (c$ace_http_state$extracting_request || c$ace_http_state$extracting_reply) {
         # save request information
         f = open_for_append(fmt("%s.request", get_target_http_filename(c)));
-        write_file(f, fmt("%s\n%s\n%s\n%s\n", 
+        write_file(f, fmt("%s\n%s\n%s\n%s\n%s\n", 
+                          c$id$orig_h,
                           c$ace_http_state$request_method, 
                           c$ace_http_state$request_original_URI, 
                           c$ace_http_state$request_unescaped_URI, 
@@ -171,7 +172,12 @@ event http_message_done(c: connection, is_orig: bool, stat: http_message_stat) {
 
         # save reply information
         f = open_for_append(fmt("%s.reply", get_target_http_filename(c)));
-        write_file(f, fmt("%s\n%s\%s\n", c$ace_http_state$reply_version, c$ace_http_state$reply_code, c$ace_http_state$reply_reason));
+        write_file(f, fmt("%s\t%d\n%s\n%s\n%s\n", 
+                          c$id$resp_h,
+                          c$id$resp_p,
+                          c$ace_http_state$reply_version, 
+                          c$ace_http_state$reply_code, 
+                          c$ace_http_state$reply_reason));
         for (i in c$ace_http_state$reply_headers)
             write_file(f, fmt("%s\t%s\n", c$ace_http_state$reply_headers[i]$name, c$ace_http_state$reply_headers[i]$value));
 

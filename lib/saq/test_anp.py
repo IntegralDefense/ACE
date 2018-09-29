@@ -27,8 +27,14 @@ class ANPTestCase(ACEBasicTestCase):
         self.source_file = os.path.join('var', 'anp_sample_data.input')
         self.target_file = os.path.join('var', 'anp_sample_data.output')
 
+        if os.path.exists(self.source_file):
+            os.unlink(self.source_file)
+
+        if os.path.exists(self.target_file):
+            os.unlink(self.target_file)
+
         with open(self.source_file, 'wb') as fp:
-            fp.write(b'Hello, world from fp!')
+            fp.write(os.urandom((DEFAULT_CHUNK_SIZE * 2) + 1))
 
         self.old_password = saq.ENCRYPTION_PASSWORD
         saq.ENCRYPTION_PASSWORD = None
@@ -36,11 +42,12 @@ class ANPTestCase(ACEBasicTestCase):
     def tearDown(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
-        if os.path.exists(self.source_file):
-            os.unlink(self.source_file)
+        #if os.path.exists(self.source_file):
+            #os.unlink(self.source_file)
 
-        if os.path.exists(self.target_file):
-            os.unlink(self.target_file)
+        #if os.path.exists(self.target_file):
+            #os.unlink(self.target_file)
+
 
         saq.ENCRYPTION_PASSWORD = self.old_password
     
@@ -164,8 +171,8 @@ class ANPTestCase(ACEBasicTestCase):
     def test_anp_002_server(self):
 
         sent_messages = [
-            ANPCommandPING('test'),
             ANPCommandAVAILABLE(),
+            ANPCommandPING('test'),
             ANPCommandCOPY_FILE(self.target_file, source_path=self.source_file),
             ANPCommandPROCESS(self.target_file),
         ]
@@ -173,9 +180,7 @@ class ANPTestCase(ACEBasicTestCase):
         received_messages = []
 
         def command_handler(anp, command):
-            nonlocal received_messages
             received_messages.append(command)
-
             anp.send_message(ANPCommandOK())
 
         server = ACENetworkProtocolServer(ANP_SERVER_HOST, ANP_SERVER_PORT, command_handler)

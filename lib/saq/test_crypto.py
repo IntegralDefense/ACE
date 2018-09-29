@@ -24,3 +24,10 @@ class ACECryptoTestCase(ACEBasicTestCase):
         self.assertNotEquals(chunk, encrypted_chunk)
         decrypted_chunk = decrypt_chunk(encrypted_chunk)
         self.assertEquals(chunk, decrypted_chunk)
+
+    def test_anp_001_encrypt_empty_chunks(self):
+        chunk = b''
+        encrypted_chunk = encrypt_chunk(chunk)
+        self.assertNotEquals(chunk, encrypted_chunk)
+        decrypted_chunk = decrypt_chunk(encrypted_chunk)
+        self.assertEquals(chunk, decrypted_chunk)
