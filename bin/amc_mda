@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+# vim: sw=4:ts=4:et:cc=120
+
+import io
+import logging
+import logging.config
+import logging.handlers
+import os
+import os.path
+import sys
+import uuid
+
+from contextlib import closing
+from configparser import ConfigParser
+
+import pymysql
+
+def connect_db():
+    return closing(pymysql.connect(host=config.mysql_host,
+                                   unix_socket=config.mysql_unix_socket,
+                                   user=config.mysql_username,
+                                   password=config.mysql_password,
+                                   db=config.mysql_database))
+
+class Config(object):
+    args = None
+    data_dir = 'var/incoming/amc'
+    logging_config_path = 'etc/amc_logging_mda.ini'
+    base_dir = '/opt/ace'
+    mysql_host = 'localhost'
+    mysql_unix_socket = '/var/run/mysqld/mysqld.sock'
+    mysql_username = 'ace-user'
+    mysql_password = '' # yeah I know
+    mysql_database = 'amc'
+
+def mda():
+    """Accepts an email on standard input and places into storage for transfer by the mta() function."""
+    # just use a random uuid to store the email on the filesystem
+    _id = str(uuid.uuid4())
+    _dir = os.path.join(config.data_dir, _id[0:2])
+    _path = os.path.join(_dir, _id)
+
+    try:
+        os.mkdir(_dir)
+    except:
+        # just let this fail -- if it's really an error then the file write will fail too
+        pass
+
+    try:
+        with open(_path, 'wb') as fp:
+            while True:
+                line = sys.stdin.buffer.readline()
+                if line == b'':
+                    break
+
+                fp.write(line)
+
+    except Exception as e:
+        logging.error("failed to save email: {}".format(e))
+        return
+
+    try:
+        with connect_db() as db:
+            c = db.cursor()
+            c.execute("""INSERT INTO emails ( path ) VALUES ( %s )""", (_path,))
+            db_id = c.lastrowid
+            db.commit()
+            
+            logging.info("inbound email {} database id {}".format(_path, db_id))
+
+    except Exception as e:
+        logging.error("unable to update database: {}".format(e))
+
+if __name__ == '__main__':
+
+    import argparse
+    global args
+    global base_dir
+
+    parser = argparse.ArgumentParser(description="ACE Mailbox Client")
+    parser.add_argument('--base-dir', required=False, dest='base_dir', default=None,
+        help="Base directory for amc (defaults to /opt/ace)")
+    parser.add_argument('-c', '--config', required=False, dest='config', 
+        default=os.path.join('etc', 'amc_mda.ini'),
+        help="Path to config file. Relative paths are relative from base directory.")
+    parser.add_argument('-L', '--logging-config-path', required=False, dest='logging_config_path', 
+        default=os.path.join('etc', 'amc_mda_logging.ini'),
+        help="Path to the logging configuration file. Relative paths are relative from base directory.")
+    parser.add_argument('--log-level', required=False, dest='log_level', default=None,
+        help="Change the root log level.")
+
+    parser.add_argument('--data-dir', required=False, dest='data_dir', default=None,
+        help="Relative directory where emails are locally stored for transport. "
+             "Overrides value specified in configuration file.")
+
+    parser.add_argument('--mysql-host', required=False, dest='mysql_host', default=None,
+        help="MySQL database settings.")
+    parser.add_argument('--mysql-unix-socket', required=False, dest='mysql_unix_socket', default=None,
+        help="MySQL database settings.")
+    parser.add_argument('--mysql-user', required=False, dest='mysql_username', default=None,
+        help="MySQL database settings.")
+    parser.add_argument('--mysql-password', required=False, dest='mysql_password', default=None,
+        help="MySQL database settings.")
+    parser.add_argument('--mysql-database', required=False, dest='mysql_database', default=None,
+        help="MySQL database settings.")
+
+    args = parser.parse_args()
+
+    config = Config()
+    config.args = args
+
+    if args.base_dir:
+        config.base_dir = args.base_dir
+
+    try:
+        os.chdir(config.base_dir)
+    except Exception as e:
+        sys.stderr.write("unable to cd into {}: {}\n".format(config.base_dir, e))
+        sys.exit(1)
+
+    sys.path.append(os.path.join(config.base_dir, 'lib'))
+
+    if args.logging_config_path:
+        config.logging_config_path = args.logging_config_path
+
+    # initialize logging
+    if not os.path.exists(config.logging_config_path):
+        sys.stderr.write("logging configuration file {} does not exist\n".format(config.logging_config_path))
+        sys.exit(1)
+
+    try:
+        logging.config.fileConfig(config.logging_config_path)
+    except Exception as e:
+        sys.stderr.write("unable to initialize logging: {}\n".format(e))
+        sys.exit(1)
+
+    if args.log_level:
+        try:
+            logging.getLogger().setLevel(args.log_level)
+        except Exception as e:
+            sys.stderr.write("unable to set logging level {}: {}\n".format(args.log_level, e))
+
+    # load settings from configuration file
+    config_file = ConfigParser(allow_no_value=True)
+    config_file.read(args.config)
+
+    if args.data_dir:
+        config.data_dir = args.data_dir
+    else:
+        config.data_dir = config_file['amc']['data_dir']
+
+    if args.mysql_host:
+        config.mysql_host = args.mysql_host
+    else:
+        config.mysql_host = config_file['database']['host']
+
+    if args.mysql_unix_socket:
+        config.mysql_unix_socket = args.mysql_unix_socket
+    else:
+        config.mysql_unix_socket = config_file['database']['unix_socket']
+
+    if args.mysql_username:
+        config.mysql_username = args.mysql_username
+    else:
+        config.mysql_username = config_file['database']['username']
+
+    if args.mysql_password:
+        config.mysql_password = args.mysql_password
+    else:
+        config.mysql_password = config_file['database']['password']
+
+    if args.mysql_database:
+        config.mysql_database = args.mysql_database
+    else:
+        config.mysql_database = config_file['database']['database']
+
+    mda()
+
+    sys.exit(0)

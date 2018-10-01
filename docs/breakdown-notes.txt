@@ -1,0 +1,52 @@
+Background:
+
+    Detection: is Hard.
+
+    Alert Triage: is an Art.
+
+    False Positive Philosopy
+
+    Detection Points
+
+    Attack Surface
+
+    Visibility
+
+    Dispositioning
+    
+Philosopy:
+
+    False Positives
+    
+    Disposition Time
+    
+    Intuitive Display
+    
+    Recursive Analyis
+    
+    Tagging
+    
+    Observables
+    
+    Hunting & Tunning
+    
+    
+Big Picutre:
+
+    Log aggregator
+    
+    Detection/Intel loop
+    
+    Hunters
+    
+    Metrics
+    
+    Intel Process
+    
+    Events
+    
+    Dispositioning
+    
+Analyst Orentation
+
+    Core concepts for working alerts: Observables & Dispositioning

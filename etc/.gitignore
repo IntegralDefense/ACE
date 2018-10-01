@@ -39,3 +39,6 @@ startup
 validation_hash
 FLAG_EXTRACT_ARCHIVES
 crits-ssdeep/
+pcap_extract.ini
+amc_mda.ini
+amc_mda_logging.ini

@@ -49,10 +49,10 @@ then
         saq.modules.test_url \
         saq.modules.test_file_analysis \
         saq.modules.test_email \
+        saq.engine.test_cloudphish \
+        saq.test_detection \
 
         # TODO reintroduce these next two somehow
-        #saq.engine.test_cloudphish \
-        #saq.test_detection \
 
         #saq.test_pds \
         #saq.modules.test_pds \
@@ -81,11 +81,4 @@ then
     echo "*** ERRORS REPORTED ** "
     echo
     cat error_reports/* 2> /dev/null
-fi
-
-# restore the original saq.ini
-if [ -e etc/saq.ini.saved ]
-then
-    rm -f etc/saq.ini
-    mv etc/saq.ini.saved etc/saq.ini
 fi
