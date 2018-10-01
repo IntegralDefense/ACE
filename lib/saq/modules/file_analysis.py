@@ -653,7 +653,10 @@ class ArchiveAnalyzer(AnalysisModule):
                     local_file_path, count, self.max_file_count))
                 return False
 
-        logging.debug("extracting {} files from archive {}".format(count, local_file_path))
+        if count == 0:
+            return False
+
+        logging.info("extracting {} files from archive {}".format(count, local_file_path))
 
         # we need a place to store these things
         extracted_path = '{}.extracted'.format(local_file_path).replace('*', '_') # XXX need a normalize function
@@ -2184,6 +2187,11 @@ class YaraScanner_v3_4(AnalysisModule):
         return saq.YSS_BASE_DIR
 
     @property
+    def socket_dir(self):
+        """Relative directory of the socket directory of the yara scanner server."""
+        return saq.YSS_SOCKET_DIR
+
+    @property
     def generated_analysis_type(self):
         return YaraScanResults_v3_4
 
@@ -2297,7 +2305,7 @@ class YaraScanner_v3_4(AnalysisModule):
                 _full_path = local_file_path
                 if not os.path.isabs(local_file_path):
                     _full_path = os.path.join(os.getcwd(), local_file_path)
-                result = yara_scanner.scan_file(_full_path, base_dir=self.base_dir)
+                result = yara_scanner.scan_file(_full_path, base_dir=self.base_dir, socket_dir=self.socket_dir)
                 matches_found = bool(result)
 
                 logging.debug("scanned file {} with yss (matches found: {})".format(_full_path, matches_found))

@@ -21,8 +21,8 @@ for p in \
 	"SQLAlchemy==1.2.7" \
 	"WTForms==2.0.2" \
 	"iptools" \
-	"ldap3 " \
-	"pyasn1==0.1.8 " \
+	"ldap3==2.5 " \
+	"pyasn1 " \
 	"pymongo==2.8 --upgrade " \
 	"setuptools_git " \
 	"requests --upgrade " \
@@ -45,6 +45,7 @@ for p in \
 	"python-magic" \
 	"oletools" \
 	"pcodedmp" \
+    "Pillow" \
 	"splunklib" \
 	"yara_scanner" \
 	"vxstreamlib" \

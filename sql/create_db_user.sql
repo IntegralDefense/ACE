@@ -3,6 +3,7 @@ FLUSH PRIVILEGES;
 CREATE USER 'ace-user'@'localhost' IDENTIFIED BY 'ACE_DB_USER_PASSWORD';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `ace`.* TO 'ace-user'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `ace-workload`.* TO 'ace-user'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `amc`.* TO 'ace-user'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `brocess`.* TO 'ace-user'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `email-archive`.* TO 'ace-user'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `hal9000`.* TO 'ace-user'@'localhost';

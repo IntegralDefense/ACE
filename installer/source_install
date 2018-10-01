@@ -39,18 +39,31 @@ then
     exit 1
 fi
 
+echo "How do you want to run the gui?"
+echo "Apache - Run the gui in Apache"
+echo "Debug - Run the gui in debug mode from the command line"
+select gui in Apache Debug; do
+	case ${gui} in
+		#Apache ) sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
+		Apache ) break ;;
+		Debug ) break ;;
+	esac
+done
+
 create_ace_dirs || fail "cannot create required directories"
 
 # install the required packages
 sudo -E installer/install_packages.sh || fail "package installation failed"
-sudo -H -E installer/install_python_packages.sh || fail "python package installation failed"
+#sudo -H -E installer/install_python_packages.sh || fail "python package installation failed"
+sudo -H -E python3 -m pip install -r installer/requirements-3.6.txt || fail "python3.6 package installation failed"
+sudo -H -E python2 -m pip install -r installer/requirements-2.7.txt || fail "python2.7 package installation failed"
 sudo -E installer/install_database.sh || fail "database installation failed"
 sudo -E bin/reset-unittest-databases || fail "unittest database installation failed"
 
 # set up environment
 echo -e "\\nsource $SAQ_HOME/load_environment" >> ~/.bashrc
 
-for l in ace apache brotex carbon_black email_scanner http_scanner gui
+for l in ace apache amc_mda amc_client brotex carbon_black email_scanner http_scanner gui
 do
 	if [ ! -e etc/$l\_logging.ini ]
 	then
@@ -62,6 +75,10 @@ if [ ! -e etc/saq.local.ini ]; then cp -a etc/saq.example.ini etc/saq.local.ini 
 if [ ! -L etc/saq.ini ]; then ln -s saq.local.ini etc/saq.ini || fail "unable to symlink saq.ini"; fi
 if [ ! -e etc/brotex.whitelist ]; then cp -a etc/brotex.whitelist.sample etc/brotex.whitelist || fail "unable to configure brotex.whitelist"; fi
 if [ ! -e etc/startup ]; then cp -a etc/startup.example etc/startup || fail "unable to configure startup"; fi
+if [ ! -e etc/remote_assignments.yar ]; then cp etc/remote_assignments.example.yar etc/remote_assignments.yar; fi
+if [ ! -e etc/blacklist.yar ]; then cp etc/blacklist.example.yar etc/blacklist.yar; fi
+if [ ! -e etc/amc_mda.ini ]; then cp etc/amc_mda.example.ini etc/amc_mda.ini; fi
+if [ ! -e etc/amc_client.ini ]; then cp etc/amc_client.example.ini etc/amc_client.ini; fi
 
 if grep ACE_DB_USER_PASSWORD etc/saq.ini > /dev/null 2>&1
 then
@@ -69,7 +86,11 @@ then
 	tr -cd '[:alnum:]' < /dev/urandom | fold -w14 | head -n1 > .mysql.password.sed
 	# modify the configuration files to use it
 	sed -i -e 's;^;s/ACE_DB_USER_PASSWORD/;' -e 's;$;/g;' .mysql.password.sed
-	sed -i -f .mysql.password.sed --follow-symlinks etc/saq.ini
+    for path in etc/saq.ini etc/amc_mda.ini etc/amc_client.ini
+    do
+        sed -i -f .mysql.password.sed --follow-symlinks "$path"
+    done
+
 	sed -f .mysql.password.sed sql/create_db_user.sql > sql/create_db_user.exec.sql
 	sed -f .mysql.password.sed etc/mysql_defaults.example > etc/mysql_defaults && chmod 660 etc/mysql_defaults 
 	rm .mysql.password.sed
@@ -92,7 +113,7 @@ then
 	sudo mysql < sql/create_unittest_db_user.exec.sql && rm sql/create_unittest_db_user.exec.sql
 fi
 
-if grep SAQ_SECRET_KEY etc/saq.ini > /dev/null 2>&1
+if grep ACE_SECRET_KEY etc/saq.ini > /dev/null 2>&1
 then
 	echo "generating random secret key for flask"
 	tr -cd '[:alnum:]' < /dev/urandom | fold -w30 | head -n1 > .gui_secret_key.sed
@@ -115,17 +136,21 @@ if [ ! -e etc/local_networks.csv ]; then echo 'Indicator,Indicator_Type' > etc/l
 if [ ! -e ssl/web/localhost.key.pem ] || [ ! -e ssl/web/localhost.cert.pem ]
 then
 	openssl req -x509 -newkey rsa:4096 -keyout ssl/web/localhost.key.pem -out ssl/web/localhost.cert.pem -days 365 -nodes -subj '/CN=localhost'
+    ln -s "$SAQ_HOME/ssl/web/localhost.cert.pem" "$SAQ_HOME/ssl/ca-chain.cert.pem"
 fi
 
-echo "How do you want to run the gui?"
-echo "Apache - Run the gui in Apache"
-echo "Debug - Run the gui in debug mode from the command line"
-select gui in Apache Debug; do
-	case ${gui} in
-		Apache ) sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace"; break ;;
-		Debug ) break ;;
-	esac
+if [ "${gui}" == "Apache" ]
+then
+    sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace";
+fi
+
+echo "Do you want to run the unit tests? This is not a required step."
+select yn in Yes No; do
+    case ${yn} in
+        Yes ) source load_environment ; ./test ;;
+        No ) break ;;
+    esac
 done
 
-source load_environment
-./test
+echo next steps:
+echo "cd $SAQ_HOME && source load_environment"

@@ -1,0 +1,23 @@
+ 
+What do we consider to be high-level tip toe?
+
+The tip-toe high-level items need to be focused on the problem ACE solves for the analyst and the security team. 
+That problem is reducing the time it takes analyst to disposition false positive alerts and recognize true positive alerts.
+
+So, need to cover observable analysis and correlation right from the git-go. Make the analysts understand that this tool makes their job easier. 
+
+Next, maybe maybe at the tip-toe is hunting and tuning to increase the attack surface.
+
+    Hunting + Tunning == Coverage++
+
+Idea -> Postulate -> Strategy -> Tactic -> Tool
+
+- Superman performing Alert Triage
+ACE turns the entry level analyst into a Superman.
+
+    - The Alter Triage process of observing -> 
+    
+    - The attack surface! Enabling its coverage
+    
+    
+
