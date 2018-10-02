@@ -55,8 +55,8 @@ create_ace_dirs || fail "cannot create required directories"
 # install the required packages
 sudo -E installer/install_packages.sh || fail "package installation failed"
 #sudo -H -E installer/install_python_packages.sh || fail "python package installation failed"
-sudo -H -E python3 -m pip install -r installer/requirements-3.6.txt || fail "python3.6 package installation failed"
-sudo -H -E python2 -m pip install -r installer/requirements-2.7.txt || fail "python2.7 package installation failed"
+sudo -H -E python3 -m pip install -r installer/requirements-3.6.txt -U || fail "python3.6 package installation failed"
+sudo -H -E python2 -m pip install -r installer/requirements-2.7.txt -U || fail "python2.7 package installation failed"
 sudo -E installer/install_database.sh || fail "database installation failed"
 sudo -E bin/reset-unittest-databases || fail "unittest database installation failed"
 
