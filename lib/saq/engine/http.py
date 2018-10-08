@@ -131,27 +131,26 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
             return False
 
     def collect_client_mode(self):
-        # gather extracted http files and submit them to the server node
-        stream_prefix = self.get_next_stream()
+        while not self.collection_shutdown:
+            # gather extracted http files and submit them to the server node
+            stream_prefix = self.get_next_stream()
 
-        if stream_prefix is None:
-            # nothing to do right now...
-            logging.debug("no streams available to send")
-            return False
+            if stream_prefix is None:
+                # nothing to do right now...
+                logging.debug("no streams available to send")
+                return False
 
-        # do we have an anp node to send data to?
-        node_id = self.get_available_node()
-        if node_id is None:
-            logging.info("waiting for available ANP node...")
-            return False
+            # do we have an anp node to send data to?
+            node_id = self.get_available_node()
+            if node_id is None:
+                logging.info("waiting for available ANP node...")
+                return False
 
-        try:
-            self.submit_stream(stream_prefix, node_id)
-        except Exception as e:
-            logging.error("unable to submit stream {}: {}".format(stream_prefix, e))
-            report_exception() 
-
-        return True
+            try:
+                self.submit_stream(stream_prefix, node_id)
+            except Exception as e:
+                logging.error("unable to submit stream {}: {}".format(stream_prefix, e))
+                report_exception() 
 
     def collect_local_mode(self):
         # gather extracted files and just process them
