@@ -21,7 +21,8 @@ def report_exception():
     _, reported_exception, _ = sys.exc_info()
 
     # spit it out to stdout first
-    #traceback.print_exc()
+    if saq.DUMP_TRACEBACKS:
+        traceback.print_exc()
 
     try:
         output_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['error_reporting_dir'])

@@ -28,6 +28,7 @@ import saq.analysis
 import saq.database
 
 from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, ProfilePointAnalyzer
+from saq.anp import *
 from saq.constants import *
 from saq.database import Alert, get_db_connection, release_cached_db_connection, enable_cached_db_connections
 from saq.error import report_exception
@@ -138,6 +139,11 @@ class Engine(object):
         raise NotImplementedError()
 
     @property
+    def workload_count(self):
+        """Returns the current size of the workload."""
+        raise NotImplementedError()
+
+    @property
     def name(self):
         """This must be overridden and have a matching engine_ENGINE_NAME section in the configuration file."""
         raise NotImplementedError()
@@ -195,6 +201,9 @@ class Engine(object):
             sys.exit(1)
 
         self.config = saq.CONFIG[section_name]
+
+        # we just cache the current hostname of this engine here
+        self.hostname = socket.gethostname()
 
         # a work directory where we can find the files to work on
         self.work_dir = os.path.join(saq.SAQ_HOME, 'work', self.name)
@@ -2376,7 +2385,6 @@ class Engine(object):
                                     work_item.dependency.increment_status()
                                     work_stack.appendleft(WorkTarget(observable=self.root.get_observable(work_item.dependency.source_observable_id),
                                                                      analysis_module=self._get_analysis_module_by_generated_analysis(work_item.dependency.source_analysis_type)))
-                                    #logging.info("MARKER: first")
 
                                 # if we do have output analysis and it's not delayed then we move on to analyze
                                 # the source target again
@@ -2385,7 +2393,6 @@ class Engine(object):
                                     logging.debug("dependency status updated {}".format(work_item.dependency))
                                     work_stack.appendleft(WorkTarget(observable=self.root.get_observable(work_item.dependency.source_observable_id),
                                                                      analysis_module=self._get_analysis_module_by_generated_analysis(work_item.dependency.source_analysis_type)))
-                                    #logging.info("MARKER: second")
 
                                 # otherwise (if it's delayed) then we need to wait
                                 else:
@@ -2960,11 +2967,11 @@ class MySQLCollectionEngine(Engine):
 
                 logging.debug("got path {} id {}".format(path, _id))
 
-                if not os.path.exists(path):
-                    logging.error("file {} does not exist".format(path))
-                else:
-                    # submit the file for processing
-                    self.add_work_item(path)
+                #if not os.path.exists(path):
+                    #logging.error("file {} does not exist".format(path))
+                #else:
+                    ## submit the file for processing
+                self.add_work_item(path)
 
                 # remove it from the database workload
                 c.execute("""DELETE FROM workload WHERE id = %s""", (_id,))
@@ -2982,3 +2989,304 @@ class MySQLCollectionEngine(Engine):
     def add_sql_work_item(self, path):
         """Adds the given path to the sql database for collection later."""
         submit_sql_work_item(self.workload_name, path)
+
+    @property
+    def workload_count(self):
+        """Returns the current size of the workload."""
+        with get_db_connection(DB_CONFIG) as db:
+            c = db.cursor()
+            c.execute("""SELECT COUNT(*) FROM workload WHERE name = %s""", (self.workload_name,))
+            return c.fetchone()[0]
+
+MODE_CLIENT = 'client'
+MODE_SERVER = 'server'
+MODE_LOCAL = 'local'
+
+# a CLIENT node collects the work to be done and sends them to a SERVER node
+# a SERVER node receives work to be done from a CLIENT node
+# a LOCAL node collects the work like the CLIENT does but processes it locally instead of sending it
+
+class ANPNodeEngine(Engine):
+    """An engine that can run remotely and pass collected work items to another engine."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # in the case of a client mode, this is the list of servers we are sending working to
+        # this is a tuple of host
+        self.anp_node_addresses = []
+        for host_spec in self.config.get('anp_nodes', saq.CONFIG['anp_defaults']['anp_nodes']).split(','):
+            host, port = host_spec.split(':')
+            self.anp_node_addresses.append((host, int(port)))
+
+        # the actual ANPSocket connections to these nodes
+        self.anp_nodes = [None for _ in self.anp_node_addresses]
+
+        # if a node returns ANP_COMMAND_BUSY or is unavailable then we stop trying to send it commands for some period of time
+        self.anp_node_timeouts = [None for _ in self.anp_node_addresses] # list of datetime.datetime objects
+
+        # this is the index to the next server node to send work to
+        # typically this just round robins
+        self.current_node_id = 0
+
+        logging.info("loaded {} anp nodes for engine {}".format(len(self.anp_node_addresses), self.name))
+
+        # listening interface for server mode nodes
+        self.anp_listening_address = self.config.get('anp_listening_address', 
+                                                      saq.CONFIG['anp_defaults']['anp_listening_address'])
+        self.anp_listening_port = self.config.getint('anp_listening_port',
+                                                      saq.CONFIG['anp_defaults'].getint('anp_listening_port'))
+
+        # the ACENetworkProtocolServer for server mode engines
+        self.anp_server = None
+
+        # the amount of time (in seconds) that we wait to retry an anp node after failure to connect or BUSY response
+        self.anp_retry_timeout = self.config.getint('anp_retry_timeout',
+                                                    saq.CONFIG['anp_defaults'].getint('anp_retry_timeout'))
+
+        # the maximum size of the workload until the engine starts reporting BUSY to AVAILABLE requests
+        self.anp_workload_max_size = self.config.getint('anp_workload_max_size')
+
+        # the mode the engine is running in
+        # valid values are MODE_CLIENT, MODE_SERVER or MODE_LOCAL (see above)
+        self.mode = self.config['mode']
+
+        # ssl certificates and settings
+        # if these are missing or None, then the [anp_defaults] section is used instead
+        self.ssl_ca_path = self.config.get('ssl_ca_path', saq.CONFIG['anp_defaults']['ssl_ca_path'])
+        self.ssl_cert_path = self.config.get('ssl_cert_path', saq.CONFIG['anp_defaults']['ssl_cert_path'])
+        self.ssl_key_path = self.config.get('ssl_key_path', saq.CONFIG['anp_defaults']['ssl_key_path'])
+        self.ssl_hostname = self.config.get('ssl_hostname', saq.CONFIG['anp_defaults']['ssl_hostname'])
+
+    def submit_command(self, command, node_id=None):
+        """Submits the given command to the given ANP server specified by node_id and returns the result from that server.
+           If node_id is None then get_available_node() will be called to get the next available node.
+           Returns the command (response) received from the remote ANP server, or None if no ANP nodes are available."""
+
+        # the reason node_id can be passed in is to support the ability to perform an AVAILABLE check first
+        # otherwise the AVAILABLE check would use one node and then automatically move on to the next node
+
+        if node_id is None:
+            node_id = self.get_available_node()
+            if node_id is None:
+                return None
+
+        try:
+            self.anp_nodes[node_id].send_message(command)
+        except Exception as e:
+            logging.warning("error sending command to {} port {}: {}".format(
+                            self.anp_node_addresses[node_id][0],
+                            self.anp_node_addresses[node_id][1],
+                            e))
+
+            self.anp_nodes[node_id].close_socket()
+            self.anp_nodes[node_id] = None
+
+        try:
+            return self.anp_nodes[node_id].recv_message()
+        except Exception as e:
+            logging.warning("error receiving result from {} port {}: {}".format(
+                            self.anp_node_addresses[node_id][0],
+                            self.anp_node_addresses[node_id][1],
+                            e))
+
+            self.anp_nodes[node_id].close_socket()
+            self.anp_nodes[node_id] = None
+        
+    def next_target_node(self):
+        """Returns the next anp node_id in round robin."""
+        result = self.current_node_id
+        self.current_node_id += 1
+        if self.current_node_id >= len(self.anp_nodes):
+            self.current_node_id = 0
+
+        return result
+
+    def get_available_node(self):
+        """Return the first available ANP node, or None if none are available."""
+
+        # get the next index to use
+        # remember the first node we tried
+        # if we wrap back around to it then we're done
+        starting_i = i = self.next_target_node()
+
+        # we may end up trying more than one node...
+        while True:
+            # is this node in a timeeout?
+            while self.anp_node_timeouts[i] is not None:
+                # are we past the timeout yet?
+                if datetime.datetime.now() >= self.anp_node_timeouts[i]:
+                    logging.info("anp remote node {}:{} available for retry after timeout".format(
+                                  self.anp_node_addresses[i][0], self.anp_node_addresses[i][1]))
+
+                    self.anp_node_timeouts[i] = None
+                    break
+
+                # other wise move on to the next node
+                i = self.next_target_node()
+                if i == starting_i:
+                    logging.warning("all anp remote nodes are in timeout")
+                    return None
+
+                continue
+
+            # have we initialized this connection yet?
+            if self.anp_nodes[i] is None:
+                try:
+                    self.anp_nodes[i] = anp_connect(self.anp_node_addresses[i][0], self.anp_node_addresses[i][1],
+                                                    ssl_ca_path=self.ssl_ca_path,
+                                                    ssl_cert_path=self.ssl_cert_path,
+                                                    ssl_key_path=self.ssl_key_path,
+                                                    ssl_hostname=self.ssl_hostname)
+                except Exception as e:
+                    logging.warning("unable to connect to {} port {}: {}".format(
+                                    self.anp_node_addresses[i][0],
+                                    self.anp_node_addresses[i][1],
+                                    e))
+
+                    # unable to connect -- move on to the next node
+                    self.anp_nodes[i] = None
+                    self.anp_node_timeouts[i] = datetime.datetime.now() + datetime.timedelta(seconds=self.anp_retry_timeout)
+
+                    i = self.next_target_node()
+                    if i == starting_i:
+                        logging.error("unable to connect to any anp nodes")
+                        return None
+
+                    continue
+
+            # at this point self.anp_nodes[i] is our node connection we want to try to use
+            # check to see if the node is available for work
+            try:
+                self.anp_nodes[i].send_message(ANPCommandAVAILABLE())
+            except Exception as e:
+                logging.warning("error sending command to {} port {}: {}".format(
+                                self.anp_node_addresses[i][0],
+                                self.anp_node_addresses[i][1],
+                                e))
+
+                self.anp_nodes[i].close_socket()
+                self.anp_nodes[i] = None
+
+                i = self.next_target_node()
+                if i == starting_i:
+                    logging.error("exhausted all anp nodes")
+                    return None
+
+                continue
+
+            # get the result of the availability check
+            try:
+                result = self.anp_nodes[i].recv_message()
+            except Exception as e:
+                logging.warning("error receiving result from {} port {}: {}".format(
+                                self.anp_node_addresses[i][0],
+                                self.anp_node_addresses[i][1],
+                                e))
+
+                self.anp_nodes[i].close_socket()
+                self.anp_nodes[i] = None
+
+                self.next_target_node()
+                if i == starting_i:
+                    logging.error("exhausted all anp nodes")
+                    return None
+
+                continue
+
+            if result.command == ANP_COMMAND_OK:
+                logging.debug("found available node at {} port {} index {}".format(
+                              self.anp_node_addresses[i][0],
+                              self.anp_node_addresses[i][1], i))
+                            
+                return i
+
+            elif result.command == ANP_COMMAND_BUSY:
+                logging.warning("anp node {} port {} reported busy".format(
+                                self.anp_node_addresses[i][0],
+                                self.anp_node_addresses[i][1]))
+
+                self.anp_node_timeouts[i] = datetime.datetime.now() + datetime.timedelta(seconds=self.anp_retry_timeout)
+                i = self.next_target_node()
+                if i == starting_i:
+                    logging.error("exhausted all anp nodes")
+                    return None
+
+                continue
+
+            else:
+                # invalid result
+                logging.error("unexpected result from AVAILABLE request: {}".format(result))
+                return None
+
+    def initialize_collection(self, *args, **kwargs):
+        super().initialize_collection(*args, **kwargs)
+
+        # if we are in server mode, then we start our ANP network protocol listener
+        if self.mode == MODE_SERVER:
+            self.anp_server = ACENetworkProtocolServer(self.anp_listening_address,
+                                                       self.anp_listening_port,
+                                                       self.anp_command_handler)
+
+            self.anp_server.start()
+
+    def stop_collection(self, *args, **kwargs):
+        super().stop_collection(*args, **kwargs)
+
+        if self.mode == MODE_SERVER:
+            self.anp_server.stop()
+        elif self.mode == MODE_CLIENT:
+            logging.info("MARKER: here")
+            # gracefully exit all existing client connections
+            for index, node in enumerate(self.anp_nodes):
+                if node is None:
+                    continue
+
+                try:
+                    logging.info("disconnecting from anp node {} port {}".format(self.anp_node_addresses[index][0],
+                                                                                 self.anp_node_addresses[index][1]))
+                    node.send_message(ANPCommandEXIT())
+                    node.close_socket()
+                except Exception as e:
+                    logging.warning("unable to close connection to {} port {}: {}".format(
+                                    self.anp_node_addresses[index][0],
+                                    self.anp_node_addresses[index][1],
+                                    e))
+
+    def collect(self):
+        if self.mode == MODE_CLIENT:
+            return self.collect_client_mode()
+        elif self.mode == MODE_SERVER:
+            return self.collect_server_mode()
+        else:
+            return self.collect_local_mode()
+
+    def default_command_handler(self, anp, command):
+        """Implements the default command handling.
+           When you override the anp_command_handler you can call this command as the default if you find a command
+           you don't handle in your subclass."""
+        
+        if command.command == ANP_COMMAND_PING:
+            anp.send_message(ANPCommandPONG(command.message))
+        elif command.command == ANP_COMMAND_AVAILABLE:
+            if self.workload_count >= self.anp_workload_max_size:
+                anp.send_message(ANPCommandBUSY())
+            else:
+                anp.send_message(ANPCommandOK())
+        else:
+            anp.send_message(ANPCommandERROR("unsupported command {}".format(command)))
+
+    def anp_command_handler(self, anp, command):
+        """Called when an ANP message is received."""
+        raise NotImplementedError()
+
+    def collect_client_mode(self):
+        """Called to collect work to perform and submit it to a remote ANP node."""
+        raise NotImplementedError()
+
+    def collect_server_mode(self):
+        """Called when work is submitted from a client."""
+        raise NotImplementedError()
+
+    def collect_local_mode(self):
+        """Called when the node is operating in local mode (not using ANP at all.)"""
+        raise NotImplementedError()
