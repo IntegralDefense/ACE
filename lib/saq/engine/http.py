@@ -15,7 +15,7 @@ from saq.constants import *
 from saq.engine import Engine, MySQLCollectionEngine, ANPNodeEngine
 from saq.error import report_exception
 
-REGEX_CONNECTION_ID = re.compile(r'^(C[^\.]+\.\d)\.ready$')
+REGEX_CONNECTION_ID = re.compile(r'^(C[^\.]+\.\d+)\.ready$')
 HTTP_DETAILS_REQUEST = 'request'
 HTTP_DETAILS_REPLY = 'reply'
 HTTP_DETAILS_READY = 'ready'
