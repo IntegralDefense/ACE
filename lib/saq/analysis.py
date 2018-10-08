@@ -2380,6 +2380,9 @@ class RootAnalysis(LocalLockableObject, Analysis):
             target_dir = os.path.join(target_dir, '.ace')
             if not os.path.exists(target_dir):
                 os.makedirs(target_dir)
+
+            logging.debug("initialized storage directory {}".format(target_dir))
+
         except Exception as e:
             logging.error("unable to initialize storage: {}".format(e))
             report_exception()

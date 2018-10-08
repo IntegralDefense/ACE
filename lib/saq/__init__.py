@@ -70,6 +70,10 @@ EXCLUDED_SLA_ALERT_TYPES = []
 YSS_BASE_DIR = None
 YSS_SOCKET_DIR = None
 
+# set to True to cause tracebacks to be dumped to standard output
+# useful when debugging or testing
+DUMP_TRACEBACKS = False
+
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
         super().__init__(*args, **kwargs)

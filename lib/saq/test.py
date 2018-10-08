@@ -30,6 +30,7 @@ __all__ = [
     'force_alerts',
     'protect_production',
     'GUIServer',
+    'search_log',
 ]
 
 import atexit
@@ -38,8 +39,8 @@ import logging
 import os, os.path
 import shutil
 import sys
-import time
 import threading
+import time
 
 from multiprocessing import Manager, RLock, Pipe
 from unittest import TestCase
@@ -210,15 +211,15 @@ class MemoryLogHandler(logging.Handler):
             del test_log_messages[:]
 
     def search(self, condition):
-        """Searches all log records for condition(record) to be True. Returns the LogRecord that was True, or None
-           if nothing matched."""
+        """Searches and returns all log records for which condition(record) was True. Returns the list of LogRecord that matched."""
 
+        result = []
         with test_log_sync:
             for message in test_log_messages:
                 if condition(message):
-                    return message
+                    result.append(message)
 
-            return None
+        return result
 
     def wait_for_log_entry(self, callback, timeout=5, count=1):
         """Waits for callback to return True count times before timeout seconds expire.
@@ -289,6 +290,9 @@ def wait_for_log_count(text, count, timeout=5):
         return text in e.getMessage()
 
     return memory_log_handler.wait_for_log_entry(condition, timeout, count)
+
+def search_log(text):
+    return memory_log_handler.search(lambda log_record: text in log_record.getMessage())
 
 def splunk_query(search_string, *args, **kwargs):
     config = saq.CONFIG['splunk']
@@ -470,6 +474,7 @@ class GUIServer(ServerProcess):
 class ACEBasicTestCase(TestCase):
 
     def setUp(self):
+        saq.DUMP_TRACEBACKS = True
         logging.info("TEST: {}".format(self.id()))
         initialize_test_environment()
         saq.load_configuration()
@@ -479,7 +484,9 @@ class ACEBasicTestCase(TestCase):
         close_test_comms()
 
         # anything logged at CRITICAL log level will cause the test the fail
-        self.assertIsNone(memory_log_handler.search(lambda e: e.levelno == logging.CRITICAL))
+        self.assertFalse(memory_log_handler.search(lambda e: e.levelno == logging.CRITICAL))
+
+        saq.DUMP_TRACEBACKS = False
 
     def wait_for_log_entry(self, *args, **kwargs):
         try:
@@ -579,9 +586,7 @@ class ACEEngineTestCase(ACEBasicTestCase):
         self.server_processes['cloudphish'] = CloudphishServer()
         self.server_processes['cloudphish'].start()
 
-    def tearDown(self):
-        ACEBasicTestCase.tearDown(self)
-        
+    def stop_tracked_engine(self):
         if self.tracked_engine:
             try:
                 self.tracked_engine.stop()
@@ -591,6 +596,10 @@ class ACEEngineTestCase(ACEBasicTestCase):
                 report_exception()
             finally:
                 self.tracked_engine = None
+
+    def tearDown(self):
+        ACEBasicTestCase.tearDown(self)
+        self.stop_tracked_engine()
 
         for key in self.server_processes.keys():
             self.server_processes[key].stop()
@@ -634,6 +643,13 @@ class ACEEngineTestCase(ACEBasicTestCase):
             engine.wait()
         except Exception as e:
             self.fail("engine failure: {}".format(e))
+
+    def disable_all_modules(self):
+        """Disables all the modules specified in the configuration file. Requires a @reset_config."""
+        for key in saq.CONFIG.keys():
+            if key.startswith('analysis_module_'):
+                saq.CONFIG[key]['enabled'] = 'no'
+        
 
 class CloudphishServer(EngineProcess):
     def __init__(self):
