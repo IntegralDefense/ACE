@@ -16,6 +16,9 @@ from saq.engine import Engine, MySQLCollectionEngine, ANPNodeEngine
 from saq.error import report_exception
 
 REGEX_CONNECTION_ID = re.compile(r'^(C[^\.]+\.\d)\.ready$')
+HTTP_DETAILS_REQUEST = 'request'
+HTTP_DETAILS_REPLY = 'reply'
+HTTP_DETAILS_READY = 'ready'
 
 #
 # In local mode the http engine is collecting files directly from bro as it dumps them
@@ -63,6 +66,7 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
             anp.send_message(ANPCommandOK())
         elif command.command == ANP_COMMAND_PROCESS:
             self.add_sql_work_item(command.target)
+            anp.send_message(ANPCommandOK())
         else:
             self.default_command_handler(anp, command)
 
@@ -99,6 +103,7 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
                 # no servers available at the moment
                 return False
             elif result.command == ANP_COMMAND_OK:
+                sent_files.append(source_file)
                 continue
             elif result.command == ANP_COMMAND_ERROR:
                 raise RuntimeError("remote server returned error message: {}".fomrat(result.error_message))
@@ -114,6 +119,7 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
             # if we get this far then all the files have been sent
             for sent_file in sent_files:
                 try:
+                    logging.info("removing {}".format(sent_file))
                     os.remove(sent_file)
                 except Exception as e:
                     logging.error("unable to delete {}: {}".format(sent_file, e))
@@ -174,6 +180,12 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
         # header_length = 494
         #
 
+        details = {
+            HTTP_DETAILS_REQUEST: [],
+            HTTP_DETAILS_REPLY: [],
+            HTTP_DETAILS_READY: [],
+        }
+
         base_path = os.path.join(self.bro_http_dir, stream_prefix)
         # the ready file contains stream summary info
         ready_path = '{}.ready'.format(base_path)
@@ -199,6 +211,7 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
 
         with open(ready_path, 'r') as fp:
             for line in fp:
+                details[HTTP_DETAILS_READY].append(line.strip())
                 key, value = [_.strip() for _ in line.split(' = ')]
                 
                 if key == 'time':
@@ -219,7 +232,14 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
             request_unescaped_uri = fp.readline().strip()
             request_version = fp.readline().strip()
 
+            details[HTTP_DETAILS_REQUEST].append(request_ipv4)
+            details[HTTP_DETAILS_REQUEST].append(request_method)
+            details[HTTP_DETAILS_REQUEST].append(request_original_uri)
+            details[HTTP_DETAILS_REQUEST].append(request_unescaped_uri)
+            details[HTTP_DETAILS_REQUEST].append(request_version)
+
             for line in fp:
+                details[HTTP_DETAILS_REQUEST].append(line.strip())
                 key, value = [_.strip() for _ in line.split('\t')]
                 request_headers.append((key, value))
                 request_headers_lookup[key.lower()] = value
@@ -235,13 +255,20 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
 
         if os.path.exists(reply_path):
             with open(reply_path, 'r') as fp:
-                reply_ipv4, reply_port = [_.strip() for _ in fp.readline().split('\t')]
+                first_line = fp.readline()
+                details[HTTP_DETAILS_REPLY].append(first_line)
+                reply_ipv4, reply_port = [_.strip() for _ in first_line.split('\t')]
                 reply_port = int(reply_port)
                 reply_version = fp.readline().strip()
                 reply_code = fp.readline().strip()
                 reply_reason = fp.readline().strip()
 
+                details[HTTP_DETAILS_REPLY].append(reply_version)
+                details[HTTP_DETAILS_REPLY].append(reply_code)
+                details[HTTP_DETAILS_REPLY].append(reply_reason)
+
                 for line in fp:
+                    details[HTTP_DETAILS_REPLY].append(line.strip())
                     key, value = [_.strip() for _ in line.split('\t')]
                     reply_headers.append((key, value))
                     reply_headers_lookup[key.lower()] = value

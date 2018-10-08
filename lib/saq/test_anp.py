@@ -275,19 +275,3 @@ class ANPTestCase(ACEBasicTestCase):
         server.stop()
         for t in client_threads:
             t.join()
-
-    def test_anp_005_encrypted_basic_io(self):
-        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
-        self.test_anp_000_basic_io()
-
-    def test_anp_006_encrypted_message_io(self):
-        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
-        self.test_anp_001_message_io()
-        
-    def test_anp_007_encrypted_server(self):
-        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
-        self.test_anp_002_server()
-    
-    def test_anp_008_encrypted_multiple_connections(self):
-        saq.ENCRYPTION_PASSWORD = get_aes_key('testing')
-        self.test_anp_004_multiple_connections()
