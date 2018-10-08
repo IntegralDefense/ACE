@@ -36,13 +36,14 @@ __all__ = [
     'DEFAULT_CHUNK_SIZE',
 ]
 
+import io
 import logging
 import os.path
 import socket
+import ssl
+import struct
 import threading
 import time
-import struct
-import io
 
 import saq
 from saq.crypto import encrypt_chunk, decrypt_chunk
@@ -84,7 +85,7 @@ class ANPSocket(object):
 
     def read_n_bytes(self, count):
         """Read N bytes from the socket."""
-        logging.debug("MARKER: reading {} bytes".format(count))
+        #logging.debug("MARKER: reading {} bytes".format(count))
 
         bytes_read = 0
         byte_buffer = bytearray(count)
@@ -106,7 +107,7 @@ class ANPSocket(object):
         return bytes(byte_buffer)
 
     def write_n_bytes(self, data):
-        logging.debug("MARKER: writing {} bytes".format(len(data)))
+        #logging.debug("MARKER: writing {} bytes".format(len(data)))
         # make sure we're not making a bunch of copies as we write
         data = memoryview(data)
         bytes_written = 0
@@ -138,14 +139,8 @@ class ANPSocket(object):
         if data_length is None:
             return None
 
-        logging.debug("MARKER: reading data block of {} bytes".format(data_length))
-        result = self.read_n_bytes(data_length)
-        
-        # are we encrypting data?
-        if saq.ENCRYPTION_PASSWORD is None:
-            return result
-
-        return decrypt_chunk(result)
+        #logging.debug("MARKER: reading data block of {} bytes".format(data_length))
+        return self.read_n_bytes(data_length)
 
     def read_string(self):
         _bytes = self.read_data()
@@ -172,16 +167,13 @@ class ANPSocket(object):
         self.write_n_bytes(struct.pack(ULONG_FORMAT, value))
 
     def write_data(self, value):
-        if saq.ENCRYPTION_PASSWORD:
-            value = encrypt_chunk(value)
-
         self.write_uint(len(value))
         if len(value) > 0:
-            logging.debug("MARKER: writing data block of {} bytes".format(len(value)))
+            #logging.debug("MARKER: writing data block of {} bytes".format(len(value)))
             self.write_n_bytes(value)
 
     def write_string(self, value):
-        logging.debug("MARKER: writing string {}".format(value))
+        #logging.debug("MARKER: writing string {}".format(value))
         self.write_data(value.encode('utf16'))
 
     def write_chunked_data(self, fp):
@@ -207,7 +199,7 @@ class ANPSocket(object):
             # connetion was closed
             return None
 
-        logging.debug("MARKER: read command byte {}".format(ANP_COMMAND_STRING[command]))
+        #logging.debug("MARKER: read command byte {}".format(ANP_COMMAND_STRING[command]))
         
         # return the ANPMessage object corresponding to this command
         try:
@@ -223,14 +215,43 @@ class ANPSocket(object):
         # send the 4 byte command
         self.write_uint(message.command)
 
-        logging.debug("MARKER: sent command byte {}".format(ANP_COMMAND_STRING[message.command]))
+        #logging.debug("MARKER: sent command byte {}".format(ANP_COMMAND_STRING[message.command]))
 
         # send any required parameters for the command
         message.send_parameters(self)
 
+        #logging.debug("MARKER: finished command {}".format(ANP_COMMAND_STRING[message.command]))
+
 # utility class for clients
-def anp_connect(host, port):
+def anp_connect(host, port, ssl_ca_path=None, ssl_cert_path=None, ssl_key_path=None, ssl_hostname=None):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    if ssl_ca_path is None:
+        ssl_ca_path = saq.CONFIG['anp_defaults']['ssl_ca_path']
+    if ssl_cert_path is None:
+        ssl_cert_path = saq.CONFIG['anp_defaults']['ssl_cert_path']
+    if ssl_key_path is None:
+        ssl_key_path = saq.CONFIG['anp_defaults']['ssl_key_path']
+    if ssl_hostname is None:
+        ssl_hostname = saq.CONFIG['anp_defaults']['ssl_hostname']
+
+    ssl_ca_path = os.path.join(saq.SAQ_HOME, ssl_ca_path)
+    ssl_cert_path = os.path.join(saq.SAQ_HOME, ssl_cert_path)
+    ssl_key_path = os.path.join(saq.SAQ_HOME, ssl_key_path)
+
+    context = ssl.create_default_context()
+
+    if not os.path.exists(ssl_ca_path):
+        logging.warning("missing ssl_ca_path {}".format(ssl_ca_path))
+    if not os.path.exists(ssl_cert_path):
+        logging.warning("missing ssl_cert_path {}".format(ssl_cert_path))
+    if not os.path.exists(ssl_key_path):
+        logging.warning("missing ssl_key_path {}".format(ssl_key_path))
+
+    context.load_verify_locations(ssl_ca_path)
+    context.load_cert_chain(ssl_cert_path, keyfile=ssl_key_path)
+
+    s = context.wrap_socket(s, server_hostname=ssl_hostname)
     s.connect((host, port))
     return ANPSocket(s)
 
@@ -424,7 +445,8 @@ ANP_CLASS_LOOKUP = {
 #
 
 class ACENetworkProtocolServer(object):
-    def __init__(self, listening_host, listening_port, command_handler):
+    def __init__(self, listening_host, listening_port, command_handler, 
+                 ssl_ca_path=None, ssl_key_path=None, ssl_cert_path=None):
 
         # the interface to listen on for client connections
         self.listening_host = listening_host
@@ -432,6 +454,21 @@ class ACENetworkProtocolServer(object):
 
         # the function that gets called when a command is received
         self.command_handler = command_handler
+
+        if ssl_ca_path is None:
+            ssl_ca_path = saq.CONFIG['anp_defaults']['ssl_ca_path']
+        if ssl_key_path is None:
+            ssl_key_path = saq.CONFIG['anp_defaults']['ssl_key_path']
+        if ssl_cert_path is None:
+            ssl_cert_path = saq.CONFIG['anp_defaults']['ssl_cert_path']
+
+        # SSL certificate locations
+        self.ssl_ca_path = os.path.join(saq.SAQ_HOME, ssl_ca_path)
+        self.ssl_key_path = os.path.join(saq.SAQ_HOME, ssl_key_path)
+        self.ssl_cert_path = os.path.join(saq.SAQ_HOME, ssl_cert_path)
+
+        # and then the ssl context we're using for the server
+        self.ssl_context = None
 
         # server socket objects for TCP communication
         self.tcp_server_thread = None
@@ -475,11 +512,36 @@ class ACENetworkProtocolServer(object):
         # do we need to start listening for new connections?
         # if something goes wrong we just shut down the socket and try again
         if not self.tcp_server_socket:
+
+            #self.ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            self.ssl_context = ssl.create_default_context()
+            self.ssl_context.check_hostname = False
+            self.ssl_context.verify_mode = ssl.CERT_NONE
+
+            #logging.debug("loading certificate chain certfile {} keyfile {}".format(
+                         #os.path.join(saq.SAQ_HOME, self.config['ssl_cert_path']),
+                         #os.path.join(saq.SAQ_HOME, self.config['ssl_key_path'])))
+
+            if not os.path.exists(self.ssl_ca_path):
+                logging.warning("missing ssl_ca_path file {}".format(self.ssl_ca_path))
+
+            self.ssl_context.load_verify_locations(self.ssl_ca_path)
+
+            if not os.path.exists(self.ssl_cert_path):
+                logging.warning("missing ssl_cert_path file {}".format(self.ssl_cert_path))
+
+            if not os.path.exists(self.ssl_key_path):
+                logging.warning("missing key file {}".format(self.ssl_key_path))
+
+            self.ssl_context.load_cert_chain(certfile=self.ssl_cert_path, keyfile=self.ssl_key_path)
+
             self.tcp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.tcp_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.tcp_server_socket.settimeout(1)
             self.tcp_server_socket.bind((self.tcp_server_socket_host, self.tcp_server_socket_port))
+            self.tcp_server_socket = self.ssl_context.wrap_socket(self.tcp_server_socket, server_side=True)
             self.tcp_server_socket.listen(5)
+
             logging.debug("listening for connections on {} port {}".format(self.tcp_server_socket_host,
                                                                            self.tcp_server_socket_port))
 

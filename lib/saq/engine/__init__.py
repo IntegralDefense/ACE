@@ -2967,11 +2967,11 @@ class MySQLCollectionEngine(Engine):
 
                 logging.debug("got path {} id {}".format(path, _id))
 
-                if not os.path.exists(path):
-                    logging.error("file {} does not exist".format(path))
-                else:
-                    # submit the file for processing
-                    self.add_work_item(path)
+                #if not os.path.exists(path):
+                    #logging.error("file {} does not exist".format(path))
+                #else:
+                    ## submit the file for processing
+                self.add_work_item(path)
 
                 # remove it from the database workload
                 c.execute("""DELETE FROM workload WHERE id = %s""", (_id,))
@@ -2996,7 +2996,7 @@ class MySQLCollectionEngine(Engine):
         with get_db_connection(DB_CONFIG) as db:
             c = db.cursor()
             c.execute("""SELECT COUNT(*) FROM workload WHERE name = %s""", (self.workload_name,))
-            result = c.fetchone()[0]
+            return c.fetchone()[0]
 
 MODE_CLIENT = 'client'
 MODE_SERVER = 'server'
@@ -3014,7 +3014,7 @@ class ANPNodeEngine(Engine):
         # in the case of a client mode, this is the list of servers we are sending working to
         # this is a tuple of host
         self.anp_node_addresses = []
-        for host_spec in self.config['anp_nodes'].split(','):
+        for host_spec in self.config.get('anp_nodes', saq.CONFIG['anp_defaults']['anp_nodes']).split(','):
             host, port = host_spec.split(':')
             self.anp_node_addresses.append((host, int(port)))
 
@@ -3031,14 +3031,17 @@ class ANPNodeEngine(Engine):
         logging.info("loaded {} anp nodes for engine {}".format(len(self.anp_node_addresses), self.name))
 
         # listening interface for server mode nodes
-        self.anp_listening_address = self.config['anp_listening_address']
-        self.anp_listening_port = self.config.getint('anp_listening_port')
+        self.anp_listening_address = self.config.get('anp_listening_address', 
+                                                      saq.CONFIG['anp_defaults']['anp_listening_address'])
+        self.anp_listening_port = self.config.getint('anp_listening_port',
+                                                      saq.CONFIG['anp_defaults'].getint('anp_listening_port'))
 
         # the ACENetworkProtocolServer for server mode engines
         self.anp_server = None
 
         # the amount of time (in seconds) that we wait to retry an anp node after failure to connect or BUSY response
-        self.anp_retry_timeout = self.config.getint('anp_retry_timeout')
+        self.anp_retry_timeout = self.config.getint('anp_retry_timeout',
+                                                    saq.CONFIG['anp_defaults'].getint('anp_retry_timeout'))
 
         # the maximum size of the workload until the engine starts reporting BUSY to AVAILABLE requests
         self.anp_workload_max_size = self.config.getint('anp_workload_max_size')
@@ -3046,6 +3049,13 @@ class ANPNodeEngine(Engine):
         # the mode the engine is running in
         # valid values are MODE_CLIENT, MODE_SERVER or MODE_LOCAL (see above)
         self.mode = self.config['mode']
+
+        # ssl certificates and settings
+        # if these are missing or None, then the [anp_defaults] section is used instead
+        self.ssl_ca_path = self.config.get('ssl_ca_path', saq.CONFIG['anp_defaults']['ssl_ca_path'])
+        self.ssl_cert_path = self.config.get('ssl_cert_path', saq.CONFIG['anp_defaults']['ssl_cert_path'])
+        self.ssl_key_path = self.config.get('ssl_key_path', saq.CONFIG['anp_defaults']['ssl_key_path'])
+        self.ssl_hostname = self.config.get('ssl_hostname', saq.CONFIG['anp_defaults']['ssl_hostname'])
 
     def submit_command(self, command, node_id=None):
         """Submits the given command to the given ANP server specified by node_id and returns the result from that server.
@@ -3122,7 +3132,11 @@ class ANPNodeEngine(Engine):
             # have we initialized this connection yet?
             if self.anp_nodes[i] is None:
                 try:
-                    self.anp_nodes[i] = anp_connect(self.anp_node_addresses[i][0], self.anp_node_addresses[i][1])
+                    self.anp_nodes[i] = anp_connect(self.anp_node_addresses[i][0], self.anp_node_addresses[i][1],
+                                                    ssl_ca_path=self.ssl_ca_path,
+                                                    ssl_cert_path=self.ssl_cert_path,
+                                                    ssl_key_path=self.ssl_key_path,
+                                                    ssl_hostname=self.ssl_hostname)
                 except Exception as e:
                     logging.warning("unable to connect to {} port {}: {}".format(
                                     self.anp_node_addresses[i][0],
