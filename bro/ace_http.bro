@@ -5,7 +5,7 @@ function should_record(data: string):bool {
     # return T if we should record this chunk of data
     # or F if we should not
 
-    if (/^%PDF/i in data) return T;
+    if (/^%[Pp][Dd][Ff]/ in data) return T;
     if (/^\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1/ in data) return T;
     if (/^MZ/ in data) return T;
     if (/^\x04\x03\x4b\x50/ in data) return T;
@@ -63,9 +63,9 @@ event http_reply(c: connection, version: string, code: count, reason: string) {
 
 event http_header(c: connection, is_orig: bool, name: string, value: string) {
     if (is_orig) {
-        c$ace_http_state$request_headers += [$name=name, $value=value];
+        c$ace_http_state$request_headers[|c$ace_http_state$request_headers|] = [$name=name, $value=value];
     } else {
-        c$ace_http_state$reply_headers += [$name=name, $value=value];
+        c$ace_http_state$reply_headers[|c$ace_http_state$reply_headers|] = [$name=name, $value=value];
     }
 }
 
