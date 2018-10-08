@@ -1,9 +1,28 @@
 @load ace/ace_local.bro
 
-function should_record(data: string):bool {
+type Idx: record {
+    network: subnet;
+};
+
+type Val: record {
+    reason: string;
+};
+
+# the list of networks we whitelist is stored in /opt/ace/bro/http.whitelist
+global http_whitelist: table[subnet] of Val = table();
+
+event bro_init() {
+    Input::add_table([$source="/opt/ace/bro/http.whitelist", $name="http.whitelist", $idx=Idx, $val=Val, $destination=http_whitelist, $mode=Input::REREAD]);
+}
+
+function should_record(c: connection, data: string):bool {
     # this function receives the first chunk of data from an HTTP stream
     # return T if we should record this chunk of data
     # or F if we should not
+
+    # check the whitelist first...
+    if (c$id$orig_h in http_whitelist) return F;
+    if (c$id$resp_h in http_whitelist) return F;
 
     if (/^%[Pp][Dd][Ff]/ in data) return T;
     if (/^\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1/ in data) return T;
@@ -80,7 +99,7 @@ event http_entity_data(c: connection, is_orig: bool, length: count, data: string
     # is this the first chunk of data received?
     if (c$ace_http_state$message_size == 0) {
         # should we record this message?
-        c$ace_http_state$extracting_request = should_record(data);
+        c$ace_http_state$extracting_request = should_record(c, data);
 
     }
 
@@ -118,7 +137,7 @@ event http_entity_data(c: connection, is_orig: bool, length: count, data: string
     # is this the first chunk of data received?
     if (c$ace_http_state$message_size == 0) {
         # should we record this message?
-        c$ace_http_state$extracting_reply = should_record(data);
+        c$ace_http_state$extracting_reply = should_record(c, data);
 
     }
 
