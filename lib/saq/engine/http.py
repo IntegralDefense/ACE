@@ -232,6 +232,9 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
             request_unescaped_uri = fp.readline().strip()
             request_version = fp.readline().strip()
 
+            logging.info("processing {} ipv4 {} method {} uri {}".format(stream_prefix, request_ipv4,
+                                                                         request_method, request_original_uri))
+
             details[HTTP_DETAILS_REQUEST].append(request_ipv4)
             details[HTTP_DETAILS_REQUEST].append(request_method)
             details[HTTP_DETAILS_REQUEST].append(request_original_uri)
