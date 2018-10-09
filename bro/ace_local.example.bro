@@ -18,10 +18,6 @@ function record_http_stream(c: connection, data: string):bool {
     # return T if we should record this chunk of data
     # or F if we should not
 
-    # check the whitelist first...
-    if (c$id$orig_h in http_whitelist) return F;
-    if (c$id$resp_h in http_whitelist) return F;
-
     if (/^%[Pp][Dd][Ff]/ in data) return T;
     if (/^\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1/ in data) return T;
     if (/^MZ/ in data) return T;
