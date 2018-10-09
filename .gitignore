@@ -119,3 +119,4 @@ yss/.yss.pid
 backups/
 data/
 extra/
+bro/ace_local.bro
