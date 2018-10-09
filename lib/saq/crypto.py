@@ -3,9 +3,11 @@
 # cryptography functions used by ACE
 #
 
+import io
 import logging
 import os.path
 import random
+import struct
 
 import Crypto.Random
 
@@ -88,8 +90,6 @@ def encrypt(source_path, target_path, password=None):
        If password is None then saq.ENCRYPTION_PASSWORD is used instead.
        password must be a byte string 32 bytes in length."""
 
-    import struct
-
     if password is None:
         password = saq.ENCRYPTION_PASSWORD
 
@@ -114,13 +114,35 @@ def encrypt(source_path, target_path, password=None):
 
                 fp_out.write(encryptor.encrypt(chunk))
 
+def encrypt_chunk(chunk, password=None):
+    """Encrypts the given chunk of data and returns the encrypted chunk.
+       If password is None then saq.ENCRYPTION_PASSWORD is used instead.
+       password must be a byte string 32 bytes in length."""
+
+    if password is None:
+        password = saq.ENCRYPTION_PASSWORD
+
+    assert isinstance(password, bytes)
+    assert len(password) == 32
+
+    iv = Crypto.Random.OSRNG.posix.new().read(AES.block_size)
+    encryptor = AES.new(password, AES.MODE_CBC, iv)
+
+    original_size = len(chunk)
+
+    if len(chunk) % 16 != 0:
+        chunk += b' ' * (16 - len(chunk) % 16)
+
+    logging.debug("MARKER: (encrypt_chunk) original_size = {} padded_size = {}".format(original_size, len(chunk)))
+    result = struct.pack('<Q', original_size) + iv + encryptor.encrypt(chunk)
+    logging.debug("MARKER: (encrypt_chunk) total encrypted data block = {}".format(len(result)))
+    return result
+
 def decrypt(source_path, target_path=None, password=None):
     """Decrypts the given file at source_path with the given password and saves the results in target_path.
        If target_path is None then output will be sent to standard output.
        If password is None then saq.ENCRYPTION_PASSWORD is used instead.
        password must be a byte string 32 bytes in length."""
-
-    import struct
 
     if password is None:
         password = saq.ENCRYPTION_PASSWORD
@@ -142,3 +164,29 @@ def decrypt(source_path, target_path=None, password=None):
                 fp_out.write(decryptor.decrypt(chunk))
 
             fp_out.truncate(original_size)
+
+def decrypt_chunk(chunk, password=None):
+    """Decrypts the given encrypted chunk with the given password and returns the decrypted chunk.
+       If password is None then saq.ENCRYPTION_PASSWORD is used instead.
+       password must be a byte string 32 bytes in length."""
+
+    if password is None:
+        password = saq.ENCRYPTION_PASSWORD
+
+    assert isinstance(password, bytes)
+    assert len(password) == 32
+
+    logging.debug("MARKER: (decrypt_chunk) total chunk size = {}".format(len(chunk)))
+
+    _buffer = io.BytesIO(chunk)
+    original_size = struct.unpack('<Q', _buffer.read(struct.calcsize('Q')))[0]
+    iv = _buffer.read(16)
+    chunk = _buffer.read()
+
+    #original_size = struct.unpack('<Q', chunk[0:struct.calcsize('Q')])[0]
+    #iv = chunk[struct.calcsize('Q'):struct.calcsize('Q') + 16]
+    #chunk = chunk[struct.calcsize('Q') + 16:]
+    decryptor = AES.new(password, AES.MODE_CBC, iv)
+    logging.debug("MARKER: (decrypt_chunk) original_size = {} padded_size = {}".format(original_size, len(chunk)))
+    result = decryptor.decrypt(chunk)
+    return result[:original_size]

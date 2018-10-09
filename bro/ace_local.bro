@@ -14,7 +14,7 @@ function record_smtp_stream(c: connection):bool {
 }
 
 function log_debug_message(msg: string) {
-    local f:file = open_for_append("/opt/ace/extra_bro/debug_bro.txt");
+    local f:file = open_for_append("/opt/ace/logs/bro_debug.log");
     print f, fmt("%s", msg);
     close(f);
 }

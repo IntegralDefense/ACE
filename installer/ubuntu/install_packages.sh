@@ -25,15 +25,16 @@ apt-get -y install \
     unrar \
     libxml2-dev libxslt1-dev \
     libyaml-dev \
-    npm \
     ssdeep \
     python-pip \
     python3-pip \
 	poppler-utils \
     rng-tools \
     memcached \
-    nodejs \
     mysql-server || fail "package installation failed"
+
+apt-get -y install nodejs
+apt-get -y install npm
 
 # things that have been removed
 # freetds-dev
