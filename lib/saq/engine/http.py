@@ -280,9 +280,9 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
         root.tool = 'ACE - Bro HTTP Scanner'
         root.tool_instance = self.hostname
         root.alert_type = 'http'
-        root.description = 'BRO HTTP Scanner Detection - '
+        root.description = 'BRO HTTP Scanner Detection - {} {}'.format(request_method, request_original_uri)
         root.event_time = datetime.datetime.now() if stream_time is None else stream_time
-        root.details = { }
+        root.details = details
 
         root.add_observable(F_IPV4, request_ipv4)
         if reply_ipv4:
