@@ -1,0 +1,5 @@
+This file MUST contain the following on the first line
+#fields	network	reason
+
+All lines MUST be tab delimited fields (make sure you're using TABs and not SPACEs.)
+The network field is a subnet bro data type, so use CIDR notation even for individual IP addresses (use /32.)

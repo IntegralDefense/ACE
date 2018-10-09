@@ -15,7 +15,7 @@ from saq.constants import *
 from saq.engine import Engine, MySQLCollectionEngine, ANPNodeEngine
 from saq.error import report_exception
 
-REGEX_CONNECTION_ID = re.compile(r'^(C[^\.]+\.\d)\.ready$')
+REGEX_CONNECTION_ID = re.compile(r'^(C[^\.]+\.\d+)\.ready$')
 HTTP_DETAILS_REQUEST = 'request'
 HTTP_DETAILS_REPLY = 'reply'
 HTTP_DETAILS_READY = 'ready'
@@ -131,27 +131,26 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
             return False
 
     def collect_client_mode(self):
-        # gather extracted http files and submit them to the server node
-        stream_prefix = self.get_next_stream()
+        while not self.collection_shutdown:
+            # gather extracted http files and submit them to the server node
+            stream_prefix = self.get_next_stream()
 
-        if stream_prefix is None:
-            # nothing to do right now...
-            logging.debug("no streams available to send")
-            return False
+            if stream_prefix is None:
+                # nothing to do right now...
+                logging.debug("no streams available to send")
+                return False
 
-        # do we have an anp node to send data to?
-        node_id = self.get_available_node()
-        if node_id is None:
-            logging.info("waiting for available ANP node...")
-            return False
+            # do we have an anp node to send data to?
+            node_id = self.get_available_node()
+            if node_id is None:
+                logging.info("waiting for available ANP node...")
+                return False
 
-        try:
-            self.submit_stream(stream_prefix, node_id)
-        except Exception as e:
-            logging.error("unable to submit stream {}: {}".format(stream_prefix, e))
-            report_exception() 
-
-        return True
+            try:
+                self.submit_stream(stream_prefix, node_id)
+            except Exception as e:
+                logging.error("unable to submit stream {}: {}".format(stream_prefix, e))
+                report_exception() 
 
     def collect_local_mode(self):
         # gather extracted files and just process them
@@ -284,9 +283,9 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
         root.tool = 'ACE - Bro HTTP Scanner'
         root.tool_instance = self.hostname
         root.alert_type = 'http'
-        root.description = 'BRO HTTP Scanner Detection - '
+        root.description = 'BRO HTTP Scanner Detection - {} {}'.format(request_method, request_original_uri)
         root.event_time = datetime.datetime.now() if stream_time is None else stream_time
-        root.details = { }
+        root.details = details
 
         root.add_observable(F_IPV4, request_ipv4)
         if reply_ipv4:
