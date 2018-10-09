@@ -231,6 +231,9 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
             request_unescaped_uri = fp.readline().strip()
             request_version = fp.readline().strip()
 
+            logging.info("processing {} ipv4 {} method {} uri {}".format(stream_prefix, request_ipv4,
+                                                                         request_method, request_original_uri))
+
             details[HTTP_DETAILS_REQUEST].append(request_ipv4)
             details[HTTP_DETAILS_REQUEST].append(request_method)
             details[HTTP_DETAILS_REQUEST].append(request_original_uri)
@@ -280,9 +283,9 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
         root.tool = 'ACE - Bro HTTP Scanner'
         root.tool_instance = self.hostname
         root.alert_type = 'http'
-        root.description = 'BRO HTTP Scanner Detection - '
+        root.description = 'BRO HTTP Scanner Detection - {} {}'.format(request_method, request_original_uri)
         root.event_time = datetime.datetime.now() if stream_time is None else stream_time
-        root.details = { }
+        root.details = details
 
         root.add_observable(F_IPV4, request_ipv4)
         if reply_ipv4:
