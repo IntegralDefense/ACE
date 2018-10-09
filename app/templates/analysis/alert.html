@@ -176,8 +176,8 @@
             {#{% for entry in email_remediations %}#}
                 {% for history in entry.remediation_history %}
                     <tr>
-                        <td style="white-space: nowrap">{{history['insert_date']}}</td>
                         <td>{{history['action']}}</td>
+                        <td style="white-space: nowrap">{{history['insert_date']}}</td>
                         <td>{{history['user']}}</td>
                         <td>{{history['result']}}</td>
                     </tr>
