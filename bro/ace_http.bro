@@ -3,11 +3,11 @@
 const MAX_MESSAGE_SIZE = 1024 * 1024 * 10; # 10 MB maximum
 
 type http_state_type: record {
-    request_method: string; # The HTTP method extracted from the request
-    request_original_URI: string; # The unprocessed URI as specified in the request.
-    request_unescaped_URI: string; # The URI with all percent-encodings decoded.
-    request_version: string; # The version number specified in the request 
-    request_headers: vector of mime_header_rec; # the list of submitted request headers
+    request_method: string &default=""; # The HTTP method extracted from the request
+    request_original_URI: string &default=""; # The unprocessed URI as specified in the request.
+    request_unescaped_URI: string &default=""; # The URI with all percent-encodings decoded.
+    request_version: string &default=""; # The version number specified in the request 
+    request_headers: vector of mime_header_rec &optional; # the list of submitted request headers
 
     reply_version: string &default=""; # The version number specified in the reply
     reply_code: count &default=0; # The numerical response code returned by the server.
@@ -34,11 +34,13 @@ function get_target_http_filename(c: connection): string {
 
 event http_request(c: connection, method: string, original_URI: string, unescaped_URI: string, version: string) {
     if (! c?$ace_http_state)
-        c$ace_http_state = http_state_type($request_method=method, 
-                                       $request_original_URI=original_URI, 
-                                       $request_unescaped_URI=unescaped_URI, 
-                                       $request_version=version,
-                                       $request_headers=vector());
+        c$ace_http_state = http_state_type();
+
+    c$ace_http_state$request_method = method;
+    c$ace_http_state$request_original_URI = original_URI;
+    c$ace_http_state$request_unescaped_URI = unescaped_URI;
+    c$ace_http_state$request_version = version;
+    c$ace_http_state$request_headers = vector();
 }
 
 event http_reply(c: connection, version: string, code: count, reason: string) {
@@ -136,9 +138,12 @@ event http_end_entity(c: connection, is_orig: bool) {
     c$ace_http_state$message_size = 0;
 }
 
-# called at the end of both
+# called at the end of each request and reply
 event http_message_done(c: connection, is_orig: bool, stat: http_message_stat) {
     local f: file;
+
+    if (is_orig)
+        return;
 
     # did we extract an entity from either side?
     if (c$ace_http_state$extracting_request || c$ace_http_state$extracting_reply) {
@@ -164,6 +169,7 @@ event http_message_done(c: connection, is_orig: bool, stat: http_message_stat) {
                           c$ace_http_state$reply_version, 
                           c$ace_http_state$reply_code, 
                           c$ace_http_state$reply_reason));
+
         for (i in c$ace_http_state$reply_headers)
             write_file(f, fmt("%s\t%s\n", c$ace_http_state$reply_headers[i]$name, c$ace_http_state$reply_headers[i]$value));
 
@@ -186,4 +192,5 @@ event http_message_done(c: connection, is_orig: bool, stat: http_message_stat) {
     c$ace_http_state$message_size = 0;
     c$ace_http_state$extracting_request = F;
     c$ace_http_state$extracting_reply = F;
+
 }
