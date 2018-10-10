@@ -138,6 +138,7 @@ class Engine(object):
         """Called after analysis has been performed."""
         raise NotImplementedError()
 
+
     @property
     def workload_count(self):
         """Returns the current size of the workload."""
@@ -181,6 +182,10 @@ class Engine(object):
            cloudphish analysis uses this to track what email a given url was seen in.
            Returns a valid JSON dict. Defaults to an empty dict."""
         return {}
+
+    def cleanup(self, work_item):
+        """Called when analysis has completed for the given work_item, regardless of success."""
+        pass
 
     # 
     # INITIALIZATION
@@ -1747,7 +1752,19 @@ class Engine(object):
             target_function = self.process
 
         # TODO start a thread to the side that logs the process statistics
-        target_function(work_item)
+        try:
+            target_function(work_item)
+        except Exception as e:
+            logging.error("processing of {} failed: {}".format(work_item, e))
+            report_exception()
+
+        # ensure the engine has a chance to clean up
+        try:
+            logging.debug("calling cleanup for {}".format(work_item))
+            self.cleanup(work_item)
+        except Exception as e:
+            logging.error("unable to cleanup work item {}: {}".format(work_item, e))
+            report_exception()
 
     def child_process_wrapper(self, target_function, *args, **kwargs):
         try:
@@ -1869,7 +1886,7 @@ class Engine(object):
                 self.post_analysis(self.root)
 
                 # save all the changes we've made
-                self.root.save() # XXX this is saving even before we may be about to delete
+                self.root.save() # TODO this is saving even before we may be about to delete
 
                 # notify that we've fully completed analysis for this
                 self.root_analysis_completed(self.root)
