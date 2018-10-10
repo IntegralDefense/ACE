@@ -3177,6 +3177,53 @@ decrypt_file_parser.add_argument('source_path', help="The file to decrypt from."
 decrypt_file_parser.add_argument('target_path', help="The file to saved the decrypted data to.")
 decrypt_file_parser.set_defaults(func=decrypt_file)
 
+def add_bro_http_whitelist(args):
+    import saq
+
+    if not re.match(r'^(\d{1,3}\.){3}\d{1,3}/\d+$', args.cidr):
+        logging.error("invalid CIDR (use a.b.c.d/e format)")
+        sys.exit(1)
+
+    if not args.description:
+        logging.error("a brief description is required")
+        sys.exit(1)
+
+    with open(os.path.join(saq.SAQ_HOME, 'bro', 'http.whitelist'), 'a') as fp:
+        fp.write('{}\t{}\n'.format(args.cidr, args.description))
+
+    sys.exit(0)
+
+add_bro_http_whitelist_parser = subparsers.add_parser('add-bro-http-whitelist',
+    help="Adds the given CIDR and description as a whitelist item to the bro HTTP whitelist.")
+add_bro_http_whitelist_parser.add_argument('cidr', help="The network CIDR to whitelist.")
+add_bro_http_whitelist_parser.add_argument('description', help="A description of the whitelisted item.")
+add_bro_http_whitelist_parser.set_defaults(func=add_bro_http_whitelist)
+
+def remove_bro_http_whitelist(args):
+    removed_line = False
+    src_path = os.path.join(saq.SAQ_HOME, 'bro', 'http.whitelist')
+    tmp_path = os.path.join(saq.SAQ_HOME, 'bro', 'http.whitelist.tmp')
+
+    with open(src_path, 'r') as fp_in:
+        with open(tmp_path, 'a') as fp_out:
+            for line in fp_in:
+                if line.startswith(args.cidr):
+                    logging.info("removed {}".format(line.strip()))
+                    removed_line = True
+                else:
+                    fp_out.write(line)
+
+    if removed_line:
+        shutil.copy(tmp_path, src_path)
+    
+    os.remove(tmp_path)
+    sys.exit(0)
+
+remove_bro_http_whitelist_parser = subparsers.add_parser('remove-bro-http-whitelist',
+    help="Adds the given CIDR and description as a whitelist item to the bro HTTP whitelist.")
+remove_bro_http_whitelist_parser.add_argument('cidr', help="The network CIDR to remove from the whitelist.")
+remove_bro_http_whitelist_parser.set_defaults(func=remove_bro_http_whitelist)
+
 #def execute_unittests(args):
     #unittest.main(module=saq.test_analysis, exit=False)
     #sys.exit(0)
