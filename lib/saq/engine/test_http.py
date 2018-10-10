@@ -297,3 +297,28 @@ class HTTPEngineTestCase(ACEEngineTestCase):
         
         engine.stop()
         saq.FORCED_ALERTS = False
+
+    @reset_config
+    def test_http_engine_007_whitelisted_fqdn(self):
+        self.disable_all_modules()
+        
+        saq.CONFIG['engine_http_scanner']['whitelist_path'] = os.path.join('var', 'tmp', 'brotex.whitelist')
+        with open(os.path.join(saq.SAQ_HOME, 'var', 'tmp', 'brotex.whitelist'), 'w') as fp:
+            fp.write('http_host:www.pdf995.com\n')
+        
+        engine = self.create_engine(HTTPScanningEngine)
+        self.assertEquals(engine.mode, MODE_LOCAL)
+        self.start_engine(engine)
+
+        self.process_pcap(os.path.join(saq.SAQ_HOME, 'test_data', 'pcaps', 'http_download_pdf.pcap'))
+
+        #wait_for_log_count('completed analysis RootAnalysis', 1, 5)
+        wait_for_log_count('whitelisted by fqdn', 1, 5)
+
+        # we should not have any files in the bro_http_dir
+        self.assertEquals(len(os.listdir(self.bro_http_dir)), 0)
+
+        engine.stop()
+        self.wait_engine(engine)
+
+        os.remove(os.path.join(saq.SAQ_HOME, 'var', 'tmp', 'brotex.whitelist'))
