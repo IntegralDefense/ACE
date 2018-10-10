@@ -4,12 +4,12 @@ import logging
 from . import main
 from .forms import AppModeSelectionForm
 from flask import render_template, session, redirect, url_for, flash
-from flask.ext.login import current_user
+from flask_login import current_user
 
 @main.route('/', methods=['GET', 'POST'])
 def index():
     # are we logged in?
-    if not current_user.is_authenticated():
+    if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
 
     form = AppModeSelectionForm()
