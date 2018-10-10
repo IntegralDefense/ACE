@@ -78,7 +78,7 @@
         </div>
         <div class="navbar-collapse collapse">
             <ul class="nav navbar-nav">
-                {% if current_user.is_authenticated() %}
+                {% if current_user.is_authenticated %}
                 <li><a href="{{ url_for('main.index') }}">Overview</a></li>
                 <li><a href="{{ url_for('analysis.file') }}">Manual Analysis</a></li>
                 <li><a href="{{ url_for('analysis.manage') }}">Manage Alerts</a></li>
