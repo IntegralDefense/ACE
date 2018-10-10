@@ -1155,7 +1155,7 @@ class OLEVBA_Analyzer_v1_2(AnalysisModule):
             return False
 
         # ignore MSI files
-        if local_file_path.endswith('.msi'):
+        if local_file_path.lower().endswith('.msi'):
             return False
 
         # ignore files we're not interested in
@@ -1172,6 +1172,10 @@ class OLEVBA_Analyzer_v1_2(AnalysisModule):
 
         # sometimes we end up with HTML files with office extensions (mostly from downloaded from the Internet)
         if 'html' in file_type_analysis.mime_type:
+            return False
+
+        # ignore plain text files
+        if file_type_analysis.mime_type == 'text/plain':
             return False
 
         analysis = self.create_analysis(_file)
