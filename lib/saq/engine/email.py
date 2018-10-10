@@ -288,32 +288,32 @@ class EmailScanningEngine(SSLNetworkServer, MySQLCollectionEngine, Engine):
 
     def process(self, path):
 
-        root = RootAnalysis()
-        root.storage_dir = path
+        self.root = RootAnalysis()
+        self.root.storage_dir = path
 
         try:
-            root.load()
+            self.root.load()
         except Exception as e:
-            logging.error("unable to load {}: {}".format(root, e))
+            logging.error("unable to load {}: {}".format(self.root, e))
             return
 
         # now we move this path into the work directory
-        dest_dir = os.path.join(self.work_dir, root.uuid[0:3], root.uuid)
+        dest_dir = os.path.join(self.work_dir, self.root.uuid[0:3], self.root.uuid)
         if os.path.exists(dest_dir):
             logging.error("work directory {} already exists!?".format(dest_dir))
             return
 
         try:
-            logging.debug("moving {} to {} for work".format(root.storage_dir, dest_dir))
-            shutil.move(root.storage_dir, dest_dir)
+            logging.debug("moving {} to {} for work".format(self.root.storage_dir, dest_dir))
+            shutil.move(self.root.storage_dir, dest_dir)
         except Exception as e:
-            logging.error("unable to move {} to {}: {}".format(root.storage_dir, dest_dir, e))
+            logging.error("unable to move {} to {}: {}".format(self.root.storage_dir, dest_dir, e))
             return
 
-        root.storage_dir = dest_dir
+        self.root.storage_dir = dest_dir
 
         try:
-            self.analyze(root)
+            self.analyze(self.root)
         except Exception as e:
             logging.error("analysis failed for {}: {}".format(path, e))
             report_exception()
@@ -464,12 +464,15 @@ class EmailScanningEngine(SSLNetworkServer, MySQLCollectionEngine, Engine):
 
         root.submit()
     
-    def root_analysis_completed(self, root):
-        if root.delayed:
+    def cleanup(self, work_item):
+        if not self.root:
+            return
+
+        if self.root.delayed:
             return
 
         if not self.keep_work_dir:
-            root.delete()
+            self.root.delete()
 
     def get_tracking_information(self, root):
         from saq.modules.email import EmailAnalysis

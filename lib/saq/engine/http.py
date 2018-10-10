@@ -14,6 +14,7 @@ from saq.anp import *
 from saq.constants import *
 from saq.engine import Engine, MySQLCollectionEngine, ANPNodeEngine
 from saq.error import report_exception
+from saq.whitelist import BrotexWhitelist
 
 REGEX_CONNECTION_ID = re.compile(r'^(C[^\.]+\.\d+)\.ready$')
 HTTP_DETAILS_REQUEST = 'request'
@@ -46,6 +47,12 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
 
         # the list of streams (connection ids) that we need to process
         self.stream_list = collections.deque()
+
+        # http whitelist
+        self.whitelist = None
+
+        # path to the whitelist file
+        self.whitelist_path = os.path.join(saq.SAQ_HOME, self.config['whitelist_path'])
 
     @property
     def name(self):
@@ -275,24 +282,25 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
                     reply_headers.append((key, value))
                     reply_headers_lookup[key.lower()] = value
 
-        root = RootAnalysis()
-        root.uuid = str(uuid.uuid4())
-        root.storage_dir = os.path.join(self.collection_dir, root.uuid[0:3], root.uuid)
-        root.initialize_storage()
+        self.root = RootAnalysis()
+        self.root.uuid = str(uuid.uuid4())
+        self.root.storage_dir = os.path.join(self.collection_dir, self.root.uuid[0:3], self.root.uuid)
+        self.root.initialize_storage()
 
-        root.tool = 'ACE - Bro HTTP Scanner'
-        root.tool_instance = self.hostname
-        root.alert_type = 'http'
-        root.description = 'BRO HTTP Scanner Detection - {} {}'.format(request_method, request_original_uri)
-        root.event_time = datetime.datetime.now() if stream_time is None else stream_time
-        root.details = details
+        self.root.tool = 'ACE - Bro HTTP Scanner'
+        self.root.tool_instance = self.hostname
+        self.root.alert_type = 'http'
+        self.root.description = 'BRO HTTP Scanner Detection - {} {}'.format(request_method, request_original_uri)
+        self.root.event_time = datetime.datetime.now() if stream_time is None else stream_time
+        self.root.details = details
 
-        root.add_observable(F_IPV4, request_ipv4)
+        self.root.add_observable(F_IPV4, request_ipv4)
         if reply_ipv4:
-            root.add_observable(F_IPV4, reply_ipv4)
+            self.root.add_observable(F_IPV4, reply_ipv4)
+            self.root.add_observable(F_IPV4_CONVERSATION, create_ipv4_conversation(request_ipv4, reply_ipv4))
 
         if 'host' in request_headers_lookup:
-            root.add_observable(F_FQDN, request_headers_lookup['host'])
+            self.root.add_observable(F_FQDN, request_headers_lookup['host'])
 
         uri = request_original_uri[:]
         if 'host' in request_headers_lookup:
@@ -303,56 +311,72 @@ class HTTPScanningEngine(ANPNodeEngine, MySQLCollectionEngine, Engine): # XXX do
                                        # if the default port is used then leave it out, otherwise include it in the url
                                        '' if reply_port == 80 else ':{}'.format(reply_port), 
                                        uri)
-            root.add_observable(F_URL, uri)
+            self.root.add_observable(F_URL, uri)
 
         if request_original_uri != request_unescaped_uri:
             uri = request_unescaped_uri[:]
             if 'host' in request_headers_lookup:
                 uri = '{}:{}'.format(request_headers_lookup['host'], uri)
-                root.add_observable(F_URL, uri)
+                self.root.add_observable(F_URL, uri)
 
         # move all the files into the work directory and add them as file observables
-        shutil.move(ready_path, root.storage_dir)
-        root.add_observable(F_FILE, os.path.basename(ready_path))
-        shutil.move(request_path, root.storage_dir)
-        root.add_observable(F_FILE, os.path.basename(request_path))
+        shutil.move(ready_path, self.root.storage_dir)
+        self.root.add_observable(F_FILE, os.path.basename(ready_path))
+        shutil.move(request_path, self.root.storage_dir)
+        self.root.add_observable(F_FILE, os.path.basename(request_path))
         if os.path.exists(request_entity_path):
-            shutil.move(request_entity_path, root.storage_dir)
-            root.add_observable(F_FILE, os.path.basename(request_entity_path))
+            shutil.move(request_entity_path, self.root.storage_dir)
+            self.root.add_observable(F_FILE, os.path.basename(request_entity_path))
         if os.path.exists(reply_path):
-            shutil.move(reply_path, root.storage_dir)
-            root.add_observable(F_FILE, os.path.basename(reply_path))
+            shutil.move(reply_path, self.root.storage_dir)
+            self.root.add_observable(F_FILE, os.path.basename(reply_path))
         if os.path.exists(reply_entity_path):
-            shutil.move(reply_entity_path, root.storage_dir)
-            root.add_observable(F_FILE, os.path.basename(reply_entity_path))
+            shutil.move(reply_entity_path, self.root.storage_dir)
+            self.root.add_observable(F_FILE, os.path.basename(reply_entity_path))
 
         try:
-            root.save()
+            self.root.save()
         except Exception as e:
-            logging.error("unable to save {}: {}".format(root, e))
+            logging.error("unable to save {}: {}".format(self.root, e))
             report_exception()
             return False
 
+        # has the destination host been whitelisted?
+        try:
+            if self.whitelist is None:
+                self.whitelist = BrotexWhitelist(self.whitelist_path)
+                self.whitelist.load_whitelist()
+            else:
+                self.whitelist.check_whitelist()
+
+            if 'host' in request_headers_lookup and request_headers_lookup['host']:
+                if self.whitelist.is_whitelisted_fqdn(request_headers_lookup['host']):
+                    logging.debug("stream {} whitelisted by fqdn {}".format(stream_prefix, request_headers_lookup['host']))
+                    return
+
+        except Exception as e:
+            logging.error("whitelist check failed for {}: {}".format(stream_prefix, e))
+            report_exception()
+
         # now analyze the file
         try:
-            self.analyze(root)
+            self.analyze(self.root)
         except Exception as e:
             logging.error("analysis failed for {}: {}".format(path, e))
             report_exception()
 
     def post_analysis(self, root):
-        if self.should_alert(root):
-            root.submit()
+        if self.should_alert(self.root):
+            self.root.submit()
             self.cancel_analysis()
-        else:
-            # any outstanding analysis left?
-            if root.delayed:
-                logging.debug("{} has delayed analysis -- waiting for cleanup...".format(root))
-                return
 
-    def root_analysis_completed(self, root):
-        if root.delayed:
+    def cleanup(self, work_item):
+        if not self.root:
+            return
+
+        if self.root.delayed:
             return
 
         if not self.keep_work_dir:
-            root.delete()
+            logging.debug("deleting {}".format(self.root.storage_dir))
+            self.root.delete()
