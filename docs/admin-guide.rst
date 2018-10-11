@@ -162,3 +162,9 @@ Start the yara module::
 
   $ /opt/ace/bin/start-yss
 
+Live Renderer
++++++++++++++
+
+The live browser rendering module will try to render a png image of any html file it's given. This can be particularly helpful for viewing email html content.
+
+
