@@ -51,7 +51,7 @@ class SnortAlertsAnalyzer(ELKAnalysisModule):
 
     def execute_analysis(self, ipv4):
 
-        search_results = self.search('valvoline:snort', 'src_ip:{} OR dest_ip:{}'.format(ipv4.value, ipv4.value))
+        search_results = self.search('snort', 'src_ip:{} OR dest_ip:{}'.format(ipv4.value, ipv4.value))
         if search_results is None:
             return False
 

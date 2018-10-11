@@ -827,6 +827,15 @@ class ELKAnalysisModule(AnalysisModule):
         if 'max_result_count' in self.config:
             self.max_result_count = self.config.getint('max_result_count')
 
+        # if we've specified a cluster in the global config then we prefix our index with that cluster
+        self.cluster = '' # by default we don't specify the cluster at all
+        if saq.CONFIG['elk']['cluster']:
+            self.cluster = saq.CONFIG['elk']['cluster']
+
+        # we can also specify the cluster for this specific module
+        if 'cluster' in self.config:
+            self.cluster = self.config['cluster']
+
     def search(self, index, query, target=None, earliest=None, latest=None, fields=[], sort=[]):
         """Searches ELK using the given query.
             :param index: The index to search.
@@ -899,6 +908,10 @@ class ELKAnalysisModule(AnalysisModule):
         # are we limiting what fields we get back?
         if fields:
             search_json['_source'] = fields
+
+        # are we specifying a cluster?
+        if self.cluster:
+            index = '{}:{}'.format(self.cluster, index)
 
         search_uri = "{}{}/_search".format(self.elk_uri, index)
         search_id = '{} query {} earliest {} latest {}'.format(search_uri, query, earliest, latest)
