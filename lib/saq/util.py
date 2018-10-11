@@ -3,6 +3,7 @@
 # various utility functions
 #
 
+import datetime
 import re
 
 CIDR_REGEX = re.compile(r'^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$')
@@ -69,3 +70,19 @@ def human_readable_size(size):
     # should never resort to exponent values)
     return '{:.4g} {}'.format(size / (1 << (order * 10)), _suffixes[order])
 
+def create_timedelta(timespec):
+    """Utility function to translate DD:HH:MM:SS into a timedelta object."""
+    duration = timespec.split(':')
+    seconds = int(duration[-1])
+    minutes = 0
+    hours = 0
+    days = 0
+
+    if len(duration) > 1:
+        minutes = int(duration[-2])
+    if len(duration) > 2:
+        hours = int(duration[-3])
+    if len(duration) > 3:
+        days = int(duration[-4])
+
+    return datetime.timedelta(days=days, seconds=seconds, minutes=minutes, hours=hours)
