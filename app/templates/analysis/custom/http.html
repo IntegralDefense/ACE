@@ -1,0 +1,91 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading">Request</div>
+            <table class="table">
+                <tr>
+                    <td nowrap>source</td>
+                    <td width="100%">{{analysis.details['request'][0]}}</td>
+                </tr>
+                <tr>
+                    <td nowrap>method</td>
+                    <td>{{analysis.details['request'][1]}}</td>
+                </tr>
+                <tr>
+                    <td nowrap>url</td>
+                    <td>{{analysis.details['request'][2]}}</td>
+                </tr>
+                <tr>
+                    <td nowrap>unescaped url</td>
+                    <td>{{analysis.details['request'][3]}}</td>
+                </tr>
+                <tr>
+                    <td nowrap>version</td>
+                    <td>{{analysis.details['request'][4]}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="panel panel-default">
+            <div class="panel-heading">Request Headers</div>
+            <table class="table table-condensed">
+                {% for kv in analysis.details['request'][5:] %}
+                <tr>
+                    <td nowrap>{{kv.split('\t')[0]}}</td>
+                    <td width="100%">{{kv.split('\t')[1]}}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+    </div>
+    <div class="col-md-6">
+        <div class="panel panel-default">
+            <div class="panel-heading">Reply</div>
+            <table class="table">
+                <tr>
+                    <td nowrap>destination</td>
+                    <td width="100%">{{analysis.details['reply'][0]}}</td>
+                </tr>
+                <tr>
+                    <td nowrap>version</td>
+                    <td>{{analysis.details['reply'][1]}}</td>
+                </tr>
+                <tr>
+                    <td nowrap>code</td>
+                    <td>{{analysis.details['reply'][2]}}</td>
+                </tr>
+                <tr>
+                    <td nowrap>reason</td>
+                    <td>{{analysis.details['reply'][3]}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="panel panel-default">
+            <div class="panel-heading">Reply Headers</div>
+            <table class="table table-condensed">
+                {% for kv in analysis.details['reply'][4:] %}
+                <tr>
+                    <td nowrap>{{kv.split('\t')[0]}}</td>
+                    <td width="100%">{{kv.split('\t')[1]}}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if 'content_gap_length = 0' not in analysis.details['ready'] %}
+<div class="alert alert-warning" role="alert">This HTTP stream appears to be missing packets. See below.</div>
+<div class="panel panel-default">
+    <div class="panel-heading">Reponse Details</div>
+    <div class="panel-body">
+        <pre>{{ analysis.details['ready'] | pprint }}</pre>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
