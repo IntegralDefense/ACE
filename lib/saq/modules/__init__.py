@@ -840,6 +840,11 @@ class ELKAnalysisModule(AnalysisModule):
             :returns: or None on failure
         """
 
+        # is elk searching enabled?
+        if not saq.CONFIG['elk'].getboolean('enabled'):
+            logging.warning("analysis module {} enabled but elk is disabled globally".format(self.name))
+            return None
+
         if ( earliest is None and latest is not None ) or ( earliest is not None and latest is None ):
             raise RuntimeError("if you pass an absolute time range to ELKAnalysisModule.search you must "
                              "provide values for both earliest and latest parameters")
