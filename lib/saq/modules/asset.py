@@ -12,7 +12,7 @@ from datetime import datetime
 
 import saq
 from saq.analysis import Analysis, Observable
-from saq.modules import AnalysisModule, LDAPAnalysisModule, SplunkAnalysisModule
+from saq.modules import AnalysisModule, LDAPAnalysisModule, CarbonBlackAnalysisModule
 from saq.constants import *
 
 import iptools
@@ -568,7 +568,7 @@ class CarbonBlackAssetIdentAnalysis(Analysis):
 
     def initialize_details(self):
         self.details = { 
-            CarbonBlackAssetIdentAnalysis.KEY_SEARCH_RESULTS: None,
+            CarbonBlackAssetIdentAnalysis.KEY_SEARCH_RESULTS: [],
             CarbonBlackAssetIdentAnalysis.KEY_DISCOVERED_HOSTNAMES: [],
         }
 
@@ -601,7 +601,7 @@ class CarbonBlackAssetIdentAnalysis(Analysis):
 
         return result
 
-class CarbonBlackAssetIdentAnalyzer(SplunkAnalysisModule):
+class CarbonBlackAssetIdentAnalyzer(CarbonBlackAnalysisModule):
     @property
     def generated_analysis_type(self):
         return CarbonBlackAssetIdentAnalysis
@@ -617,24 +617,20 @@ class CarbonBlackAssetIdentAnalyzer(SplunkAnalysisModule):
 
     def execute_analysis(self, ipv4):
 
-        self.splunk_query("""index=carbonblack local_ip={} 
-                             | dedup computer_name | fields computer_name""".format(ipv4.value),
-                            event_time=self.root.event_time_datetime if ipv4.time_datetime is None else ipv4.time_datetime)
-
         analysis = self.create_analysis(ipv4)
-        analysis.search_results = self.json()
 
-        if analysis.search_results is not None and len(analysis.search_results) > self.hostname_limit:
-            logging.info("{} returned {} records exceeds hostname_limit {} (not adding hostname observables)".format(
-                          ipv4.value, len(analysis.search_results), self.hostname_limit))
-            return False
+        from cbapi.response.models import Sensor
 
-        if analysis.search_results:
-            for row in analysis.search_results:
-                if 'computer_name' in row and row['computer_name']:
-                    hostname = analysis.add_observable(F_HOSTNAME, row['computer_name'])
-                    if hostname not in analysis.discovered_hostnames:
-                        analysis.discovered_hostnames.append(hostname)
+        query = self.cb.select(Sensor)
+        query = query.where('ip:{}'.format(ipv4.value))
+        for sensor in query:
+            analysis.search_results.append(str(sensor))
+            if sensor.hostname not in analysis.discovered_hostnames:
+                analysis.discovered_hostnames.append(sensor.hostname)
+            logging.info("found hostname {} for {}".format(sensor.hostname, ipv4.value))
+
+        for hostname in analysis.discovered_hostnames[:self.hostname_limit]:
+            hostname = analysis.add_observable(F_HOSTNAME, hostname)
 
         return True
 

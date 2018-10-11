@@ -780,6 +780,17 @@ class SplunkAnalysisModule(AnalysisModule, SplunkQueryObject):
         # try to stop any existing splunk query
         self.cancel()
 
+class CarbonBlackAnalysisModule(AnalysisModule):
+    """An analysis module that directly queries Carbon Black servers as part of its analysis."""
+    @property
+    def cb(self):
+        if not hasattr(self, '_cb'):
+            from cbapi import CbEnterpriseResponseAPI
+            self._cb = CbEnterpriseResponseAPI(credential_file=os.path.join(saq.SAQ_HOME, 
+                                               saq.CONFIG['carbon_black']['credential_file']))
+
+        return self._cb
+
 class ExternalProcessAnalysisModule(AnalysisModule):
     """An analysis module that executes an external process as part of it's analysis."""
     
