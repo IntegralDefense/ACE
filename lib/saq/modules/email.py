@@ -2145,19 +2145,20 @@ class EmailLoggingAnalyzer(AnalysisModule):
         extracted_urls = entry['extracted_urls']
         entry['extracted_urls'] = []
 
+        # for splunk we need to sort the keys alphabetically
+        entry_keys = list(entry.keys())
+
         # there's a couple fields WE don't log to splunk because of internal splunk issues
         # date,attachment_count,attachment_hashes,attachment_names,attachment_sizes,attachment_types,bcc,cc
         # env_mail_from,env_rcpt_to,extracted_urls,first_received,headers,last_received,mail_from,mail_to
         # message_id,originating_ip,path,reply_to,size,subject,user_agent,archive_path,x_mailer
-        entry.remove('thread_topic')
-        entry.remove('thread_index')
-        entry.remove('refereneces')
-        entry.remove('x_sender')
+        entry_keys.remove('thread_topic')
+        entry_keys.remove('thread_index')
+        entry_keys.remove('refereneces')
+        entry_keys.remove('x_sender')
 
-        # for splunk we need to sort the keys alphabetically
         # NOTE we need to make the date first
         # NOTE we also need to make archive_path last :(
-        entry_keys = list(entry.keys())
         entry_keys.remove('date')
         entry_keys.remove('archive_path')
         entry_keys.remove('x_mailer')
