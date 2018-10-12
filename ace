@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import fnmatch
 import getpass
 import json
 import logging
@@ -3224,13 +3225,53 @@ remove_bro_http_whitelist_parser = subparsers.add_parser('remove-bro-http-whitel
 remove_bro_http_whitelist_parser.add_argument('cidr', help="The network CIDR to remove from the whitelist.")
 remove_bro_http_whitelist_parser.set_defaults(func=remove_bro_http_whitelist)
 
-#def execute_unittests(args):
-    #unittest.main(module=saq.test_analysis, exit=False)
-    #sys.exit(0)
+def config(args):
+    import saq
+
+    def matches_param(s, k=None):
+        if not args.settings:
+            return True
+
+        for spec in args.settings:
+            section_spec, key_spec = spec.split('.')
+            #print("testing {} == {} {} == {}".format(section_spec, s, key_spec, k))
+            if ( section_spec == '*' or section_spec == s ) and ( k is None or key_spec == '*' or key_spec == k ):
+                return True
+
+        return False
+
+    for section in list(saq.CONFIG.keys()):
+        if section == 'DEFAULT':
+            continue
+
+        if not matches_param(section):
+            continue
+
+        if not args.value_only:
+            print('[{}]'.format(section))
+        
+        for key in saq.CONFIG[section].keys():
+            if not matches_param(section, key):
+                continue
+
+            if args.value_only:
+                print(saq.CONFIG[section][key])
+            else:
+                print('{} = {}'.format(key, saq.CONFIG[section][key]))
+
+        if not args.value_only:
+            print()
+
+    sys.exit(0)
+
+config_parser = subparsers.add_parser('config',
+    help="Queries the ACE configuration.")
+config_parser.add_argument('-v', '--value', action='store_true', default=False, dest='value_only',
+    help="Just print the values of the selected configuration items.")
+config_parser.add_argument('settings', nargs="*",
+    help="Zero or more configuration items to display in the format section.key.")
+config_parser.set_defaults(func=config)
     
-#test_parsers = subparsers.add_parser('test',
-    #help="Executes all unit tests.")
-#test_parsers.set_defaults(func=execute_unittests)
 
 if __name__ == '__main__':
 
