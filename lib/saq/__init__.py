@@ -19,8 +19,11 @@ from saq.constants import *
 from saq.network_semaphore import initialize_fallback_semaphores
 from saq.sla import SLA
 
-# disable the verbose logging in the requests module
+import pytz
 import requests
+import tzlocal
+
+# disable the verbose logging in the requests module
 logging.getLogger("requests").setLevel(logging.WARNING)
 
 SAQ_HOME = None
@@ -42,6 +45,8 @@ SINGLE_THREADED = False
 # the gpg private key password for encrypting/decrypting archive files
 # this can be provided on the command line so that these files can also be analyzed
 ENCRYPTION_PASSWORD = None
+# local timezone
+LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
 
 # the global log level setting
 LOG_LEVEL = logging.INFO
@@ -399,6 +404,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         os.path.join(SAQ_HOME, 'stats', 'brocess'),
         os.path.join(SAQ_HOME, 'stats', 'metrics'),
         os.path.join(SAQ_HOME, CONFIG['splunk_logging']['splunk_log_dir']),
+        os.path.join(SAQ_HOME, CONFIG['elk_logging']['elk_log_dir']),
         os.path.join(SAQ_HOME, CONFIG['global']['tmp_dir']),
         os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'], 'logs'),
         os.path.join(SAQ_HOME, maliciousdir) ]:

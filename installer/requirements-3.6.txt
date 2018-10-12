@@ -38,6 +38,7 @@ setuptools_git
 six
 splunklib
 tld
+tzlocal
 urlfinderlib
 vxstreamlib
 yara_scanner
