@@ -508,6 +508,15 @@ class ACEBasicTestCase(TestCase):
             time.sleep(delay)
 
     @protect_production
+    def reset_brocess(self):
+        # clear the brocess db
+        with get_db_connection('brocess') as db:
+            c = db.cursor()
+            c.execute("""DELETE FROM httplog""")
+            c.execute("""DELETE FROM smtplog""")
+            db.commit()
+
+    @protect_production
     def reset_cloudphish(self):
         # clear cloudphish db
         with get_db_connection('cloudphish') as db:
