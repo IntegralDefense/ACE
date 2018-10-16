@@ -1,0 +1,10 @@
+{% if analysis.details %}
+<table class="table">
+{% for event in analysis.details['hits']['hits'] %}
+<tr>
+    <td nowrap>{{event['_source']['event_timestamp']}}</td>
+    <td>{% for key in event['_source'].keys() | sort | reject('eq', '@timestamp') | reject('eq', 'event_timestamp') %}<span class="label label-default">{{key}}</span> {{event['_source'][key]}} {% endfor %}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
