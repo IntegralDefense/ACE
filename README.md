@@ -27,7 +27,7 @@ ACE is the implementation of a proven detection strategy, a framework for automa
 + Modular Design for extending automation
 
 ## The Super Fast, Getting Started Steps
-1. Clean Ubuntu 18 install.
+1. Clean Ubuntu 18 install. Take a quick look at [these notes about Ubuntu 18](https://github.com/IntegralDefense/ACE/wiki/Ubuntu-18-Installation-Notes).
 2. Create username/group ace/ace.
 3. Add ace to sudo.
 4. Login as user ace.
