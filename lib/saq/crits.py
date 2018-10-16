@@ -15,50 +15,82 @@ from bson import json_util
 from bson.objectid import ObjectId
 from pymongo import MongoClient
 
-CRITS_TYPE_MAPPING = {
-    F_IPV4 : 'Address - ipv4-addr',
-    F_IPV4_CONVERSATION : None,
-    F_FQDN : 'URI - Domain Name',
-    F_HOSTNAME : None,
-    F_ASSET : None,
-    F_USER : None,
-    F_URL : 'URI - URL',
-    F_PCAP : None,
-    F_FILE : None,
-    F_SUSPECT_FILE : None,
-    F_FILE_PATH : 'Windows - FilePath',
-    F_FILE_NAME : 'Windows - FileName',
-    F_EMAIL_ADDRESS : 'Email - Address',
-    F_YARA : None,
-    F_YARA_RULE : None,
-    F_INDICATOR : None,
-    F_MD5 : 'Hash - MD5',
-    F_SHA1 : 'Hash - SHA1',
-    F_SHA256 : 'Hash - SHA256',
-    F_SNORT_SIGNATURE : None 
-}
+class _crits_indicator_type_mapping(object):
+    def __getitem__(self, key):
+        if not hasattr(self, '_indicator_type_mapping'):
+            self._indicator_type_mapping = {}
+            for k in saq.CONFIG['crits_indicator_type_mapping'].keys():
+                self._indicator_type_mapping[k] = saq.CONFIG['crits_indicator_type_mapping'][k]
+
+        return self._indicator_type_mapping[key]
+
+class _crits_observable_type_mapping(object):
+    def __getitem__(self, key):
+        if not hasattr(self, '_observable_type_mapping'):
+            self._observable_type_mapping = {}
+            for k in saq.CONFIG['crits_observable_type_mappping'].keys():
+                self._observable_type_mapping[k] = saq.CONFIG['crits_observable_type_mappping'][k]
+
+        return self._observable_type_mapping[key] 
+
+CRITS_INDICATOR_TYPE_MAPPING = None
+CRITS_OBSERVABLE_TYPE_MAPPING = None
+
+def load_mappings():
+    global CRITS_INDICATOR_TYPE_MAPPING
+    global CRITS_OBSERVABLE_TYPE_MAPPING
+
+    if CRITS_INDICATOR_TYPE_MAPPING is None:
+        CRITS_INDICATOR_TYPE_MAPPING = _crits_indicator_type_mapping()
+
+    if CRITS_OBSERVABLE_TYPE_MAPPING is None:
+        CRITS_OBSERVABLE_TYPE_MAPPING = _crits_observable_type_mapping()
+
+#CRITS_TYPE_MAPPING = {
+    #F_IPV4 : 'Address - ipv4-addr',
+    #F_IPV4_CONVERSATION : None,
+    #F_FQDN : 'URI - Domain Name',
+    #F_HOSTNAME : None,
+    #F_ASSET : None,
+    #F_USER : None,
+    #F_URL : 'URI - URL',
+    #F_PCAP : None,
+    #F_FILE : None,
+    #F_SUSPECT_FILE : None,
+    #F_FILE_PATH : 'Windows - FilePath',
+    #F_FILE_NAME : 'Windows - FileName',
+    #F_EMAIL_ADDRESS : 'Email - Address',
+    #F_YARA : None,
+    #F_YARA_RULE : None,
+    #F_INDICATOR : None,
+    #F_MD5 : 'Hash - MD5',
+    #F_SHA1 : 'Hash - SHA1',
+    #F_SHA256 : 'Hash - SHA256',
+    #F_SNORT_SIGNATURE : None 
+#}
 
 def submit_indicator(observable):
     """Add the given Observable as an indicator to CRITS.  Returns the CRITS id or None if the operation fails."""
-    if CRITS_TYPE_MAPPING[observable.type] is None:
+    load_mappings()
+    if not CRITS_INDICATOR_TYPE_MAPPING[observable.type]:
         logging.debug("{} is not a supported type for crits".format(observable))
         return None
 
     data = {
         'api_key' : saq.CONFIG['crits']['api_key'],
         'username' : saq.CONFIG['crits']['username'],
-        'source' : 'Ashland',
+        'source' : saq.CONFIG['global']['company_name'],
         'reference' : 'https://{}:{}/analysis?direct={}'.format(saq.CONFIG['gui']['listen_address'], saq.CONFIG['gui']['listen_port'], observable.alert.uuid),
         'method' : None,
         'add_domain' : True,
         'add_relationship' : True,
         'indicator_confidence' : 'low',
         'indicator_impact' : 'low',
-        'type' : CRITS_TYPE_MAPPING[observable.type],
+        'type' : CRITS_OBSERVABLE_TYPE_MAPPING[observable.type],
         'value' : observable.value
     }
 
-    result = requests.post("{0}/api/v1/indicators/".format(saq.CONFIG['crits']['url']), data=data, verify=False)
+    result = requests.post("{}/api/v1/indicators/".format(saq.CONFIG['crits']['url']), data=data, verify=False)
     if result.status_code != 200:
         logging.error("got status code {} from crits for {}".format(result.status_code, observable))
         return None
