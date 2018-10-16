@@ -2787,9 +2787,13 @@ def metrics():
 
         # generate CRITS indicator intel tables
         if 'indicator_intel' in metric_actions:
-            indicator_source_table, indicator_status_table = generate_intel_tables()
-            tables.append(indicator_source_table)
-            tables.append(indicator_status_table) 
+            try:
+                indicator_source_table, indicator_status_table = generate_intel_tables()
+                tables.append(indicator_source_table)
+                tables.append(indicator_status_table) 
+            except Exception as e:
+                flash("Error generating intel tables. Is 'mongodb_uri' specified in the configuration? : {0}".format(str(e)))
+
 
     if download_results:
         outBytes = io.BytesIO()
