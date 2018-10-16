@@ -2586,7 +2586,7 @@ def add_email_alert_counts_per_event(events):
 
 def generate_intel_tables():
     mongo_uri = saq.CONFIG.get("crits", "mongodb_uri")
-    mongo_host = mongo_uri[mongo_uri.find('crits'):mongo_uri.rfind(':')]
+    mongo_host = mongo_uri[mongo_uri.rfind('://')+3:mongo_uri.rfind(':')]
     mongo_port = int(mongo_uri[mongo_uri.rfind(':')+1:])
     client = MongoClient(mongo_host, mongo_port)
     crits = client.crits
