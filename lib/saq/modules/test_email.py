@@ -1,11 +1,12 @@
 # vim: sw=4:ts=4:et
 
+import json
 import logging
 import os, os.path
 import shutil
 import socket
-import uuid
 import unittest
+import uuid
 
 import saq, saq.test
 from saq.constants import *
@@ -34,6 +35,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
                     os.path.join(root.storage_dir, 'email.rfc822'))
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
 
         engine.queue_work_item(root.storage_dir)
@@ -46,15 +48,19 @@ class EmailModuleTestCase(ACEModuleTestCase):
         
         smtp_file = None
         url_file = None
+        fields_file = None
 
         for _file in splunk_files:
             if _file.startswith('smtp-'):
                 smtp_file = os.path.join(splunk_log_dir, _file)
             elif _file.startswith('url-'):
                 url_file = os.path.join(splunk_log_dir, _file)
+            elif _file == 'fields':
+                fields_file = os.path.join(splunk_log_dir, _file)
 
         self.assertIsNotNone(smtp_file)
         self.assertIsNotNone(url_file)
+        self.assertIsNotNone(fields_file)
 
         with open(smtp_file, 'r') as fp:
             smtp_logs = fp.read()
@@ -73,6 +79,131 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         smtp_fields = smtp_logs[0].split('\x1e')
         self.assertEquals(len(smtp_fields), 25)
+        
+        with open(fields_file, 'r') as fp:
+            fields = fp.readline().strip()
+
+        self.assertEquals(fields, 'date,attachment_count,attachment_hashes,attachment_names,attachment_sizes,attachment_types,bcc,'
+                                  'cc,env_mail_from,env_rcpt_to,extracted_urls,first_received,headers,last_received,mail_from,'
+                                  'mail_to,message_id,originating_ip,path,reply_to,size,subject,user_agent,archive_path,x_mailer')
+
+    @protect_production
+    def test_email_000a_update_brocess(self):
+
+        # make sure we update the brocess database when we can scan email
+
+        self.reset_brocess()
+
+        engine = AnalysisEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_logger')
+        self.start_engine(engine)
+
+        root = create_root_analysis(alert_type='mailbox')
+        root.initialize_storage()
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'),
+                    os.path.join(root.storage_dir, 'email.rfc822'))
+        file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
+        root.save()
+
+        engine.queue_work_item(root.storage_dir)
+        engine.queue_work_item(TerminatingMarker())
+        engine.wait()
+
+        root.load()
+        file_observable = root.get_observable(file_observable.id)
+        from saq.modules.email import EmailAnalysis
+        analysis = file_observable.get_analysis(EmailAnalysis)
+        self.assertIsNotNone(analysis)
+
+        # get the source and dest of the email so we can look it up in the brocess database
+
+        from saq.email import normalize_email_address
+        mail_from = normalize_email_address(analysis.mail_from)
+        env_rcpt_to = normalize_email_address(analysis.env_rcpt_to[0])
+
+        # we should see a count of 1 here
+
+        with get_db_connection('brocess') as db:
+            c = db.cursor()
+            c.execute("""SELECT numconnections FROM smtplog WHERE source = %s AND destination = %s""",
+                     (mail_from, env_rcpt_to))
+            count = c.fetchone()
+            self.assertEquals(count[0], 1)
+
+        # and then we do it again and make sure the count increased
+
+        engine = AnalysisEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_logger')
+        self.start_engine(engine)
+
+        root = create_root_analysis(alert_type='mailbox')
+        root.initialize_storage()
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'),
+                    os.path.join(root.storage_dir, 'email.rfc822'))
+        file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
+        root.save()
+
+        engine.queue_work_item(root.storage_dir)
+        engine.queue_work_item(TerminatingMarker())
+        engine.wait()
+
+        with get_db_connection('brocess') as db:
+            c = db.cursor()
+            c.execute("""SELECT numconnections FROM smtplog WHERE source = %s AND destination = %s""",
+                     (mail_from, env_rcpt_to))
+            count = c.fetchone()
+            self.assertEquals(count[0], 2)
+
+    @protect_production
+    def test_email_000b_elk_logging(self):
+
+        # clear elk logging directory
+        elk_log_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['elk_logging']['elk_log_dir'])
+        if os.path.isdir(elk_log_dir):
+            shutil.rmtree(elk_log_dir)
+            os.mkdir(elk_log_dir)
+
+        engine = AnalysisEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_logger')
+        engine.enable_module('analysis_module_url_extraction')
+        self.start_engine(engine)
+
+        root = create_root_analysis(alert_type='mailbox')
+        root.initialize_storage()
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
+                    os.path.join(root.storage_dir, 'email.rfc822'))
+        file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
+        root.save()
+
+        engine.queue_work_item(root.storage_dir)
+        engine.queue_work_item(TerminatingMarker())
+        engine.wait()
+
+        wait_for_log_count('creating json logging directory ', 1, 5)
+        entry = search_log('creating json logging directory ')
+        target_dir = entry[0].getMessage()[len('creating json logging directory '):]
+
+        # we should expect three files in this directory now
+        elk_files = [os.path.join(target_dir, _) for _ in os.listdir(target_dir)]
+        self.assertEquals(len(elk_files), 1)
+
+        with open(elk_files[0], 'r') as fp:
+            log_entry = json.load(fp)
+
+        for field in [ 'date', 'first_received', 'last_received', 'env_mail_from', 'env_rcpt_to', 'mail_from', 'mail_to', 'reply_to',
+                       'cc', 'bcc', 'message_id', 'subject', 'path', 'size', 'user_agent', 'x_mailer', 'originating_ip', 'headers', 'attachment_count',
+                       'attachment_sizes', 'attachment_types', 'attachment_names', 'attachment_hashes', 'thread_topic', 'thread_index', 'refereneces', 'x_sender' ]:
+
+            self.assertTrue(field in log_entry)
 
     @protect_production
     def test_email_001_archive(self):
