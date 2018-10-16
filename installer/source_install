@@ -144,13 +144,13 @@ then
     sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace";
 fi
 
-echo "Do you want to run the unit tests? This is not a required step."
-select yn in Yes No; do
-    case ${yn} in
-        Yes ) source load_environment ; ./test ;;
-        No ) break ;;
-    esac
-done
+#echo "Do you want to run the unit tests? This is not a required step."
+#select yn in Yes No; do
+    #case ${yn} in
+        #Yes ) source load_environment ; ./test ;;
+        #No ) break ;;
+    #esac
+#done
 
 echo next steps:
 echo "cd $SAQ_HOME && source load_environment"
