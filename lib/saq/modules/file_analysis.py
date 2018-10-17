@@ -36,6 +36,8 @@ from saq.modules import AnalysisModule
 from saq.process_server import Popen, PIPE, DEVNULL, TimeoutExpired
 from saq.util import is_url, URL_REGEX_B, URL_REGEX_STR
 
+import acefile
+
 from bs4 import BeautifulSoup
 from iptools import IpRangeList
 
@@ -536,6 +538,10 @@ class ArchiveAnalyzer(AnalysisModule):
         # infosec commonly use that as the password, and if it's not right then it just fails because
         # we don't know it anyways
 
+        # special logic for ACE files
+        is_ace_file = 'ACE archive data' in file_type_analysis.file_type
+        is_ace_file |= _file.value.lower().endswith('.ace')
+
         if is_rar_file:
             logging.debug("using unrar to extract files from {}".format(local_file_path))
             p = Popen(['unrar', 'la', local_file_path], stdout=PIPE, stderr=PIPE)
@@ -608,6 +614,12 @@ class ArchiveAnalyzer(AnalysisModule):
             ole_object_regex = re.compile(b'word.embeddings.oleObject1\\.bin', re.M)
             is_office_document |= (ole_object_regex.search(stdout) is not None)
                 
+        elif is_ace_file:
+            try:
+                with acefile.open(local_file_path) as f:
+                    count = len(f.getmembers())
+            except Exception as e:
+                logging.warning("unable to list the contents of ace file {}: {}".format(_file.value, e))
         else:
             logging.debug("using 7z to extract files from {}".format(local_file_path))
             p = Popen(['7z', '-y', '-pinfected', 'l', local_file_path], stdout=PIPE, stderr=PIPE)
@@ -670,6 +682,8 @@ class ArchiveAnalyzer(AnalysisModule):
         analysis = self.create_analysis(_file)
         analysis.file_count = count
 
+        params = []
+
         if is_rar_file:
             params = ['unrar', 'e', '-y', '-o+', local_file_path, extracted_path]
         elif is_zip_file:
@@ -677,17 +691,26 @@ class ArchiveAnalyzer(AnalysisModule):
             params = ['unzip', local_file_path, '-x', 'xl/activeX/*', 
                                                 '-x', 'xl/activeX/_rels/*', 
                       '-d', extracted_path]
+        elif is_ace_file:
+            try:
+                with acefile.open(local_file_path) as f:
+                    for member in f:
+                        logging.debug("extracting member {} from ace archive {}".format(member.filename, _file.value))
+                        f.extract(member, path=extracted_path)
+            except Exception as e:
+                logging.warning("unable to completely extract ACE archive {}: {}".format(_file.value, e))
         else:
             params = ['7z', '-y', '-pinfected', '-o{}'.format(extracted_path), 'x', local_file_path]
 
-        p = Popen(params, stdout=PIPE, stderr=PIPE)
+        if params:
+            p = Popen(params, stdout=PIPE, stderr=PIPE)
 
-        try:
-            (stdout, stderr) = p.communicate(timeout=self.timeout)
-        except TimeoutExpired as e:
-            (stdout, stderr) = p.communicate()
+            try:
+                (stdout, stderr) = p.communicate(timeout=self.timeout)
+            except TimeoutExpired as e:
+                (stdout, stderr) = p.communicate()
 
-        logging.debug("extracted into {}".format(extracted_path))
+        #logging.debug("extracted into {}".format(extracted_path))
 
         # rather than parse the output we just go find all the files we've created in that directory
         for root, dirs, files in os.walk(extracted_path):
