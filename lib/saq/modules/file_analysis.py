@@ -681,8 +681,6 @@ class ArchiveAnalyzer(AnalysisModule):
         if count == 0:
             return False
 
-        logging.info("extracting {} files from archive {}".format(count, local_file_path))
-
         # we need a place to store these things
         extracted_path = '{}.extracted'.format(local_file_path).replace('*', '_') # XXX need a normalize function
         if not os.path.isdir(extracted_path):
@@ -691,6 +689,8 @@ class ArchiveAnalyzer(AnalysisModule):
             except Exception as e:
                 logging.error("unable to create directory {}: {}".format(extracted_path, e))
                 return False
+
+        logging.debug("extracting {} files from archive {} into {}".format(count, local_file_path, extracted_path))
 
         analysis = self.create_analysis(_file)
         analysis.file_count = count
@@ -707,7 +707,7 @@ class ArchiveAnalyzer(AnalysisModule):
                       '-d', extracted_path]
         elif is_ace_file:
             # for some reason, unace doesn't let you use a full path
-            params = ['unace', 'x', '-y', '-o', local_file_path]
+            params = ['unace', 'x', '-y', '-o', os.path.relpath(local_file_path, start=extracted_path)]
             kwargs['cwd'] = extracted_path
         else:
             params = ['7z', '-y', '-pinfected', '-o{}'.format(extracted_path), 'x', local_file_path]
