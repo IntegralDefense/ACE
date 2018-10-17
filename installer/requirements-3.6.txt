@@ -10,7 +10,6 @@ Pillow
 PyMySQL
 SQLAlchemy==1.2.7
 WTForms
-acefile
 beautifulsoup4
 businesstime
 cbapi
