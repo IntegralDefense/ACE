@@ -2728,7 +2728,7 @@ def metrics():
                 events.creation_date as 'Date', events.name as 'Event', 
                 GROUP_CONCAT(DISTINCT malware.name SEPARATOR ', ') as 'Malware', 
                 GROUP_CONCAT(DISTINCT IFNULL(malware_threat_mapping.type, 'UNKNOWN') SEPARATOR ', ') 
-                    as 'Threat', alerts.disposition as 'Disposition', 
+                    as 'Threat', ANY_VALUE(alerts.disposition) as 'Disposition', 
                 events.vector as 'Delivery Vector', 
                 events.prevention_tool as 'Prevention', 
                 GROUP_CONCAT(DISTINCT company.name SEPARATOR ', ') as 'Company', 
@@ -2787,9 +2787,13 @@ def metrics():
 
         # generate CRITS indicator intel tables
         if 'indicator_intel' in metric_actions:
-            indicator_source_table, indicator_status_table = generate_intel_tables()
-            tables.append(indicator_source_table)
-            tables.append(indicator_status_table) 
+            try:
+                indicator_source_table, indicator_status_table = generate_intel_tables()
+                tables.append(indicator_source_table)
+                tables.append(indicator_status_table) 
+            except Exception as e:
+                flash("Error generating intel tables. Is 'mongodb_uri' specified in the configuration? : {0}".format(str(e)))
+
 
     if download_results:
         outBytes = io.BytesIO()
