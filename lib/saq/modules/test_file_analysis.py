@@ -338,6 +338,33 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertEquals(analysis.file_count, 1)
         _file = analysis.get_observables_by_type(F_FILE)
         self.assertEquals(len(_file), 1)
+
+    def test_file_analysis_002_archive_002_ace(self):
+
+        engine = self.create_engine(AnalysisEngine)
+        engine.enable_module('analysis_module_archive')
+        engine.enable_module('analysis_module_file_type')
+        self.start_engine(engine)
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.initialize_storage()
+        shutil.copy('test_data/ace/dhl_report.ace', root.storage_dir)
+        _file = root.add_observable(F_FILE, 'dhl_report.ace')
+        root.save()
+
+        engine.queue_work_item(root.storage_dir)
+        engine.queue_work_item(TerminatingMarker())
+        engine.wait()
+
+        root.load()
+        _file = root.get_observable(_file.id)
+        
+        from saq.modules.file_analysis import ArchiveAnalysis
+        analysis = _file.get_analysis(ArchiveAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertEquals(analysis.file_count, 1)
+        _file = analysis.get_observables_by_type(F_FILE)
+        self.assertEquals(len(_file), 1)
         
     def test_file_analysis_003_xml_000_rels(self):
 

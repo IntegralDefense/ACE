@@ -1,15 +1,16 @@
+Flask
 Flask-Bootstrap
 Flask-Login
 Flask-SQLAlchemy 
 Flask-Script
 Flask-WTF
-Flask
 MarkupSafe
 Pandas
 Pillow
 PyMySQL
 SQLAlchemy==1.2.7
 WTForms
+acefile
 beautifulsoup4
 businesstime
 cbapi
