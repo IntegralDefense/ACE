@@ -188,6 +188,9 @@ def maintain_archive(verbose=False):
         c = db.cursor()
         c.execute("SELECT server_id FROM archive_server WHERE hostname = %s", (hostname,))
         row = c.fetchone()
+        if row is None:
+            return
+
         server_id = row[0]
 
         _log("searching for expired emails for {}({}) older than {} days".format(hostname, server_id, expiration_days))
