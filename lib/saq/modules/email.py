@@ -70,6 +70,11 @@ KEY_UUIDS = 'uuids'
 
 TAG_OUTBOUND_EMAIL = 'outbound_email'
 
+# regex to match an email header line
+RE_EMAIL_HEADER = re.compile(r'^[^:]+:\s.*$')
+# regex to match an email header continuation line
+RE_EMAIL_HEADER_CONTINUE = re.compile(r'^\t.*$')
+
 class EncryptedArchiveAnalysis(Analysis):
     def initialize_details(self):
         self.details = None
@@ -909,7 +914,6 @@ class EmailAnalyzer(AnalysisModule):
         if _file.value.endswith('.headers'):
             return False
 
-
         # parse the email
         unparsed_email = None
         parsed_email = None
@@ -1460,6 +1464,7 @@ class EmailAnalyzer(AnalysisModule):
 
         return True
 
+
     def execute_analysis(self, _file):
 
         from saq.modules.file_analysis import FileTypeAnalysis
@@ -1474,9 +1479,47 @@ class EmailAnalyzer(AnalysisModule):
             logging.debug("missing file type analysis for {}:".format(_file))
             return False
 
-        if not ( 'RFC 822 mail' in file_type_analysis.file_type or 
-                 'message/rfc822' in file_type_analysis.file_type or
-                 'message/rfc822' in file_type_analysis.mime_type ):
+        is_email = 'RFC 822 mail' in file_type_analysis.file_type
+        is_email |= 'message/rfc822' in file_type_analysis.file_type
+        is_email |= 'message/rfc822' in file_type_analysis.mime_type
+
+        if not is_email:
+            has_subject = None
+            has_mail_to = None
+            has_mail_from = None
+
+            try:
+                with open(os.path.join(self.root.storage_dir, _file.value), 'r') as fp:
+                    while True:
+                        line = fp.readline(1024)
+                        m = RE_EMAIL_HEADER.match(line)
+                        if m:
+                            #logging.info("MARKER: header line")
+                            if line.lower().startswith('to:'):
+                                has_mail_to = True
+                            elif line.lower().startswith('from:'):
+                                has_mail_from = True
+                            elif line.lower().startswith('subject:'):
+                                has_subject = True
+                
+                            continue
+
+                        m = RE_EMAIL_HEADER_CONTINUE.match(line)
+                        if m:
+                            #logging.info("MARKER: header continuation line")
+                            continue
+
+                        #logging.info("MARKER: non header line")
+                        break
+
+                if has_subject and has_mail_to and has_mail_from:
+                    logging.debug("detected email file {} by inspecting contents".format(_file.value))
+                    is_email = True
+
+            except Exception as e:
+                logging.debug("unable to determine if {} is an email: {}".format(_file.value, e))
+
+        if not is_email:
             logging.debug("unsupported file type for email analysis: {} {}".format(
                           file_type_analysis.file_type,
                           file_type_analysis.mime_type))

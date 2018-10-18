@@ -112,6 +112,7 @@ class CritsObservableAnalyzer(AnalysisModule):
         saq.crits.load_mappings()
         mapping = saq.crits.CRITS_INDICATOR_TYPE_MAPPING
 
+        # I AM HERE - change these hard coded values to what's in intel.py
         logging.info("looking for {} type {}".format(observable.value, mapping['ipv4_address']))
 
         if observable.type == F_IPV4:
