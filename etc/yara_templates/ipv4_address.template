@@ -1,0 +1,11 @@
+//rule created automatically with crits intelligence
+rule TEMPLATE_RULE_NAME
+{
+    meta:
+        // BMP files tend to hit on ip address in the lower ranges
+        file_ext = "!bmp"
+    strings:
+TEMPLATE_STRINGS
+    condition:
+        any of them
+}
