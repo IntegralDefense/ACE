@@ -2608,14 +2608,11 @@ def export_crits_yara_rules(args):
     # what is the minimum length an indicator value can be to be put into a yara rule?
     export_minimum_length = saq.CONFIG['crits_yara_export'].getint('export_minimum_length')
 
-    def sanitize(ind_type):
-        return ind_type.replace(" ","").replace("-", "")
-
     def format_yara_string(s):
         return s.replace("\\","\\\\").replace("\"","\\\"").replace("\n","")
 
     def get_yara_filename(indicator_type):
-        return os.path.join(args.dir, "CRITS_{}.yar".format(sanitize(indicator_type)))
+        return os.path.join(args.dir, "CRITS_{}.yar".format(indicator_type))
 
     with MongoClient(saq.CONFIG['crits']['mongodb_uri']) as connection:
         db = connection['crits']
@@ -2635,11 +2632,11 @@ def export_crits_yara_rules(args):
             sources.append(source)
 
         for indicator_type in indicator_types:
-            indicator_type = get_indicator_type_mapping(indicator_type)
+            # what is the crits equivalent of this indicator type?
             logging.debug("exporting indicator type {}".format(indicator_type))
           
             # does a template file exists for this indicator type?
-            template_path = os.path.join(saq.CONFIG['crits_yara_export']['export_template_dir'], '{}.template'.format(sanitize(indicator_type)))
+            template_path = os.path.join(saq.CONFIG['crits_yara_export']['export_template_dir'], '{}.template'.format(indicator_type))
             if not os.path.exists(template_path):
                 template_path = os.path.join(saq.CONFIG['crits_yara_export']['export_template_dir'], 'default.template')
 
@@ -2649,7 +2646,7 @@ def export_crits_yara_rules(args):
             with open(template_path, 'r') as fp:
                 template = fp.read()
 
-            template = template.replace('TEMPLATE_RULE_NAME', 'CRITS_{}'.format(sanitize(indicator_type)))
+            template = template.replace('TEMPLATE_RULE_NAME', 'CRITS_{}'.format(indicator_type))
             
             special_paths = { "%temp%":[ "\\windows\\temp", "\\temp", "\\appdata\\local\\temp", "\\local settings\\temp", "\\locals~1\\temp" ],
                               "%appdata%": [ "\\application data", "\\appdata\\roaming" ],
@@ -2662,7 +2659,7 @@ def export_crits_yara_rules(args):
             count = 0
             skip_count = 0
 
-            clause = {"status": "Analyzed", "type": indicator_type}
+            clause = {"status": "Analyzed", "type": get_indicator_type_mapping(indicator_type)}
             if sources:
                 clause['source.name'] = { '$in': sources }
 
@@ -2694,6 +2691,9 @@ def export_crits_yara_rules(args):
                     for reg in ['hkcu\\', 'hklm\\', 'hkc\\', 'hku\\', 'hkcr\\']:
                         item_value = item_value.lower().replace(reg, "") # remove the front end of the indicator if it matches our special case
                     string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
+                elif item['type'] == get_indicator_type_mapping(saq.intel.I_HEX_STRING):
+                    # hex strings are passed as is and are expected to be in yara hex string format
+                    string_buffer.write('          ${} = {{ {} }}\n'.format(item_id, item_value))
                 else:
                     string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
 
@@ -2709,12 +2709,17 @@ def export_crits_yara_rules(args):
                 count += 1
                 string_data.write(string_buffer.getvalue())
 
+            if count == 0:
+                logging.info("no indicators of type {} available for export".format(indicator_type))
+                continue
+
             # make sure the whole rule compiles
             rule = template.replace('TEMPLATE_STRINGS', string_data.getvalue()) 
             try:
                 yara.compile(source=rule)
             except Exception as e:
                 logging.error("unable to compile rules for {}: {}".format(indicator_type, e))
+                print(rule)
                 continue
 
             # make sure something changed
