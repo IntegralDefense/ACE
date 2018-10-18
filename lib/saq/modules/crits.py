@@ -11,11 +11,11 @@ from bson.objectid import ObjectId
 from pymongo import MongoClient
 
 import saq
-import saq.crits
 
 from saq.analysis import Analysis, DetectionPoint, Observable
 from saq.constants import *
-from saq.crits import update_status
+from saq.crits import update_status, get_indicator_type_mapping
+from saq.intel import *
 from saq.modules import AnalysisModule
 
 KEY_INDICATORS = 'indicators'
@@ -109,22 +109,17 @@ class CritsObservableAnalyzer(AnalysisModule):
 
         logging.debug("searching crits for {}".format(observable))
 
-        saq.crits.load_mappings()
-        mapping = saq.crits.CRITS_INDICATOR_TYPE_MAPPING
-
-        logging.info("looking for {} type {}".format(observable.value, mapping['ipv4_address']))
-
         if observable.type == F_IPV4:
             for indicator in collection.find({
                 'status': 'Analyzed',
-                'type': mapping['ipv4_address'],#'Address - ipv4-addr',
+                'type': get_indicator_type_mapping(I_IPV4_ADDRESS),
                 'value': observable.value }):
                 indicators.add(str(indicator['_id']))
 
             # IP addresses do not have letters, so no need for re.IGNORECASE here.
             for indicator in collection.find({
                 #'$or': [ {'type': 'URI - Domain Name'}, {'type': 'URI - URL'}, {'type': 'URI - Path'} ],
-                '$or': [ {'type': mapping['domain']}, {'type': mapping['uri']}, {'type': mapping['uri_path']} ],
+                '$or': [ {'type': get_indicator_type_mapping(I_DOMAIN)}, {'type': get_indicator_type_mapping(I_URI)}, {'type': get_indicator_type_mapping(I_URI_PATH)} ],
                 'status': 'Analyzed',
                 'value': {'$regex': '{}'.format(re.escape(observable.value))}}):
                 indicators.add(str(indicator['_id']))
@@ -137,14 +132,17 @@ class CritsObservableAnalyzer(AnalysisModule):
                 # Need to use re.IGNORECASE for domains.
                 for indicator in collection.find({
                     #'$or': [ {'type': 'Email - Address'}, {'type': 'URI - Domain Name'}, {'type': 'URI - URL'}, {'type': 'URI - Path'} ],
-                    '$or': [ {'type': mapping['email_address']}, {'type': mapping['domain']}, {'type': mapping['uri']}, {'type': mapping['uri_path']} ],
+                    '$or': [ {'type': get_indicator_type_mapping(I_EMAIL_ADDRESS)}, 
+                             {'type': get_indicator_type_mapping(I_DOMAIN)}, 
+                             {'type': get_indicator_type_mapping(I_URI)}, 
+                             {'type': get_indicator_type_mapping(I_URI_PATH)} ],
                     'status': 'Analyzed',
                     'value': re.compile(re.escape(observable.value), re.IGNORECASE)}):
                     indicators.add(str(indicator['_id']))
 
                 # is the observed domain equal to or a subdomain of anything in crits?
                 #for indicator in collection.find({'type': 'URI - Domain Name', 'status': 'Analyzed'}):
-                for indicator in collection.find({'type': mapping['domain'], 'status': 'Analyzed'}):
+                for indicator in collection.find({'type': get_indicator_type_mapping(I_DOMAIN), 'status': 'Analyzed'}):
                     if is_subdomain(observable.value, indicator['value']):
                         logging.debug("{} matches domain {}".format(observable, indicator['value']))
                         indicators.add(str(indicator['_id']))
@@ -154,7 +152,7 @@ class CritsObservableAnalyzer(AnalysisModule):
             for indicator in collection.find({
                 'status': 'Analyzed',
                 #'type': 'URI - URL',
-                'type': mapping['uri'],
+                'type': get_indicator_type_mapping(I_URI),
                 'value': re.compile('^{}$'.format(re.escape(observable.value)), re.IGNORECASE)}):
                 #logging.debug("MARKER: exact match {}".format(indicator['_id']))
                 indicators.add(str(indicator['_id']))
@@ -168,7 +166,7 @@ class CritsObservableAnalyzer(AnalysisModule):
                     for indicator in collection.find({
                         'status': 'Analyzed',
                         #'type': 'URI - Path',
-                        'type': mapping['uri_path'],
+                        'type': get_indicator_type_mapping(I_URI_PATH),
                         'value': re.compile('^{}$'.format(re.escape(parsed_url.path)), re.IGNORECASE)}):
                         #logging.debug("MARKER: path match {} - {}".format(parsed_url.path, indicator['_id']))
                         indicators.add(str(indicator['_id']))
@@ -179,7 +177,7 @@ class CritsObservableAnalyzer(AnalysisModule):
                     for indicator in collection.find({
                         'status': 'Analyzed',
                         #'type': 'URI - Path',
-                        'type': mapping['uri_path'],
+                        'type': get_indicator_type_mapping(I_URI_PATH),
                         'value': re.compile(re.escape('{}{}'.format(parsed_url.netloc, parsed_url.path)), re.IGNORECASE)}):
                         #logging.debug("MARKER: hostname path match {}".format(indicator['_id']))
                         indicators.add(str(indicator['_id']))
@@ -192,7 +190,7 @@ class CritsObservableAnalyzer(AnalysisModule):
             for indicator in collection.find({
                 'status': 'Analyzed',
                 #'type': 'Windows - FileName',
-                'type': mapping['file_name'],
+                'type': get_indicator_type_mapping(I_FILE_NAME),
                 'value': re.compile(re.escape(observable.value), re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
@@ -201,7 +199,7 @@ class CritsObservableAnalyzer(AnalysisModule):
             for indicator in collection.find({
                 'status': 'Analyzed',
                 #'type': 'Windows - FilePath',
-                'type': mapping['file_path'],
+                'type': get_indicator_type_mapping(I_FILE_PATH),
                 'value': re.compile(re.escape(observable.value), re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
@@ -217,7 +215,7 @@ class CritsObservableAnalyzer(AnalysisModule):
                     for indicator in collection.find({
                         'status': 'Analyzed',
                         #'type': 'Email - Address',
-                        'type': mapping['email_address'],
+                        'type': get_indicator_type_mapping(I_EMAIL_ADDRESS),
                         'value': re.compile(re.escape(address), re.IGNORECASE)}):
                         indicators.add(str(indicator['_id']))
                     
@@ -229,7 +227,7 @@ class CritsObservableAnalyzer(AnalysisModule):
             for indicator in collection.find({
                 'status': 'Analyzed',
                 #'type': 'Hash - MD5',
-                'type': mapping['md5'],
+                'type': get_indicator_type_mapping(I_MD5),
                 'value': re.compile(observable.value, re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
@@ -237,7 +235,7 @@ class CritsObservableAnalyzer(AnalysisModule):
             for indicator in collection.find({
                 'status': 'Analyzed',
                 #'type': 'Hash - SHA1',
-                'type': mapping['sha1'],
+                'type': get_indicator_type_mapping(I_SHA1),
                 'value': re.compile(observable.value, re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
 
@@ -245,7 +243,7 @@ class CritsObservableAnalyzer(AnalysisModule):
             for indicator in collection.find({
                 'status': 'Analyzed',
                 #'type': 'Hash - SHA256',
-                'type': mapping['sha256'],
+                'type': get_indicator_type_mapping(I_SHA256),
                 'value': re.compile(observable.value, re.IGNORECASE)}):
                 indicators.add(str(indicator['_id']))
             
