@@ -465,10 +465,17 @@ class ArchiveAnalysis(Analysis):
 # 2018-02-19 12:15:48          319534300    299585795  155 files, 47 folders
 Z7_SUMMARY_REGEX = re.compile(rb'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s+\d+\s+\d+\s+(\d+)\s+files.*?')
 
+# listed: 1 files, totaling 711.168 bytes (compressed 326.520)
+UNACE_SUMMARY_REGEX = re.compile(rb'^listed: (\d+) files,.*')
+
 class ArchiveAnalyzer(AnalysisModule):
     def verify_environment(self):
         self.verify_config_exists('max_file_count')
         self.verify_config_exists('timeout')
+        self.verify_program_exists('7z')
+        self.verify_program_exists('unrar')
+        self.verify_program_exists('unace')
+        self.verify_program_exists('unzip')
 
     @property
     def max_file_count(self):
@@ -536,6 +543,12 @@ class ArchiveAnalyzer(AnalysisModule):
         # infosec commonly use that as the password, and if it's not right then it just fails because
         # we don't know it anyways
 
+        # special logic for ACE files
+        is_ace_file = 'ACE archive data' in file_type_analysis.file_type
+        is_ace_file |= _file.value.lower().endswith('.ace')
+
+        count = 0
+
         if is_rar_file:
             logging.debug("using unrar to extract files from {}".format(local_file_path))
             p = Popen(['unrar', 'la', local_file_path], stdout=PIPE, stderr=PIPE)
@@ -548,7 +561,6 @@ class ArchiveAnalyzer(AnalysisModule):
             if b'is not RAR archive' in stdout:
                 return False
 
-            count = 0
             start_flag = False
             for line in stdout.split(b'\n'):
                 if not start_flag:
@@ -575,7 +587,6 @@ class ArchiveAnalyzer(AnalysisModule):
             if b'End-of-central-directory signature not found.' in stdout:
                 return False
 
-            count = 0
             start_flag = False
             for line in stdout.split(b'\n'):
                 if not start_flag:
@@ -608,6 +619,21 @@ class ArchiveAnalyzer(AnalysisModule):
             ole_object_regex = re.compile(b'word.embeddings.oleObject1\\.bin', re.M)
             is_office_document |= (ole_object_regex.search(stdout) is not None)
                 
+        elif is_ace_file:
+            p = Popen(['unace', 'l', local_file_path], stdout=PIPE, stderr=PIPE)
+
+            try:
+                (stdout, stderr) = p.communicate(timeout=self.timeout)
+            except TimeoutExpired as e:
+                logging.error("timed out trying to extract files from {} with 7z".format(local_file_path))
+                return False
+
+            for line in stdout.split(b'\n'):
+                m = UNACE_SUMMARY_REGEX.match(line)
+                if m:
+                    count = int(m.group(1))
+                    break
+
         else:
             logging.debug("using 7z to extract files from {}".format(local_file_path))
             p = Popen(['7z', '-y', '-pinfected', 'l', local_file_path], stdout=PIPE, stderr=PIPE)
@@ -620,7 +646,6 @@ class ArchiveAnalyzer(AnalysisModule):
             if b'Error: Can not open file as archive' in stdout:
                 return False
 
-            count = 0
             for line in stdout.split(b'\n'):
                 m = Z7_SUMMARY_REGEX.match(line)
                 if m:
@@ -656,8 +681,6 @@ class ArchiveAnalyzer(AnalysisModule):
         if count == 0:
             return False
 
-        logging.info("extracting {} files from archive {}".format(count, local_file_path))
-
         # we need a place to store these things
         extracted_path = '{}.extracted'.format(local_file_path).replace('*', '_') # XXX need a normalize function
         if not os.path.isdir(extracted_path):
@@ -667,8 +690,13 @@ class ArchiveAnalyzer(AnalysisModule):
                 logging.error("unable to create directory {}: {}".format(extracted_path, e))
                 return False
 
+        logging.debug("extracting {} files from archive {} into {}".format(count, local_file_path, extracted_path))
+
         analysis = self.create_analysis(_file)
         analysis.file_count = count
+
+        params = []
+        kwargs = { 'stdout': PIPE, 'stderr': PIPE }
 
         if is_rar_file:
             params = ['unrar', 'e', '-y', '-o+', local_file_path, extracted_path]
@@ -677,17 +705,22 @@ class ArchiveAnalyzer(AnalysisModule):
             params = ['unzip', local_file_path, '-x', 'xl/activeX/*', 
                                                 '-x', 'xl/activeX/_rels/*', 
                       '-d', extracted_path]
+        elif is_ace_file:
+            # for some reason, unace doesn't let you use a full path
+            params = ['unace', 'x', '-y', '-o', os.path.relpath(local_file_path, start=extracted_path)]
+            kwargs['cwd'] = extracted_path
         else:
             params = ['7z', '-y', '-pinfected', '-o{}'.format(extracted_path), 'x', local_file_path]
 
-        p = Popen(params, stdout=PIPE, stderr=PIPE)
+        if params:
+            p = Popen(params, **kwargs)
 
-        try:
-            (stdout, stderr) = p.communicate(timeout=self.timeout)
-        except TimeoutExpired as e:
-            (stdout, stderr) = p.communicate()
+            try:
+                (stdout, stderr) = p.communicate(timeout=self.timeout)
+            except TimeoutExpired as e:
+                (stdout, stderr) = p.communicate()
 
-        logging.debug("extracted into {}".format(extracted_path))
+        #logging.debug("extracted into {}".format(extracted_path))
 
         # rather than parse the output we just go find all the files we've created in that directory
         for root, dirs, files in os.walk(extracted_path):
