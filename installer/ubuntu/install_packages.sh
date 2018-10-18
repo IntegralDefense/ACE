@@ -23,6 +23,7 @@ apt-get -y install \
     p7zip-rar \
     unzip \
     unrar \
+    unace-nonfree \
     libxml2-dev libxslt1-dev \
     libyaml-dev \
     ssdeep \
