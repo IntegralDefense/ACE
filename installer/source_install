@@ -139,6 +139,9 @@ then
     ln -s "$SAQ_HOME/ssl/web/localhost.cert.pem" "$SAQ_HOME/ssl/ca-chain.cert.pem"
 fi
 
+# configure memcached
+sudo installer/configure_memcached
+
 if [ "${gui}" == "Apache" ]
 then
     sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace";
