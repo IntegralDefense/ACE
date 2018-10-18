@@ -440,6 +440,9 @@ def correlate(args):
                 return
 
             if self.should_alert(root):
+
+                root.save()
+
                 logging.info("sending {} as alert".format(root))
                 remote_host = args.remote_host if args.remote_host else CONFIG['network_client_ace']['remote_host']
                 remote_port = args.remote_port if args.remote_port else CONFIG['network_client_ace'].getint('remote_port')
