@@ -144,11 +144,12 @@ if ! [ -L /etc/memcached.conf ]
 then
     if [ -e /etc/memcached.conf ]
     then
-        mv /etc/memcached.conf /etc/memcached.conf.bak
+        sudo mv /etc/memcached.conf /etc/memcached.conf.bak
     fi
 
-    ln -s $SAQ_HOME/etc/memcached.conf.example /etc/memcached.conf
-    systemctl restart memcached.service
+    cp etc/memcached.example.conf etc/memcached.conf
+    sudo ln -s $SAQ_HOME/etc/memcached.conf /etc/memcached.conf
+    sudo systemctl restart memcached.service
 fi
 
 if [ "${gui}" == "Apache" ]
