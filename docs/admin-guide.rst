@@ -93,12 +93,12 @@ Make sure **engine_cloudphish** is enabled in ``saq.ini``. You may need to add t
   [engine_cloudphish]
   enabled = yes
 
-Also in ``saq.default.ini``, make sure the following config item has this value; unless you know your situation is different::
+Also in ``saq.ini``, make sure the following config item has this value; unless you know your situation is different. You may have to create this section::
 
+  [analysis_module_cloudphish]
   cloudphish.1 = https://localhost/ace/cloudphish
 
-The CloudPhish engine depend on the CrawlPhish analysis module. So make sure the **analysis_module_crawlphish** is turned on in ``saq.default.ini``:: 
-
+The CloudPhish engine depend on the CrawlPhish analysis module. So make sure the **analysis_module_crawlphish** is turned on in ``saq.ini``. You may have to create this section:: 
     [analysis_module_crawlphish]
     enabled = yes
 
@@ -165,6 +165,57 @@ Start the yara module::
 Live Renderer
 +++++++++++++
 
-The live browser rendering module will try to render a png image of any html file it's given. This can be particularly helpful for viewing email html content.
+The live browser rendering module will try to render a png image of any html file it's given. This can be particularly helpful for viewing email html content. Keep security in-mind when implementing this module.
 
+To configure the module, execute the following commands. NOTE: The following instructions explain how to set up the renderer on localhost, but you can set up the rendered on a dedicated server as well.
 
+Create a user named "cybersecurity"::
+
+  $ sudo adduser cybersecurity
+
+Generate a ssh key as the ace user::
+
+  $ ssh-keygen -t rsa -b 4096
+
+Add this entry to your ace ssh config::
+
+  $ cd /home/ace
+  $ vim .ssh/config
+
+  Host render-server
+    HostName localhost
+    port 22
+    User cybersecurity
+    IdentityFile /home/ace/.ssh/id_rsa
+
+Set up the cybersecurity account::
+
+  $ sudo su - cybersecurity
+  $ cd && mkdir .ssh && mkdir tmp
+  $ cat /home/ace/.ssh/id_rsa.pub >> .ssh/authorized_keys
+  $ ln -s /opt/ace/render render
+  $ exit
+
+Add localhost as a known ssh host for the ace user::
+
+  $ ssh-keyscan -H localhost >> .ssh/known_hosts
+
+Download the most recent Chrome driver from https://sites.google.com/a/chromium.org/chromedriver/downloads::
+
+  $ cd /opt/ace/render 
+  $ wget https://chromedriver.storage.googleapis.com/<version number goes here>/chromedriver_linux64.zip
+  $ unzip chromedriver_linux64.zip
+
+Install the following::
+
+  $ sudo apt-get install chromium-browser
+  $ sudo apt-get install xvfb
+  $ pip install selenium
+
+Finally, make sure the following (at a minimum) is in your ``saq.ini`` file::
+
+  [analysis_module_live_browser_analyzer]
+  remote_server = render-server
+  enabled = yes
+
+Now, restart the correlation engine and render away.

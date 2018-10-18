@@ -8,7 +8,14 @@ Analyst Orientation - Start Here
 
 Keep this in mind when working ACE alerts: ACE is meant to enable the analyst to QUICKLY disposition false positive alerts and recognize true positives.
 
-.. Purspose of ACE: Quick, and accurate disposition of false postive alerts. So more time can be spent looking at the true postives.
+For convenience, here is a video recording that provides a tour of the ACE GUI and demonstrates how to work some ACE alerts. Many of the concepts in this orientation are covered.
+
+.. _Ananlyst Demo:
+
+.. raw:: html
+
+   <iframe width="560" height="315" src="https://www.youtube.com/embed/dg19VBoVesU" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+   <br>
 
 .. _concepts-intro:
 
