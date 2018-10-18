@@ -2187,6 +2187,10 @@ class EmailLoggingAnalyzer(AnalysisModule):
         # we have to have splunk extracted urls into a separate index
         extracted_urls = entry['extracted_urls']
         entry['extracted_urls'] = []
+        entry['headers'] = 'temporarily removed'
+
+        # remove the timezone info for splunk
+        entry['date'] = entry['date'][:-6]
 
         # for splunk we need to sort the keys alphabetically
         entry_keys = list(entry.keys())

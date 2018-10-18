@@ -2581,6 +2581,186 @@ update_crits_cache_parser = subparsers.add_parser('update-crits-cache',
     help="Updates the local CRITS cache used by the analysis modules.")
 update_crits_cache_parser.set_defaults(func=update_crits_cache)
 
+def export_crits_yara_rules(args):
+
+    import io
+
+    from collections import defaultdict
+
+    import saq
+    import saq.intel
+
+    from saq.crits import get_indicator_type_mapping 
+
+    from pymongo import MongoClient
+
+    import yara
+    yara.set_config(max_strings_per_rule=30720)
+
+    # make sure target directory exists
+    if not os.path.isdir(args.dir):
+        try:
+            os.makedirs(args.dir)
+        except Exception as e:
+            logging.error("unable to create directory {}: {}".format(args.dir, e))
+            sys.exit(1)
+
+    # load the mapping from indicator type to the string modifiers to use
+    string_modifiers = defaultdict(lambda: saq.CONFIG['crits_yara_export_string_modifiers']['default'])
+    for indicator_type in saq.CONFIG['crits_yara_export_string_modifiers']:
+        if indicator_type == 'default':
+            continue
+
+        string_modifiers[indicator_type] = saq.CONFIG['crits_yara_export_string_modifiers'][indicator_type]
+        logging.debug("using string modifiers {} for {}".format(string_modifiers[indicator_type], indicator_type))
+
+    # what is the minimum length an indicator value can be to be put into a yara rule?
+    export_minimum_length = saq.CONFIG['crits_yara_export'].getint('export_minimum_length')
+
+    def format_yara_string(s):
+        return s.replace('\\', '\\\\').replace('"','\\"').replace("\n","")
+
+    def get_yara_filename(indicator_type):
+        return os.path.join(args.dir, "CRITS_{}.yar".format(indicator_type))
+
+    with MongoClient(saq.CONFIG['crits']['mongodb_uri']) as connection:
+        db = connection['crits']
+        
+        indicator_types = [_.strip() for _ in saq.CONFIG['crits_yara_export']['export_list'].split(',')]
+        included_sources = [_.strip() for _ in saq.CONFIG['crits_yara_export']['export_sources_include'].split(',')]
+        excluded_sources = [_.strip() for _ in saq.CONFIG['crits_yara_export']['export_sources_exclude'].split(',')]
+
+        sources = []
+        for source in db.indicators.distinct('source.name'):
+            if included_sources and source not in included_sources:
+                continue
+
+            if source in excluded_sources:
+                continue
+
+            sources.append(source)
+
+        for indicator_type in indicator_types:
+            # what is the crits equivalent of this indicator type?
+            logging.debug("exporting indicator type {}".format(indicator_type))
+          
+            # does a template file exists for this indicator type?
+            template_path = os.path.join(saq.CONFIG['crits_yara_export']['export_template_dir'], '{}.template'.format(indicator_type))
+            if not os.path.exists(template_path):
+                template_path = os.path.join(saq.CONFIG['crits_yara_export']['export_template_dir'], 'default.template')
+
+            logging.info("using template {} for {}".format(template_path, indicator_type))
+
+            # load the template we're going to be using
+            with open(template_path, 'r') as fp:
+                template = fp.read()
+
+            template = template.replace('TEMPLATE_RULE_NAME', 'CRITS_{}'.format(re.sub(r'[^a-zA-Z0-9_]', '', indicator_type)))
+            
+            special_paths = { "%temp%":[ "\\windows\\temp", "\\temp", "\\appdata\\local\\temp", "\\local settings\\temp", "\\locals~1\\temp" ],
+                              "%appdata%": [ "\\application data", "\\appdata\\roaming" ],
+                              "%programdata%": [ "\\programdata", "\\documents and settings\\all users" ],
+                              "%programfiles%": [ "\\program files", "\\program files (x86)" ],
+                              "%systemdrive%": [ "" ],
+                              "%system%": [ "\\windows\\system32", "\\windows\\system" ] }
+
+            string_data = io.StringIO()
+            count = 0
+            skip_count = 0
+
+            clause = {"status": "Analyzed", "type": get_indicator_type_mapping(indicator_type)}
+            if sources:
+                clause['source.name'] = { '$in': sources }
+
+            for item in db.indicators.find(clause):
+                string_buffer = io.StringIO()
+                item_id = item['_id']
+                item_value = item['value']
+
+                # is this string too small?
+                if len(item_value) < export_minimum_length:
+                    skip_count += 1
+                    continue
+                    
+                # do we need to reformat this string?
+                if item['type'] == get_indicator_type_mapping(saq.intel.I_FILE_PATH):
+                    subindicator = 0
+                    for path in special_paths:
+                        if path.lower() in item['value'].lower():
+                            for p_item in special_paths[path]:
+                                item_value = item['value'].lower().replace(path, p_item)
+                                item_id = str(item['_id']) + "_" + str(subindicator)
+                                string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
+                                subindicator += 1
+
+                    if subindicator == 0:
+                        string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
+
+                elif item['type'] == get_indicator_type_mapping(saq.intel.I_REGISTRY_KEY):
+                    for reg in ['hkcu\\', 'hklm\\', 'hkc\\', 'hku\\', 'hkcr\\']:
+                        item_value = item_value.lower().replace(reg, "") # remove the front end of the indicator if it matches our special case
+                    string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
+                elif item['type'] == get_indicator_type_mapping(saq.intel.I_HEX_STRING):
+                    # hex strings are passed as is and are expected to be in yara hex string format
+                    string_buffer.write('          ${} = {{ {} }}\n'.format(item_id, item_value))
+                else:
+                    string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
+
+                # make sure this individual string compiles into a yara rule
+                test_rule = template.replace('TEMPLATE_STRINGS', string_buffer.getvalue())
+                try:
+                    yara.compile(source=test_rule)
+                except Exception as e:
+                    logging.error("indicator type {} id {} value {} invalid for yara".format(indicator_type, item_id, item_value))
+                    print(test_rule)
+                    skip_count += 1
+                    continue
+
+                count += 1
+                string_data.write(string_buffer.getvalue())
+
+            if count == 0:
+                logging.info("no indicators of type {} available for export".format(indicator_type))
+                continue
+
+            # make sure the whole rule compiles
+            rule = template.replace('TEMPLATE_STRINGS', string_data.getvalue()) 
+            try:
+                yara.compile(source=rule)
+            except Exception as e:
+                logging.error("unable to compile rules for {}: {}".format(indicator_type, e))
+                print(rule)
+                continue
+
+            # make sure something changed
+            output_file = get_yara_filename(indicator_type)
+            if os.path.exists(output_file):
+                with open(output_file, 'r') as fp:
+                    existing_rule = fp.read()
+
+                if existing_rule == rule:
+                    logging.info("no changes detected for {}".format(indicator_type))
+                    continue
+
+            with open(output_file, 'w') as fp:
+                fp.write(rule)
+
+            logging.info("exported {} skipped {} indicators of type {} to {}".format(count, skip_count, indicator_type, output_file))
+            if count == 0:
+                logging.warning("no strings were exported for {}, removing {}".format(indicator_type, output_file))
+                try:
+                    os.remove(output_file)
+                except Exception as e:
+                    logging.error("unable to remove {}: {}".format(output_file, e))
+    
+    sys.exit(0)
+
+export_crits_yara_rules_parser = subparsers.add_parser('export-crits-yara-rules',
+    help="Exports your CRITS database as yara rules to be used by ACE.")
+export_crits_yara_rules_parser.add_argument('dir',
+    help="The path to the directory to export the yara rules into.")
+export_crits_yara_rules_parser.set_defaults(func=export_crits_yara_rules)
+
 def list_observables(args):
     from saq.constants import VALID_OBSERVABLE_TYPES, OBSERVABLE_DESCRIPTIONS
     print() 

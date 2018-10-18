@@ -7,6 +7,7 @@ import logging
 
 import saq
 from saq.constants import *
+from saq.intel import *
 
 import requests
 
@@ -15,36 +16,34 @@ from bson import json_util
 from bson.objectid import ObjectId
 from pymongo import MongoClient
 
-class _crits_indicator_type_mapping(object):
-    def __getitem__(self, key):
-        if not hasattr(self, '_indicator_type_mapping'):
-            self._indicator_type_mapping = {}
-            for k in saq.CONFIG['crits_indicator_type_mapping'].keys():
-                self._indicator_type_mapping[k] = saq.CONFIG['crits_indicator_type_mapping'][k]
+indicator_type_mapping = None
+observable_type_mapping = None
 
-        return self._indicator_type_mapping[key]
+def load_indicator_type_mapping():
+    global indicator_type_mapping
+    if indicator_type_mapping is None:
+        indicator_type_mapping = {}
+        for k in saq.CONFIG['crits_indicator_type_mapping'].keys():
+            indicator_type_mapping[k] = saq.CONFIG['crits_indicator_type_mapping'][k]
 
-class _crits_observable_type_mapping(object):
-    def __getitem__(self, key):
-        if not hasattr(self, '_observable_type_mapping'):
-            self._observable_type_mapping = {}
-            for k in saq.CONFIG['crits_observable_type_mappping'].keys():
-                self._observable_type_mapping[k] = saq.CONFIG['crits_observable_type_mappping'][k]
+def get_indicator_type_mapping(indicator_type):
+    load_indicator_type_mapping()
+    try:
+        # return the internal CRITS indicator type for the given default type
+        return indicator_type_mapping[indicator_type]
+    except KeyError:
+        # or just return the indicator type if it's not a default type
+        return indicator_type
 
-        return self._observable_type_mapping[key] 
+def load_observable_type_mapping():
+    global observable_type_mapping
+    if observable_type_mapping is None:
+        observable_type_mapping = {}
+        for k in saq.CONFIG['crits_observable_type_mappping'].keys():
+            observable_type_mapping[k] = saq.CONFIG['crits_observable_type_mappping'][k]
 
-CRITS_INDICATOR_TYPE_MAPPING = None
-CRITS_OBSERVABLE_TYPE_MAPPING = None
-
-def load_mappings():
-    global CRITS_INDICATOR_TYPE_MAPPING
-    global CRITS_OBSERVABLE_TYPE_MAPPING
-
-    if CRITS_INDICATOR_TYPE_MAPPING is None:
-        CRITS_INDICATOR_TYPE_MAPPING = _crits_indicator_type_mapping()
-
-    if CRITS_OBSERVABLE_TYPE_MAPPING is None:
-        CRITS_OBSERVABLE_TYPE_MAPPING = _crits_observable_type_mapping()
+def get_observables_by_type_mapping(indicator_type):
+    return observable_type_mapping[indicator_type] 
 
 #CRITS_TYPE_MAPPING = {
     #F_IPV4 : 'Address - ipv4-addr',
