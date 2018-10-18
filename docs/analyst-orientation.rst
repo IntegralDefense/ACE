@@ -418,7 +418,7 @@ Let's scroll down and find that single detection. Oh, I just noticed that we're 
 .. figure:: _static/email_fp_critical_view_fixed.png
    :align: center
 
-We could click on the "View All Analysis" button if we wanted to view all of its analysis results. However, for this alert, the critical view sure makes it easy to find our only detection. Detections are marked in ACE alerts by a little red flame icon. Here we see that the flame is highlighting a yara rule that detected something in the analysis of the "Glenn Resume.docx" file. Speaking of that file, we were right about assuming it was an open xml office document.
+We could click on the "View All Analysis" button if we wanted to view all of its analysis results. However, for this alert, the critical view makes it easy to find the single detection. Detections are marked by a little red flame icon. Here we see that the flame is highlighting a yara rule that detected something in the analysis of the "Glenn Resume.docx" file. Speaking of that file, we were right about assuming it was an open xml office document.
 
 Look at this, ACE tagged the `rels_remote_references` yara rule with `high_fp_frequency`. That tells us that this specific yara rule has a high frequency of showing up in false positive alerts. Below the rule, we see that the "Malicious Frequency Analysis" module found the `rels_remote_references` yara rule only appeared in four true-positive alerts out of two hundred and ten! I don't know about you, but my gut is telling me this email alert is a false positive. Let's make sure though and click to view the "Yara Scan Results".
 
