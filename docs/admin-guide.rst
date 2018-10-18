@@ -88,7 +88,7 @@ The email scanning engine will detect any file observable that is compliant with
 CloudPhish
 ++++++++++
 
-Make sure **engine_cloudphish** is enabled in ``saq.default.ini``::
+Make sure **engine_cloudphish** is enabled in ``saq.ini``. You may need to add the following enabled variable::
 
   [engine_cloudphish]
   enabled = yes
