@@ -9,7 +9,7 @@ Installation + Adding Data
 Super fast How-To
 -----------------
 
-#. Clean Ubuntu 18 install.
+#. Clean Ubuntu 18 install. Take a quick look at `these notes about Ubuntu 18 <https://github.com/IntegralDefense/ACE/wiki/Ubuntu-18-Installation-Notes>`_.
 #. Create username/group ace/ace.
 #. Add ace to sudo.
 #. Login as user ace.
