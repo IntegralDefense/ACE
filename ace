@@ -440,6 +440,9 @@ def correlate(args):
                 return
 
             if self.should_alert(root):
+
+                root.save()
+
                 logging.info("sending {} as alert".format(root))
                 remote_host = args.remote_host if args.remote_host else CONFIG['network_client_ace']['remote_host']
                 remote_port = args.remote_port if args.remote_port else CONFIG['network_client_ace'].getint('remote_port')
@@ -2595,6 +2598,15 @@ def export_crits_yara_rules(args):
     from pymongo import MongoClient
 
     import yara
+    yara.set_config(max_strings_per_rule=30720)
+
+    # make sure target directory exists
+    if not os.path.isdir(args.dir):
+        try:
+            os.makedirs(args.dir)
+        except Exception as e:
+            logging.error("unable to create directory {}: {}".format(args.dir, e))
+            sys.exit(1)
 
     # load the mapping from indicator type to the string modifiers to use
     string_modifiers = defaultdict(lambda: saq.CONFIG['crits_yara_export_string_modifiers']['default'])
@@ -2609,7 +2621,7 @@ def export_crits_yara_rules(args):
     export_minimum_length = saq.CONFIG['crits_yara_export'].getint('export_minimum_length')
 
     def format_yara_string(s):
-        return s.replace("\\","\\\\").replace("\"","\\\"").replace("\n","")
+        return s.replace('\\', '\\\\').replace('"','\\"').replace("\n","")
 
     def get_yara_filename(indicator_type):
         return os.path.join(args.dir, "CRITS_{}.yar".format(indicator_type))
@@ -2646,7 +2658,7 @@ def export_crits_yara_rules(args):
             with open(template_path, 'r') as fp:
                 template = fp.read()
 
-            template = template.replace('TEMPLATE_RULE_NAME', 'CRITS_{}'.format(indicator_type))
+            template = template.replace('TEMPLATE_RULE_NAME', 'CRITS_{}'.format(re.sub(r'[^a-zA-Z0-9_]', '', indicator_type)))
             
             special_paths = { "%temp%":[ "\\windows\\temp", "\\temp", "\\appdata\\local\\temp", "\\local settings\\temp", "\\locals~1\\temp" ],
                               "%appdata%": [ "\\application data", "\\appdata\\roaming" ],
@@ -2685,7 +2697,7 @@ def export_crits_yara_rules(args):
                                 subindicator += 1
 
                     if subindicator == 0:
-                        string_data.buffer('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
+                        string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[item['type'].lower()]))
 
                 elif item['type'] == get_indicator_type_mapping(saq.intel.I_REGISTRY_KEY):
                     for reg in ['hkcu\\', 'hklm\\', 'hkc\\', 'hku\\', 'hkcr\\']:
@@ -2703,6 +2715,7 @@ def export_crits_yara_rules(args):
                     yara.compile(source=test_rule)
                 except Exception as e:
                     logging.error("indicator type {} id {} value {} invalid for yara".format(indicator_type, item_id, item_value))
+                    print(test_rule)
                     skip_count += 1
                     continue
 
