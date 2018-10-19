@@ -960,6 +960,7 @@ class LiveBrowserAnalyzer(AnalysisModule):
 
         while True:
             output_file = '{}_{:03}.png'.format(parsed_url.hostname if url else os.path.basename(_file.value), count)
+            output_file = output_file.replace(" ", "_")
             output_path = os.path.join(self.root.storage_dir, os.path.dirname(_file.value), output_file)
             if os.path.exists(output_path):
                 count += 1
