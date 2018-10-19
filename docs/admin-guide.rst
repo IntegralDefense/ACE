@@ -200,17 +200,15 @@ Add localhost as a known ssh host for the ace user::
 
   $ ssh-keyscan -H localhost >> .ssh/known_hosts
 
+Run the ``install`` script::
+
+  $ cd /opt/ace/render/ && ./install
+
 Download the most recent Chrome driver from https://sites.google.com/a/chromium.org/chromedriver/downloads::
 
   $ cd /opt/ace/render 
   $ wget https://chromedriver.storage.googleapis.com/<version number goes here>/chromedriver_linux64.zip
-  $ unzip chromedriver_linux64.zip
-
-Install the following::
-
-  $ sudo apt-get install chromium-browser
-  $ sudo apt-get install xvfb
-  $ pip install selenium
+  $ unzip chromedriver_linux64.zi
 
 Finally, make sure the following (at a minimum) is in your ``saq.ini`` file::
 
