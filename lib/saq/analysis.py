@@ -24,6 +24,7 @@ import saq
 from saq.constants import *
 from saq.error import report_exception
 from saq.lock import LocalLockableObject
+from saq.util import parse_event_time
 
 ##############################################################################
 #
@@ -1348,7 +1349,23 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
 
     @time.setter
     def time(self, value):
-        self._time = value # TODO check value
+        if value is None:
+            self._time = None
+        elif isinstance(value, datetime.datetime):
+            # if we didn't specify a timezone then we use the timezone of the local system
+            if value.tzinfo is None:
+                value = saq.LOCAL_TIMEZONE.localize(value)
+            self._time = value
+        elif isinstance(value, str):
+            self._time = parse_event_time(value)
+        else:
+            raise ValueError("time must be a datetime.datetime object or a string in the format "
+                             "%Y-%m-%d %H:%M:%S %z but you passed {}".format(type(value).__name__))
+
+    @property
+    def time_datetime(self):
+        """Returns self.time. Remains for backwards compatibility."""
+        return self.time
 
     @property
     def directives(self):
@@ -1539,16 +1556,6 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         for target in self.links:
             target.add_tag(*args, **kwargs)
 
-    @property
-    def time_datetime(self):
-        """Return a datetime.datetime representation of self.time."""
-        if self.time is None:
-            return None
-
-        if isinstance(self.time, datetime.datetime):
-            return self.time
-
-        return datetime.datetime.strptime(self.time, event_time_format)
 
     @property
     def analysis(self):
@@ -1974,27 +1981,10 @@ class AnalysisDependency(object):
 # requiring you to do a database query first.
 #
 # The hiearchy of relationships goes Analysis --> Alert --> saq.database.Alert
-# 
-# *** Implementation Details ***
-# The base saq.analysis.Alert contains properties with leading underscores.
-# These are exposed via @property decorators.  The names assigned to the
-# @property decorators match the names in saq.database.Alert.
-#
-# The saq.database.Alert class essentially overwrites these properties with
-# SQLAlchemy column objects.
-#
-# Thus, when working with saq.analysis.Alert objects the properties you are
-# working with are the _underscore values stored inside the object.  When
-# working with the database object you are accessing Column - based objects.
-# Essentially, the _underscore objects are *ignored* when working with the
-# database Alert object.
-#
-# Therefor, it is important to NOT use the _underscore properties (use the
-# decoratored @property instead.)
 #
 
 class RootAnalysis(LocalLockableObject, Analysis):
-    """Root of analysis.  This can potentially become an Alert."""
+    """Root of analysis. Also see saq.database.Alert."""
 
     def __init__(self, 
                  tool=None, 
@@ -2287,22 +2277,31 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
     @property
     def event_time(self):
-        #"""YYYY-MM-DD HH:MM:SS UTC <-- the time the event occurred, NOT when SAQ received it."""
+        """Returns a datetime object representing the time this event was created or occurred."""
         return self._event_time
 
     @event_time.setter
     def event_time(self, value):
+        """Sets the event_time. Accepts a datetime object or a string in the format %Y-%m-%d %H:%M:%S %z."""
         if value is None:
             self._event_time = None
         elif isinstance(value, datetime.datetime):
-            self._event_time = value.strftime(event_time_format) 
-        elif isinstance(value, str):
+            # if we didn't specify a timezone then we use the timezone of the local system
+            if value.tzinfo is None:
+                value = saq.LOCAL_TIMEZONE.localize(value)
             self._event_time = value
+        elif isinstance(value, str):
+            self._event_time = parse_event_time(value)
         else:
             raise ValueError("event_time must be a datetime.datetime object or a string in the format "
-                             "%Y-%m-%d %H:%M:%S you passed {}".format(type(value).__name__))
+                             "%Y-%m-%d %H:%M:%S %z but you passed {}".format(type(value).__name__))
 
         self.set_modified()
+
+    @property
+    def event_time_datetime(self):
+        """This returns the same thing as event_time. It remains for backwards compatibility."""
+        return self._event_time
 
     # override the summary property of the Analysis object to reflect the description
     @property
@@ -2314,12 +2313,6 @@ class RootAnalysis(LocalLockableObject, Analysis):
         """This does nothing, but it does get called when you assign to the json property."""
         pass
 
-    @property
-    def event_time_datetime(self):
-        """Return a datetime.datetime representation of self.event_time."""
-        if self._event_time is None:
-            return None
-        return datetime.datetime.strptime(self._event_time, event_time_format)
 
     @property
     def action_counters(self):
