@@ -2105,7 +2105,9 @@ class EmailLoggingAnalyzer(AnalysisModule):
 
         analysis = email_file.get_analysis(EmailAnalysis)
         if not analysis:
-            logging.warn("missing EmailAnalysis for {} - not logging".format(email_file.value))
+            # XXX hack - make MUCH better support for whitelisting :-(
+            if not email_file.has_tag('whitelisted'):
+                logging.warn("missing EmailAnalysis for {} - not logging".format(email_file.value))
             return
 
         if not analysis.email:
