@@ -390,7 +390,7 @@ class AlertSubmitException(Exception):
 class _JSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime.datetime):
-            return obj.isoformat()
+            return obj.strftime(event_time_format_json_tz)
         elif isinstance(obj, bytes):
             return obj.decode('unicode_escape', 'replace')
         elif hasattr(obj, 'json'):
@@ -1246,6 +1246,13 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
             return self.value.encode('utf-8', errors='ignore').decode()
         else:
             return self.value
+
+    @property
+    def display_time(self):
+        if self.time is None:
+            return ''
+
+        return self.time.strftime(event_time_format_tz)
 
     @property
     def is_suspect(self):
@@ -2660,11 +2667,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
         assert isinstance(o_type, str)
         assert isinstance(self.observable_store, dict)
-        assert o_time is None or isinstance(o_time, str) or isinstance(o_time, datetime.datetime)
-
-        # if we passed in an actual datetime object for the time then we need to convert into the expected string
-        if isinstance(o_time, datetime.datetime):
-            o_time = o_time.strftime(event_time_format)
+        assert o_time is None or isinstance(o_time, datetime.datetime)
 
         # create a temporary object to make use of any defined custom __eq__ ops
         observable = create_observable(o_type, o_value, o_time=o_time)

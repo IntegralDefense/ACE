@@ -1,6 +1,6 @@
 {% block observable_display %}
-{% if _observable.time %}
-{{_observable.display_value}} @ {{_observable.time}}
+{% if _observable.display_time %}
+{{_observable.display_value}} @ {{_observable.display_time}}
 {% else %}
 {{_observable.display_value}}
 {% endif %}
