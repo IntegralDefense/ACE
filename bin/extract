@@ -20,18 +20,22 @@ def stdout(message):
 def stderr(message):
     sys.stderr.write('{}\n'.format(message))
 
+import pytz
+import tzlocal
+LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
+
 # this script requires ssh public/private key pairs in place to auth to the sensors
 parser = argparse.ArgumentParser(description='Extract pcap from the sensors for a given event.')
 parser.add_argument('-c', '--config-path', required=False, dest='config_path', default='/usr/local/etc/pcap_extract.ini',
     help="Configuration file that specifies sensor information.")
 parser.add_argument('-D', '--output-dir', required=True, dest='output_dir', default=None,
     help="Directory that contains the individual pcap files. By default this the value of the -o option with .files appended.")
-parser.add_argument('-t', '--start-time', required=True, dest='start_time', help="Starting time in YYYY-MM-DD HH:MM:SS format.")
+parser.add_argument('-t', '--start-time', required=True, dest='start_time', help="Starting time in YYYY-MM-DD HH:MM:SS [z] format. The timezone (z) is optional ±HHMM format.")
 parser.add_argument('-d', '--duration', required=False, default=None, dest='duration', 
     help="Duration in format [DD:][HH:][MM:]SS")
 parser.add_argument('-r', '--relative', required=False, action='store_true', default=False, dest='use_relative_duration', 
     help="Interpret duration as relative (around) the start time.  For examle, 10 minutes would be 10 minutes before to 10 minutes after start time.")
-parser.add_argument('-e', '--end-time', required=False, default=None, dest='end_time', help="Ending time in YYYY-MM-DD HH:MM:SS format.")
+parser.add_argument('-e', '--end-time', required=False, default=None, dest='end_time', help="Ending time in YYYY-MM-DD HH:MM:SS [z] format. The timezone (z) is optional ±HHMM format.")
 parser.add_argument('bpf', help="The BPF to use in the packet filter.")
 
 args = parser.parse_args()
@@ -44,17 +48,23 @@ if not os.path.isdir(args.output_dir):
         sys.exit(1)
 
 try:
-    dt_start_time = datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S')
+    dt_start_time = datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S %z')
 except Exception as e:
-    stderr("unable to parse start time {}: {}".format(args.start_time, e))
-    sys.exit(1)
+    try:
+        dt_start_time = datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S')
+    except Exception as e:
+        stderr("unable to parse start time {}: {}".format(args.start_time, e))
+        sys.exit(1)
 
 if args.end_time is not None:
     try:
-        dt_end_time = datetime.strptime(args.end_time, '%Y-%m-%d %H:%M:%S')
+        dt_end_time = datetime.strptime(args.end_time, '%Y-%m-%d %H:%M:%S %z')
     except Exception as e:
-        stderr("unable to parse end time {}: {}".format(args.end_time, e))
-        sys.exit(1)
+        try:
+            dt_end_time = datetime.strptime(args.end_time, '%Y-%m-%d %H:%M:%S')
+        except Exception as e:
+            stderr("unable to parse end time {}: {}".format(args.end_time, e))
+            sys.exit(1)
     
 if args.end_time is None:
     if args.duration is None:
@@ -80,13 +90,13 @@ if args.end_time is None:
     if args.use_relative_duration:
         dt_start_time = dt_start_time - offset
 
-args.start_time = dt_start_time.strftime('%Y-%m-%d %H:%M:%S')
-args.end_time = dt_end_time.strftime('%Y-%m-%d %H:%M:%S')
+args.start_time = dt_start_time
+args.end_time = dt_end_time
 stdout("gathering pcap from {} to {}".format(args.start_time, args.end_time))
 
 # load sensor information from the configuration file
 class Sensor(object):
-    def __init__(self, name, host, user, pcap_dir, ssh_key_file, rotation_period, tags):
+    def __init__(self, name, host, user, pcap_dir, ssh_key_file, rotation_period, tags, timezone):
         self.name = name
         self.host = host
         self.user = user
@@ -94,15 +104,43 @@ class Sensor(object):
         self.ssh_key_file = ssh_key_file
         self.rotation_period = rotation_period
         self.tags = tags
+        self.timezone = timezone
+
+        if self.timezone is not None:
+            try:
+                self.timezone = pytz.timezone(self.timezone)
+            except Exception as e:
+                stderr("the timezone {} specified for sensor {} is invalid".format(timezone, name))
+                raise e
 
         # the list of collected pcap files for this sensor
         self.pcap_files = []
 
     def extract_pcap(self, start_time, end_time, bpf):
+        assert isinstance(start_time, datetime)
+        assert isinstance(end_time, datetime)
+
         stdout("generating file list on sensor {}".format(self))
 
+        #dt_start_time = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+        #dt_end_time = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+
+        # if there is a timezone specified for the sensor then we need to make sure the
+        # times we are using are in the correct timezone
+        if self.timezone is not None:
+            if start_time.tzinfo is None:
+                start_time = LOCAL_TIMEZONE.localize(start_time)
+            if end_time.tzinfo is None:
+                end_time = LOCAL_TIMEZONE.localize(end_time)
+
+            # convert these times into the timezone of the target
+            start_time = start_time.astimezone(self.timezone)
+            end_time = end_time.astimezone(self.timezone)
+
+            stdout("convert to timezone {} start_time {} end_time {}".format(self.timezone, start_time, end_time))
+
         # we push the start_time back by self.rotation_period since the last modified timestamp of a pcap denotes the END of the file
-        dt_start_time = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+        #dt_start_time = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
 
         duration = self.rotation_period.split(':')
         seconds = int(duration[-1])
@@ -118,7 +156,7 @@ class Sensor(object):
             days = int(duration[-4])
 
         offset = timedelta(days=days, seconds=seconds, minutes=minutes, hours=hours)
-        dt_start_time = dt_start_time - offset
+        start_time = start_time - offset
 
         temp_start_time = dt_start_time.strftime('%Y-%m-%d %H:%M:%S')
         stdout("moved start time to {} to account for rotation period of {} on {}".format(temp_start_time, self.rotation_period, self))
@@ -127,8 +165,8 @@ class Sensor(object):
             'ssh', '-n', '-i', self.ssh_key_file, '{}@{}'.format(self.user, self.host),
             '/usr/bin/find {pcap_dir} -name "*.pcap" -newermt "{start_time}" -not -newermt "{end_time}"'.format(
                 pcap_dir=self.pcap_dir,
-                start_time=temp_start_time,
-                end_time=end_time)], stdout=PIPE, universal_newlines=True)
+                start_time=start_time.strftime('%Y-%m-%d %H:%M:%S'),
+                end_time=end_time.strftime('%Y-%m-%d %H:%M:%S'))], stdout=PIPE, universal_newlines=True)
 
         pcap_file_list = []
         for file_path in p.stdout:
@@ -191,13 +229,14 @@ sensors = []
 for section in config.sections():
     if section.startswith('sensor_'):
         sensors.append(Sensor(
-            name=config.get(section, 'name'),
-            host=config.get(section, 'host'),
-            user=config.get(section, 'user'),
-            pcap_dir=config.get(section, 'pcap_dir'),
-            ssh_key_file=config.get(section, 'ssh_key_file'),
-            rotation_period=config.get(section, 'rotation_period'),
-            tags=config.get(section, 'tags').split(',')))
+            name=config[section]['name'],
+            host=config[section]['host'],
+            user=config[section]['user'],
+            pcap_dir=config[section]['pcap_dir'],
+            ssh_key_file=config[section]['ssh_key_file'],
+            rotation_period=config[section]['rotation_period'],
+            tags=config[section]['tags'].split(','),
+            timezone=config.get(section, 'timezone', fallback=None)))
 
 stdout("loaded {} sensors from config".format(len(sensors)))
 

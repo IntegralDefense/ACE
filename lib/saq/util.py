@@ -92,8 +92,9 @@ def create_timedelta(timespec):
 
 RE_ET_FORMAT = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4}$')
 RE_ET_OLD_FORMAT = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}')
-RE_ET_JSON_FORMAT = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[+-][0-9]{2}:[0-9]{2}$')
+RE_ET_JSON_FORMAT = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[+-][0-9]{4}$')
 RE_ET_OLD_JSON_FORMAT = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$')
+RE_ET_ISO_FORMAT = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}[+-][0-9]{2}:[0-9]{2}$')
 
 def parse_event_time(event_time):
     """Return the datetime object for the given event_time."""
@@ -102,6 +103,8 @@ def parse_event_time(event_time):
     elif RE_ET_OLD_FORMAT.match(event_time):
         return saq.LOCAL_TIMEZONE.localize(datetime.datetime.strptime(event_time, event_time_format))
     elif RE_ET_JSON_FORMAT.match(event_time):
+        return datetime.datetime.strptime(event_time, event_time_format_json_tz)
+    elif RE_ET_ISO_FORMAT.match(event_time):
         # we just need to remove the : in the timezone specifier
         # this has been fixed in python 3.7
         event_time = event_time[:event_time.rfind(':')] + event_time[event_time.rfind(':') + 1:]

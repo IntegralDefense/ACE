@@ -378,6 +378,7 @@ def correlate(args):
     from saq.error import report_exception
     from saq.network_client import submit_alerts
     from saq.process_server import initialize_process_server
+    from saq.util import parse_event_time
 
     initialize_process_server()
 
@@ -472,7 +473,7 @@ def correlate(args):
 
     reference_time = None
     if args.reference_time is not None:
-        reference_time = datetime.datetime.strptime(args.reference_time, event_time_format)
+        reference_time = parse_event_time(args.reference_time)
 
     if os.path.exists(args.storage_dir) and not args.load:
         # if the output directory is the default directory then just delete it
