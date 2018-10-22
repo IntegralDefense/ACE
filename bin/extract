@@ -1,28 +1,29 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # vim: sw=4:ts=4:et
 
+import configparser
 import argparse
-from subprocess import Popen, PIPE
-import logging
-from threading import Thread
 import os
-import sys
 import re
-from datetime import datetime, timedelta
-import tempfile
-import ConfigParser
-import time
 import smtplib
+import sys
+import tempfile
+import time
 
-logging.basicConfig(level=logging.DEBUG)
+from datetime import datetime, timedelta
+from subprocess import Popen, PIPE
+from threading import Thread
+
+def stdout(message):
+    print(message)
+
+def stderr(message):
+    sys.stderr.write('{}\n'.format(message))
 
 # this script requires ssh public/private key pairs in place to auth to the sensors
-
 parser = argparse.ArgumentParser(description='Extract pcap from the sensors for a given event.')
 parser.add_argument('-c', '--config-path', required=False, dest='config_path', default='/usr/local/etc/pcap_extract.ini',
     help="Configuration file that specifies sensor information.")
-
-#parser.add_argument('-o', '--output-file', required=True, dest='output_file', help="File to collect pcap into.")
 parser.add_argument('-D', '--output-dir', required=True, dest='output_dir', default=None,
     help="Directory that contains the individual pcap files. By default this the value of the -o option with .files appended.")
 parser.add_argument('-t', '--start-time', required=True, dest='start_time', help="Starting time in YYYY-MM-DD HH:MM:SS format.")
@@ -31,42 +32,33 @@ parser.add_argument('-d', '--duration', required=False, default=None, dest='dura
 parser.add_argument('-r', '--relative', required=False, action='store_true', default=False, dest='use_relative_duration', 
     help="Interpret duration as relative (around) the start time.  For examle, 10 minutes would be 10 minutes before to 10 minutes after start time.")
 parser.add_argument('-e', '--end-time', required=False, default=None, dest='end_time', help="Ending time in YYYY-MM-DD HH:MM:SS format.")
-
-parser.add_argument('-E', '--email-address', required=False, default=None, dest="email_address",
-    help="Email address to send to once extraction is complete.")
-
-#parser.add_argument('dir', help="The directory to contain the extract pcap files.")
 parser.add_argument('bpf', help="The BPF to use in the packet filter.")
 
 args = parser.parse_args()
 
-#if args.output_dir is None:
-    #args.output_dir = '{0}.files'.format(args.output_file)
-
 if not os.path.isdir(args.output_dir):
     try:
         os.makedirs(args.output_dir)
-    except Exception, e:
-        logging.error("unable to create output directory {0}: {1}".format(
-            args.output_dir, str(e)))
+    except Exception as e:
+        stderr("unable to create output directory {}: {}".format(args.output_dir, e))
         sys.exit(1)
 
 try:
     dt_start_time = datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S')
-except Exception, e:
-    logging.error("unable to parse start time {0}: {1}".format(args.start_time, str(e)))
+except Exception as e:
+    stderr("unable to parse start time {}: {}".format(args.start_time, e))
     sys.exit(1)
 
 if args.end_time is not None:
     try:
         dt_end_time = datetime.strptime(args.end_time, '%Y-%m-%d %H:%M:%S')
-    except Exception, e:
-        logging.error("unable to parse end time {0}: {1}".format(args.end_time, str(e)))
+    except Exception as e:
+        stderr("unable to parse end time {}: {}".format(args.end_time, e))
         sys.exit(1)
     
 if args.end_time is None:
     if args.duration is None:
-        logging.error("missing --end-time or --duration (see --help)")
+        stderr("missing --end-time or --duration (see --help)")
         sys.exit(1)
 
     duration = args.duration.split(':')
@@ -90,8 +82,7 @@ if args.end_time is None:
 
 args.start_time = dt_start_time.strftime('%Y-%m-%d %H:%M:%S')
 args.end_time = dt_end_time.strftime('%Y-%m-%d %H:%M:%S')
-logging.debug("gathering pcap from {0} to {1}".format(
-    args.start_time, args.end_time))
+stdout("gathering pcap from {} to {}".format(args.start_time, args.end_time))
 
 # load sensor information from the configuration file
 class Sensor(object):
@@ -108,11 +99,9 @@ class Sensor(object):
         self.pcap_files = []
 
     def extract_pcap(self, start_time, end_time, bpf):
-        logging.debug("generating file list on sensor {0}".format(self))
-        #
+        stdout("generating file list on sensor {}".format(self))
+
         # we push the start_time back by self.rotation_period since the last modified timestamp of a pcap denotes the END of the file
-        # 
-        # copy-pasta anyone?  :P
         dt_start_time = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
 
         duration = self.rotation_period.split(':')
@@ -132,21 +121,20 @@ class Sensor(object):
         dt_start_time = dt_start_time - offset
 
         temp_start_time = dt_start_time.strftime('%Y-%m-%d %H:%M:%S')
-        logging.debug("moved start time to {0} to account for rotation period of {1} on {2}".format(
-            temp_start_time, self.rotation_period, self))
+        stdout("moved start time to {} to account for rotation period of {} on {}".format(temp_start_time, self.rotation_period, self))
 
         p = Popen([
-            'ssh', '-n', '-i', self.ssh_key_file, '{0}@{1}'.format(self.user, self.host),
+            'ssh', '-n', '-i', self.ssh_key_file, '{}@{}'.format(self.user, self.host),
             '/usr/bin/find {pcap_dir} -name "*.pcap" -newermt "{start_time}" -not -newermt "{end_time}"'.format(
                 pcap_dir=self.pcap_dir,
                 start_time=temp_start_time,
-                end_time=end_time)], stdout=PIPE)
+                end_time=end_time)], stdout=PIPE, universal_newlines=True)
 
         pcap_file_list = []
         for file_path in p.stdout:
             file_path = file_path.strip()
             pcap_file_list.append(file_path)
-            logging.debug("added {0} from {1} to search".format(file_path, self))
+            stdout("added {} from {} to search".format(file_path, self))
         p.wait()
 
         # the expected format of the pcap dump is $pcap_dir/logical_sensor/*.pcap
@@ -165,7 +153,7 @@ class Sensor(object):
             if logical_dir not in pcap_groups:
                 pcap_groups[logical_dir] = []
 
-            logging.debug("adding pcap file {0} to logical group {1}".format(file_path, logical_dir))
+            stdout("adding pcap file {} to logical group {}".format(file_path, logical_dir))
             pcap_groups[logical_dir].append(file_path)
 
         # now for each of these we want to extract some pcap
@@ -179,26 +167,24 @@ class Sensor(object):
             t.join()
 
     def execute_extraction(self, pcap_group, pcap_file_list, bpf):
-        output_file = os.path.join(args.output_dir, '{0}.{1}.{2}.pcap'.format(self.host, pcap_group, time.strftime('%Y%m%d%H%M%S')))
-        logging.debug("extracting pcap from {0} into {1}".format(self, output_file))
+        output_file = os.path.join(args.output_dir, '{}.{}.{}.pcap'.format(self.host, pcap_group, time.strftime('%Y%m%d%H%M%S')))
+        stdout("extracting pcap from {} into {}".format(self, output_file))
         with open(output_file, 'wb') as fp:
-            p = Popen([
-                'ssh', '-i', self.ssh_key_file, '{0}@{1}'.format(self.user, self.host),
-                '/usr/sbin/tcpdump -n -w - -V - "{bpf}"'.format(
-                    bpf=bpf)], stdin=PIPE, stdout=fp)
+            p = Popen([ 'ssh', '-i', self.ssh_key_file, '{}@{}'.format(self.user, self.host),
+                        '/usr/sbin/tcpdump -n -w - -V - "{bpf}"'.format(bpf=bpf)], stdin=PIPE, stdout=fp)
 
             # tell tcpdump what files to search through
             for pcap_file in pcap_file_list:
-                p.stdin.write('{0}\n'.format(pcap_file))
+                p.stdin.write('{}\n'.format(pcap_file).encode())
             p.stdin.close()
             p.wait()
 
         self.pcap_files.append(output_file)
 
     def __str__(self):
-        return '{0} ({1})'.format(self.name, self.host)
+        return '{} ({})'.format(self.name, self.host)
 
-config = ConfigParser.ConfigParser()
+config = configparser.ConfigParser()
 config.read(args.config_path)
 
 sensors = []
@@ -213,7 +199,7 @@ for section in config.sections():
             rotation_period=config.get(section, 'rotation_period'),
             tags=config.get(section, 'tags').split(',')))
 
-logging.debug("loaded {0} sensors from config".format(len(sensors)))
+stdout("loaded {} sensors from config".format(len(sensors)))
 
 threads = []
 for sensor in sensors:
@@ -224,44 +210,3 @@ for sensor in sensors:
 # wait for them all to complete
 for t in threads:
     t.join()
-
-# now merge them all into one file, dropping duplicate packets
-#pcap_file_list = []
-#for sensor in sensors:
-    #pcap_file_list.extend(sensor.pcap_files)
-
-# temp merge file
-#merge_file= '{0}.merge'.format(args.output_file)
-
-#logging.debug("merging {0} files into {1}".format(len(pcap_file_list), merge_file))
-#mergecap_args = ['mergecap', '-w', merge_file]
-#mergecap_args.extend(pcap_file_list)
-#p = Popen(mergecap_args)
-#p.wait()
-
-# then use editcap to drop packets outside of the specified time range
-# XXX check timestamp range logic
-#logging.debug("stripping duplicate packets and packets outside of time range")
-#editcap_args = ['editcap', '-d', '-A', args.start_time, '-B', args.end_time, merge_file, args.output_file]
-#p = Popen(editcap_args)
-#p.wait()
-
-# delete the temp merge file
-#try:
-    #os.remove(merge_file)
-#except Exception, e:
-    #logging.error("unable to delete temp merge file {0}: {1}".format(
-        #merge_file, str(e)))
-
-if args.email_address is not None:
-    server = smtplib.SMTP('localhost')
-    #server.set_debuglevel(1)
-    logging.debug("sending email to {0}".format(args.email_address))
-    server.sendmail('PCAP Extraction <ashsec1@localhost>', args.email_address, 
-"""Subject: PCAP EXTRACTION COMPLETED {0}
-
-pcap extraction has completed for {1}""".format(
-    args.output_dir,
-    args.output_dir))
-
-    server.quit()
