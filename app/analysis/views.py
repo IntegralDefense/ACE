@@ -221,7 +221,7 @@ def download_json():
     edges.extend(tag_edges)
 
     response = make_response(json.dumps({'nodes': nodes, 'edges': edges}))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
 
 @analysis.route('/redirect_to', methods=['GET', "POST"])
@@ -3664,7 +3664,7 @@ def query_message_ids():
             result[source][archive_id] = result[source][archive_id].json
 
     response = make_response(json.dumps(result))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
 
 class EmailRemediationTarget(object):
@@ -3787,5 +3787,5 @@ def remediate_emails():
         targets[key] = targets[key].json
     
     response = make_response(json.dumps(targets))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
