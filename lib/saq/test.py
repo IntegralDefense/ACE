@@ -15,6 +15,7 @@ __all__ = [
     'ACEModuleTestCase',
     'modify_logging_level',
     'reset_config',
+    'reset_alerts',
     'cleanup_delayed_analysis',
     'log_count',
     'wait_for_log_count',
@@ -126,6 +127,17 @@ def protect_production(target_function):
 
         return target_function(*args, **kwargs)
 
+    return wrapper
+
+def reset_alerts(target_function):
+    """Deletes all alerts in the database."""
+    def wrapper(*args, **kwargs):
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""DELETE FROM alerts""")
+            db.commit()
+
+        return target_function(*args, **kwargs)
     return wrapper
 
 # 

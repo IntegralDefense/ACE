@@ -986,6 +986,28 @@ start_gui_parser.add_argument('args', nargs=argparse.REMAINDER,
 start_gui_parser.set_defaults(func=start_gui)
 
 # ============================================================================
+# start API (non-apache version)
+#
+
+def start_api(args):
+    import saq
+    from api import create_app, db
+    from flask_script import Manager, Shell
+
+    app = create_app()
+    #print(app.url_map)
+    app.run(saq.CONFIG.get('api', 'listen_address'), debug=True, port=saq.CONFIG.getint('api', 'listen_port'), 
+        ssl_context=(saq.CONFIG.get('api', 'ssl_cert'), saq.CONFIG.get('api', 'ssl_key')),
+        use_reloader=True)
+
+# start-gui
+start_api_parser = subparsers.add_parser('start-api',
+    help="Start the ACE API server in DEBUG mode.")
+start_api_parser.add_argument('args', nargs=argparse.REMAINDER,
+    help="Parameters to pass to the API command shell.")
+start_api_parser.set_defaults(func=start_api)
+
+# ============================================================================
 # start Carbon Black Binary Processor
 #
 
