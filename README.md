@@ -45,6 +45,12 @@ Regardless of skill level, ACE greatly reduces the time it takes an analyst to m
 
 ![Analyst using ACE](docs/_static/analyst_on_ace.png)
 
+## Analyst Demo
+
+The following YouTube video provides a tour of the ACE GUI and demonstrates how to work some alerts.
+
+[![ACE Analyst Demo](https://i.ytimg.com/vi/dg19VBoVesU/hqdefault.jpg)](https://youtu.be/dg19VBoVesU)
+
 ## Philosophy
 
 For a more in-depth understanding of the philosophy behind ACE, see the talk that John Davison gave on the development of the ACE tool set at BSides Cincinnati in 2015.
