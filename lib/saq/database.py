@@ -586,6 +586,12 @@ class Company(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(128), unique=True, index=True)
 
+    @property
+    def json(self):
+        return {
+            'id': self.id,
+            'name': self.name }
+
 class CompanyMapping(Base):
 
     __tablename__ = 'company_mapping'
