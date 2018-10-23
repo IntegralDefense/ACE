@@ -425,6 +425,7 @@ VALID_DIRECTIVES = [
     DIRECTIVE_FORCE_DOWNLOAD,
     DIRECTIVE_DELAY,
     DIRECTIVE_EXCLUDE_ALL,
+    DIRECTIVE_NO_SCAN,
 ]
 
 def is_valid_directive(directive):
