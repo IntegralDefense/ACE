@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+cd /opt/ace || exit 1
+source load_environment
+
+# clear out old alerts
+# we have special support for this in the saq command
+if egrep '^correlation-engine$' etc/startup > /dev/null 2>&1
+then
+    ./ace cleanup-alerts >> logs/cleanup_$(date '+%Y%m%d').log 2>&1
+fi
+
+# clear out old cloudphish data
+./bin/cleanup_cloudphish >> logs/cleanup_cloudphish_$(date '+%Y%m%d').log 2>&1
+
+# clear out old logs
+find -L logs -name 'cleanup_*.log' -mtime +3 -delete
+find -L logs -mindepth 1 -maxdepth 1 -name '*.log' -mtime +3 -delete
+
+# clear out old stats directories older than 7 days
+find -L stats/modules -maxdepth 2 -mindepth 2 -type d -mtime +7 -exec rm -rf '{}' \;
+
+# delete error reports older than 3 days
+find -L error_reports -maxdepth 1 -type f -mtime +3 -delete
+find -L error_reports -maxdepth 1 -mtime +3 -type d -exec rm -rf '{}' \;
+
+# delete scan_failures older than 1 days
+find -L scan_failures -maxdepth 1 -mindepth 1 -type f -mtime +1 -delete
+
+# delete OLE files older than 30 days
+if [ -e ole ]
+then
+    find -L ole -mindepth 2 -maxdepth 2 -type f -mtime +30 -delete
+fi
+
+# delete carbon black binaries older than 30 days
+if [ -e storage ]
+then
+    find -L storage -maxdepth 2 -mindepth 2 -type f -mtime +15 -delete
+fi
+
+# delete backups older than 30 days
+if [ -e backups ]
+then
+    find -L backups -type f -name '*.sql.gz' -mtime +30 -delete
+fi
+
+# keep cloudphish cache files under control
+if [ -e cloudphish_cache ]
+then
+    find -L cloudphish_cache -type f -mtime +3 -delete
+fi
+
+if [ -e splunk_logs ]
+then
+    find splunk_logs -type f -name '*.log' -mtime +3 -delete
+fi
+
+if [ -d $(ace config -v elk_logging.elk_log_dir) ]
+then
+    find $(ace config -v elk_logging.elk_log_dir) -type f -name '*.json' -mtime +3 -delete
+fi
+
+# clean up the unix sockets for the process server that are no longer being used by any process
+find var -maxdepth 1 -name '*.socket' | while read s; do if ! ( lsof -U | fgrep "$s" > /dev/null ); then rm "$s"; fi; done
