@@ -1,5 +1,7 @@
 # ACE - Analysis Correlation Engine
 
+[![Documentation Status](https://readthedocs.org/projects/ace-analysis/badge/?version=latest)](https://ace-analysis.readthedocs.io/en/latest/)
+
 ACE is a detection system and automation framework. ACE’s foundation is its engine for recursive analysis and its intuitive presentation to your analysts. ACE's goal is to reduce the analyst's time-to-disposition to as close to zero as humanly possible.
 
 While ACE is a powerful detection system, and does have built in detections, ACE does not ship with all of the yara signatures and intel detections that teams have built around it. However, ACE makes it easy to load your own yara signatures and atomic indicator detections.
