@@ -300,7 +300,9 @@ class CloudphishAnalyzer(AnalysisModule):
         used_cache = False
         json_result = None
 
-        if os.path.exists(cache_path):
+        # XXX need to fix this correctly
+        #if os.path.exists(cache_path):
+        if False:
             logging.debug("using local cache results for {}".format(url.value))
             try:
                 with open(cache_path, 'r') as fp:
