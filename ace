@@ -995,7 +995,7 @@ def start_api(args):
     from flask_script import Manager, Shell
 
     app = create_app()
-    #print(app.url_map)
+    print(app.url_map)
     app.run(saq.CONFIG.get('api', 'listen_address'), debug=True, port=saq.CONFIG.getint('api', 'listen_port'), 
         ssl_context=(saq.CONFIG.get('api', 'ssl_cert'), saq.CONFIG.get('api', 'ssl_key')),
         use_reloader=True)

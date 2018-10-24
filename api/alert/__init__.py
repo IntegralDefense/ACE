@@ -22,7 +22,7 @@ from saq.util import parse_event_time
 from flask import Blueprint, request, abort, Response
 from werkzeug import secure_filename
 
-alert_bp = Blueprint('alert', __name__, url_prefix='/api/alert')
+alert_bp = Blueprint('alert', __name__, url_prefix='/alert')
 
 KEY_TOOL = 'tool'
 KEY_TOOL_INSTANCE = 'tool_instance'
@@ -66,7 +66,6 @@ def submit():
     alert.event_time = LOCAL_TIMEZONE.localize(datetime.datetime.now())
     if KEY_EVENT_TIME in r:
         try:
-            logging.info("MARKER: [{}]".format(r[KEY_EVENT_TIME]))
             alert.event_time = parse_event_time(r[KEY_EVENT_TIME])
         except ValueError as e:
             abort(Response("invalid event time format for {} (use {} format)".format(r[KEY_EVENT_TIME], event_time_format_json_tz), 400))
