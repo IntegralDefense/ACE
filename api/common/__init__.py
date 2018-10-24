@@ -10,7 +10,7 @@ from saq.constants import *
 from saq.database import Company
 
 from flask import Blueprint
-common = Blueprint('common', __name__, url_prefix='/api/common')
+common = Blueprint('common', __name__, url_prefix='/common')
 
 @common.route('/get_supported_api_version')
 def get_supported_api_version():

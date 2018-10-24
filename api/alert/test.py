@@ -12,6 +12,7 @@ from saq.test import *
 from api.test import APIBasicTestCase
 
 import pytz
+from flask import url_for
 
 #KEY_TOOL = 'tool'
 #KEY_TOOL_INSTANCE = 'tool_instance'
@@ -34,7 +35,7 @@ class APIAlertTestCase(APIBasicTestCase):
     @reset_alerts
     def test_api_alert_000_submit(self):
         t = saq.LOCAL_TIMEZONE.localize(datetime.datetime(2017, 11, 11, hour=7, minute=36, second=1, microsecond=1)).astimezone(pytz.UTC).strftime(event_time_format_json_tz)
-        result = self.client.post('/api/alert/submit', data={
+        result = self.client.post(url_for('alert.submit'), data={
             'alert': json.dumps({
                 'tool': 'unittest',
                 'tool_instance': 'unittest_instance',
@@ -62,7 +63,7 @@ class APIAlertTestCase(APIBasicTestCase):
         uuid = result['uuid']
         _id = result['id']
 
-        result = self.client.get('/api/alert/{}'.format(uuid))
+        result = self.client.get(url_for('alert.get_alert', alert_id=uuid))
         result = result.get_json()
         self.assertIsNotNone(result)
         self.assertTrue('result' in result)

@@ -2,6 +2,7 @@
 import os
 import os.path
 import sys
+import logging
 
 # apache env vars and wsgi are different
 # so we use the location of this saq.wsgi file as the root of ACE
