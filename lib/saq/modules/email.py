@@ -73,7 +73,7 @@ TAG_OUTBOUND_EMAIL = 'outbound_email'
 # regex to match an email header line
 RE_EMAIL_HEADER = re.compile(r'^[^:]+:\s.*$')
 # regex to match an email header continuation line
-RE_EMAIL_HEADER_CONTINUE = re.compile(r'^\t.*$')
+RE_EMAIL_HEADER_CONTINUE = re.compile(r'^\s.*$')
 
 class EncryptedArchiveAnalysis(Analysis):
     def initialize_details(self):
