@@ -2639,7 +2639,7 @@ def metrics():
             target_companies.append(row)
 
     alert_df = dispo_stats_df = HOP_df = sla_df = incidents = events = pd.DataFrame()
-    months = query = company_id = daterange = post_bool = download_results = None
+    months = query = company_name = company_id = daterange = post_bool = download_results = None
     selected_companies = [] 
     metric_actions = tables = []
     if request.method == "POST" and request.form['daterange']:
@@ -2801,7 +2801,7 @@ def metrics():
         for table in tables:
             table.to_excel(writer, table.name)
         writer.close()
-        filename = company_name+"metrics.xlsx" if company_name else "metrics.xlsx"
+        filename = company_name+"_metrics.xlsx" if company_name else "ACE_metrics.xlsx"
         output = make_response(outBytes.getvalue())
         output.headers["Content-Disposition"] = "attachment; filename="+filename
         output.headers["Content-type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
