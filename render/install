@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+sudo apt-get install python3-pip libgconf-2-4 xvfb chromium-browser
+
+sudo -E -H pip3 install --upgrade pip
+sudo -E -H pip3 install --upgrade setuptools
+sudo -E -H pip3 install --upgrade requests
+sudo -E -H pip3 install --upgrade urllib3
+
+sudo -E -H pip3 install selenium
+
+echo "download chromedriver from https://sites.google.com/a/chromium.org/chromedriver/downloads"
