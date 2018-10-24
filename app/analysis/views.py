@@ -2628,7 +2628,7 @@ def metrics():
             target_companies.append(row)
 
     alert_df = dispo_stats_df = HOP_df = sla_df = incidents = events = pd.DataFrame()
-    months = query = company_id = daterange = post_bool = download_results = None
+    months = query = company_name = company_id = daterange = post_bool = download_results = None
     selected_companies = [] 
     metric_actions = tables = []
     if request.method == "POST" and request.form['daterange']:
@@ -2717,7 +2717,7 @@ def metrics():
                 events.creation_date as 'Date', events.name as 'Event', 
                 GROUP_CONCAT(DISTINCT malware.name SEPARATOR ', ') as 'Malware', 
                 GROUP_CONCAT(DISTINCT IFNULL(malware_threat_mapping.type, 'UNKNOWN') SEPARATOR ', ') 
-                    as 'Threat', ANY_VALUE(alerts.disposition) as 'Disposition', 
+                    as 'Threat', GROUP_CONCAT(DISTINCT alerts.disposition SEPARATOR ', ') as 'Disposition', 
                 events.vector as 'Delivery Vector', 
                 events.prevention_tool as 'Prevention', 
                 GROUP_CONCAT(DISTINCT company.name SEPARATOR ', ') as 'Company', 
@@ -2790,7 +2790,7 @@ def metrics():
         for table in tables:
             table.to_excel(writer, table.name)
         writer.close()
-        filename = company_name+"metrics.xlsx" if company_name else "metrics.xlsx"
+        filename = company_name+"_metrics.xlsx" if company_name else "ACE_metrics.xlsx"
         output = make_response(outBytes.getvalue())
         output.headers["Content-Disposition"] = "attachment; filename="+filename
         output.headers["Content-type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
