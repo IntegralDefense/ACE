@@ -35,6 +35,14 @@ then
     rm logs/unittest.log
 fi
 
+# clear data directory
+data_dir="$(ace config -v global.data_dir)"
+if [ -d "$data_dir" ]
+then
+    rm -rf "$data_dir"
+    mkdir "$data_dir"
+fi
+
 # if we passed no parameters then we run all the tests
 if [ "$#" -eq "0" ]
 then

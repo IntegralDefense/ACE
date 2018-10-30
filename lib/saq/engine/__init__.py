@@ -19,7 +19,7 @@ import threading
 import time
 import uuid
 
-from multiprocessing import Process, Queue, Semaphore, Event, Pipe
+from multiprocessing import Process, Queue, Semaphore, Event, Pipe, cpu_count
 from queue import PriorityQueue, Empty, Full
 from subprocess import Popen, PIPE
 
@@ -30,12 +30,14 @@ import saq.database
 from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, ProfilePointAnalyzer
 from saq.anp import *
 from saq.constants import *
-from saq.database import Alert, get_db_connection, release_cached_db_connection, enable_cached_db_connections
+from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
+                         get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
+                         add_delayed_analysis_request
 from saq.error import report_exception
 from saq.lock import LockableObject, LocalLockableObject, initialize_locking
 from saq.modules import AnalysisModule, PostAnalysisModule
 from saq.performance import record_metric
-from saq.util import human_readable_size
+from saq.util import human_readable_size, storage_dir_from_uuid
 
 import iptools
 import psutil
@@ -51,64 +53,6 @@ CURRENT_ENGINE = None
 class AnalysisTimeoutError(RuntimeError):
     pass
 
-def initialize_sql_collection(collection_dir, workload_name):
-    if not os.path.isdir(collection_dir):
-        try:
-            logging.info("creating collection directory {}".format(collection_dir))
-            os.makedirs(collection_dir)
-        except Exception as e:
-            logging.error("unable to create collection dir {}: {}".format(collection_dir, e))
-            report_exception()
-            raise e
-
-def reset_sql_collection(collection_dir, workload_name):
-    if os.path.isdir(collection_dir):
-        try:
-            logging.info("deleting {}".format(collection_dir))
-            shutil.rmtree(collection_dir)
-        except Exception as e:
-            logging.error("unable to delete {}: {}".format(collection_dir, e))
-            report_exception()
-            raise e
-
-    with get_db_connection(DB_CONFIG) as db:
-        c = db.cursor()
-        logging.info("deleting database entries for {}".format(workload_name))
-        c.execute("DELETE FROM workload WHERE name = %s", (workload_name,))
-        db.commit()
-
-    initialize_sql_collection(collection_dir, workload_name)
-
-def submit_sql_work_item(workload_name, path):
-    """Submits the given path to the given sql database."""
-    logging.debug("adding {} to sql workload {}".format(path, workload_name))
-    try:
-        with get_db_connection(DB_CONFIG) as db:
-            c = db.cursor()
-            c.execute("""INSERT INTO workload ( name, path ) VALUES ( %s, %s )""", (workload_name, path))
-            db.commit()
-    except Exception as e:
-        logging.error("unable to add {} to sql workload {}: {}".format(path, workload_name, e))
-        report_exception()
-        raise e
-
-def signal_process(p, sig):
-    """Sends a single to the specified multiprocessing.Process object logging any errors.  Returns True on success."""
-    log_message = "sending signal {} to {}".format(sig, p.pid)
-    if sig == signal.SIGKILL:
-        logging.warning(log_message)
-    else:
-        logging.debug(log_message)
-
-    try:
-        os.kill(p.pid, sig)
-        return True
-    except Exception as e:
-        logging.error("unable to send signal {} to {}: {}".format(sig, p.pid, e))
-        report_exception()
-
-    return False
-
 class WaitForAnalysisException(Exception):
     """Thrown when we need to wait for analysis to occur on something.
        An AnalysisModule can call self.wait_for_analysis(observable, analysis) if it needs analysis performed by a 
@@ -120,72 +64,12 @@ class WaitForAnalysisException(Exception):
         self.analysis = analysis
 
 class Engine(object):
-    """Base engine functionality."""
-
-    #
-    # REQUIRED OVERRIDES
-    # ------------------------------------------------------------------------
-
-    def collect(self):
-        """Used to fill the self.work_queue with things to do."""
-        raise NotImplementedError()
-
-    def process(self, work_item):
-        """Used to analyze the work items collected by the collect() routine."""
-        raise NotImplementedError()
-
-    def post_analysis(self, analysis):
-        """Called after analysis has been performed."""
-        raise NotImplementedError()
-
+    """Analysis Correlation Engine"""
 
     @property
     def workload_count(self):
         """Returns the current size of the workload."""
         raise NotImplementedError()
-
-    @property
-    def name(self):
-        """This must be overridden and have a matching engine_ENGINE_NAME section in the configuration file."""
-        raise NotImplementedError()
-
-    #
-    # OPTIONAL OVERRIDES
-    # ------------------------------------------------------------------------
-    def initialize_collection(self):
-        """Override this routine to provide custom initialization for collection."""
-        pass
-
-    def initialize_engine(self):
-        """Override this routine to provide custom initialization for engine."""
-        pass
-
-    def initialize_delayed_analysis(self):
-        """Override this routine to provide custom initialization for engine."""
-        pass
-
-    def cleanup_delayed_analysis(self):
-        """Override thsi routine to provide custom shutdown for delayed analysis."""
-        pass
-
-    def work_incomplete(self, analysis):
-        """Called when analysis finished prematurely."""
-        pass
-
-    def root_analysis_completed(self, root):
-        """Called when the given RootAnalysis object has fully completed analysis."""
-        pass
-
-    def get_tracking_information(self, root):
-        """Called by an analysis module to obtain tracking information for this analysis.
-           This is typically used to track the original source of a request. For example, the
-           cloudphish analysis uses this to track what email a given url was seen in.
-           Returns a valid JSON dict. Defaults to an empty dict."""
-        return {}
-
-    def cleanup(self, work_item):
-        """Called when analysis has completed for the given work_item, regardless of success."""
-        pass
 
     # 
     # INITIALIZATION
@@ -196,16 +80,11 @@ class Engine(object):
         global CURRENT_ENGINE
         CURRENT_ENGINE = self
 
+        # TODO refactor out the use of the \.name property since we only have one "engine" now
+        self.name = 'ace' # XXX backwards compat
+
         # the engine configuration
-        # this will be the engine_ENGINE_NAME section in the configuration file
-        section_name = 'engine_{}'.format(self.name)
-
-        if section_name not in saq.CONFIG:
-            logging.critical("missing engine configuration {}".format(section_name))
-            # cannot proceed beyond this point
-            sys.exit(1)
-
-        self.config = saq.CONFIG[section_name]
+        self.config = saq.CONFIG['engine']
 
         # we just cache the current hostname of this engine here
         self.hostname = socket.gethostname()
@@ -216,9 +95,6 @@ class Engine(object):
         # directory for temporary files
         self.var_dir = os.path.join(saq.SAQ_HOME, 'var', self.name)
 
-        # directory to store incoming work (if neeeded)
-        self.collection_dir = os.path.join(saq.SAQ_HOME, 'var', 'incoming', self.name)
-
         # directory to store statistical runtime information
         self.stats_dir = os.path.join(saq.MODULE_STATS_DIR, self.name)
 
@@ -228,87 +104,41 @@ class Engine(object):
         # immediate shutdown event - shut down ACE now
         self.immediate_event = Event()
 
-        # the amount of time in between collection attempts
-        self.collection_frequency = self.config.getint('collection_frequency')
-
-        # process to collect the things we're going to be analyzing
-        self.collection_process = None
-
-        # used to signal that the collection has completed
-        self.collection_event = Event()
-
         # process to manage the analysis processes
         self.engine_process = None
 
-        # communication pipes to sync startup
-        self.engine_startup_pipe_p = None
-        self.engine_startup_pipe_c = None
-        self.collection_startup_pipe_p = None
-        self.collection_startup_pipe_c = None
+        # an event that gets set when the engine has started
+        self.engine_startup_event = Event()
 
-        # maximum number of simultaneous analysis processes
-        self.analysis_pool_size = self.config.getint('analysis_pool_size')
+        # the worker processes that do the actual analysis
+        self.workers = [] # of Process objects
 
-        # a single process is started to manage each child process executed to analyze
-        self.process_managers = [] # of Process objects
-
-        # used to start and stop the process managers
-        self.process_manager_event = Event()
+        # used to start and stop the workers
+        self.worker_control_event = Event()
 
         # every N minutes we act as though we received a SIGHUP
         self.next_auto_refresh_time = None
 
-        # the process spawned by the process manager to actually do the work
-        self.child_process = None
-
-        # the time the child process started
-        self.child_process_start_time = None
-
-        # zero or more module groups configured for this engine
-        self.module_groups = []
-
         # the modules that will perform the analysis
         self.analysis_modules = []
+
+        # the mapping of analysis mode to the list of analysis modules that should run for that mode
+        self.analysis_mode_mapping = {}
+
+        # a mapping of analysis module configuration section headers to the load analysis modules
+        self.analysis_module_mapping = {} # key = analysis_module_blah, value = AnalysisModule
 
         # things we do *not* want to analyze
         self.observable_exclusions = {} # key = o_type, value = [] of values
 
-        # this is the queue that is shared between the processes
-        # NOTE the size limit of the queue
-        # this forces the collector to block until resources are available to process existing work
-        self.work_queue = Queue(maxsize=1)
-
-        # holds a list of LockableObject waiting for locks to become available
-        self.lock_queue = []
-
-        # shared queue that contains the next job to process
-        self.ready_queue = Queue(maxsize=1)
-        self.current_ready = None # the current object we want to place on the ready_queue
-        self.current_active = None # the current object that is ON the ready_queue (ready to be sent out)
-        
-        # the last time we sent keep alives for chronos locks
-        self.last_lock_update_time = datetime.datetime.now()
-
-        # this thread manages the work, lock and ready queues
-        self.queue_manager_thread = None
-        self.queue_manager_event = threading.Event()
-
-        # the last time we dump the statistical information
-        self.last_statistic_dump = None
-
-        # the frequency (in seconds) that we dump statistics to the log
-        self.statistic_dump_frequency = self.config.getint('statistic_dump_frequency')
-
         # this is set to True to cancel the analysis going on in the process() function
         self._cancel_analysis_flag = False
-
-        # this is set to True after engine process receives the EOQ marker on the work queue
-        self.work_queue_ended_flag = False
 
         # we keep track of the total amount of time (in seconds) that each module takes
         self.total_analysis_time = {} # key = module.config_section, value = total_seconds
 
         # this gets set to true when we receive a unix signal
+        self.sigterm_received = False
         self.sighup_received = False
         self.sigusr1_received = False
         self.sigusr2_received = False
@@ -320,51 +150,24 @@ class Engine(object):
         # the last time we checked for module auto-reload
         self.last_auto_reload_check = datetime.datetime.now()
 
-        # delayed analysis processing threads
-        self.delayed_analysis_thread = None
-        self.delayed_analysis_xfer_thread = None
-        self.delayed_analysis_monitor_thread = None
-
-        # queues for submitting delayed analysis requests
-        self.delayed_analysis_queue = PriorityQueue()
-        self.delayed_analysis_xfer_queue = Queue() # for cross-process transfer
-
-        # this is used to 
-        self.delayed_analysis_shutdown_event = threading.Event()
-        
-        # used to sleep when waiting to process the next delayed analysis request
-        self.delayed_analysis_sync_event = threading.Event()
-
-        # used to know when delayed analysis has started running
-        self.delayed_analysis_xfer_startup_event = threading.Event()
-        self.delayed_analysis_startup_event = threading.Event()
-
-        # the file path used for saving outstanding delayed analysis requests on shutdown
-        self.delayed_analysis_path = os.path.join(self.var_dir, 'delayed_analysis')
-
-        # the current delayed analysis request being waited on
-        self.current_delayed_analysis_request = None
-
         # the RootAnalysis object the current process is analyzing
         self.root = None
 
         # the DelayedAnalysisRequest the Alert came from (or None if it's normal processing)
         self.delayed_analysis_request = None
 
-        # a temporary buffer of all the delayed analysis requests that have been added during the call to analyze
-        # after all analysis has completed these will be sent to the delayed analysis manager
-        # we do this because we do not want the delayed analysis manager to start analyzing an object
-        # we're not finished analyzing yet
-        # we do this so that we're not actually required to lock the root object the first time we analyze it
-        # this is the case in most detection-based engines
-        self.delayed_analysis_buffer = [] # of tuples of (next_analysis_time, DelayedAnalysisRequest)
+        # the analysis mode this worker is primary for
+        self.analysis_mode_priority = None
 
         # threading to manage keep alives for global locks from chronos
-        self.root_lock_manager_event = None
-        self.root_lock_keepalive_thread = None
+        self.lock_manager_control_event = None
+        self.lock_keepalive_thread = None
 
-        # the list of ProfilePointAnalyzer objects to run against each analysis
-        self.profile_point_analyzers = []
+        # each worker assigns this to some random uuid to use as a lock
+        self.lock_uuid = None
+
+        # a description of who owns a given lock
+        self.lock_owner = None
 
         # set to True after engine is started
         self.started = False
@@ -386,9 +189,12 @@ class Engine(object):
         # an event to control the management threads
         self.maintenance_control = None # threading.Event()
 
+    def __str__(self):
+        return "Engine ({})".format(saq.SAQ_NODE)
+
     @property
     def auto_refresh_frequency(self):
-        """How often do we refresh the process managers (in seconds.)"""
+        """How often do we refresh the workers (in seconds.)"""
         try:
             return self.config.getint('auto_refresh_frequency')
         except:
@@ -396,13 +202,39 @@ class Engine(object):
             return 60 * 30
 
     @property
-    def enabled(self):
-        return self.config.getboolean('enabled')
+    @use_db
+    def delayed_analysis_queue_size(self, db, c):
+        """Returns the size of the delayed analysis queue (for this node.)"""
+        c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node = %s", (saq.SAQ_NODE,))
+        row = c.fetchone()
+        return row[0]
 
     @property
-    def profile_points_enabled(self):
-        """Returns True if profile points are enabled for this engine."""
-        return self.config.getboolean('profile_points_enabled')
+    @use_db
+    def workload_queue_size(self, db, c):
+        """Returns the size of the workload queue (for this node.)"""
+        c.execute("SELECT COUNT(*) FROM workload WHERE node = %s", (saq.SAQ_NODE,))
+        row = c.fetchone()
+        return row[0]
+
+    # if you just want to check to see if the queues are empty
+    # then these queries are probably faster than counting all of them
+
+    @property
+    @use_db
+    def delayed_analysis_queue_is_empty(self, db, c):
+        """Returns True if the delayed analysis queue is empty, False otherwise."""
+        c.execute("SELECT id FROM delayed_analysis WHERE node = %s LIMIT 1", (saq.SAQ_NODE,))
+        row = c.fetchone()
+        return row is None
+
+    @property
+    @use_db
+    def workload_queue_is_empty(self, db, c):
+        """Returns True if the work queue is empty, False otherwise."""
+        c.execute("SELECT id FROM workload WHERE node = %s LIMIT 1", (saq.SAQ_NODE,))
+        row = c.fetchone()
+        return row is None
 
     def _get_analysis_module_by_generated_analysis(self, analysis):
         """Internal function to return the loaded AnalysisModule by type or string of generated Analysis."""
@@ -419,29 +251,15 @@ class Engine(object):
 
     def initialize(self):
         """Initialization routines executed once as startup."""
-        # clear out these directories
-        for d in [ self.work_dir ]:
-            if os.path.exists(d):
-                try:
-                    logging.debug("clearing out directory {0}".format(d))
-                    shutil.rmtree(d)
-                except Exception as e:
-                    logging.error("unable to clear out directory {0}: {1}".format(d, str(e)))
-                    sys.exit(1)
-
         # make sure these exist
-        for d in [ self.work_dir, self.var_dir, self.collection_dir, self.stats_dir ]:
+        for d in [ self.work_dir, self.var_dir, self.stats_dir ]:
             try:
                 if not os.path.isdir(d):
                     os.makedirs(d)
             except Exception as e:
                 logging.error("unable to create directory {}: {}".format(d, e))
 
-        # initialize locking
-        initialize_locking()
-
-    def initialize_sighup_handler(self):
-        # capture SIGHUP for engines that want to dynamically re-initialize
+    def initialize_signal_handlers(self):
         def handle_sighup(signum, frame):
             self.sighup_received = True
 
@@ -450,45 +268,55 @@ class Engine(object):
 
         def handle_sigusr2(signum, frame):
             self.sigusr2_received = True
+    
+        def handle_sigterm(signal, frame):
+            self.sigterm_received = True
 
+        signal.signal(signal.SIGTERM, handle_sigterm)
         signal.signal(signal.SIGHUP, handle_sighup)
         signal.signal(signal.SIGUSR1, handle_sigusr1)
         signal.signal(signal.SIGUSR2, handle_sigusr2)
 
     def initialize_modules(self):
-        # load the analysis modules
+        """Loads all configured analysis modules and prepares the analysis mode mapping."""
 
-        # get every section that starts with analysis_module_
+        # the entire list of enabled analysis modules
         self.analysis_modules = []
+
+        # the mapping of analysis mode to the list of analysis modules that should run for that mode
+        self.analysis_mode_mapping = {}
+
+        # quick mapping of analysis module section name to the loaded AnalysisModule
+        self.analysis_module_mapping = {} # key = analysis_module_name, value = AnalysisModule
 
         # a module_group define a list of modules to load for a given engine
         # the module_groups config option defines a comma separated list of groups to load
         # each group defines one or more modules to load
-        if 'module_groups' in self.config:
-            self.module_groups = [x for x in self.config['module_groups'].split(',') if x]
+        #if 'module_groups' in self.config:
+            #self.module_groups = [x for x in self.config['module_groups'].split(',') if x]
 
-        group_configured_modules = {}
-        for group_name in self.module_groups:
-            group_section = 'module_group_{}'.format(group_name)
-            if group_section not in saq.CONFIG:
-                logging.error("invalid module group {} specified for {}".format(group_name, self))
-                continue
+        #group_configured_modules = {}
+        #for group_name in self.module_groups:
+            #group_section = 'module_group_{}'.format(group_name)
+            #if group_section not in saq.CONFIG:
+                #logging.error("invalid module group {} specified for {}".format(group_name, self))
+                #continue
 
-            for module_name in saq.CONFIG[group_section].keys():
-                if module_name in group_configured_modules:
-                    logging.debug("replacing config for module {} by module_group {}".format(
-                                  module_name, group_section))
+            #for module_name in saq.CONFIG[group_section].keys():
+                #if module_name in group_configured_modules:
+                    #logging.debug("replacing config for module {} by module_group {}".format(
+                                  #module_name, group_section))
 
-                group_configured_modules[module_name] = saq.CONFIG[group_section].getboolean(module_name)
-                if group_configured_modules[module_name]:
-                    logging.debug("module {} enabled by group config {}".format(module_name, group_name))
+                #group_configured_modules[module_name] = saq.CONFIG[group_section].getboolean(module_name)
+                #if group_configured_modules[module_name]:
+                    #logging.debug("module {} enabled by group config {}".format(module_name, group_name))
 
         for section in saq.CONFIG.sections():
             if not section.startswith('analysis_module_'):
                 continue
 
             # is this module in the list of disabled modules?
-            # these are always disabled regardless
+            # these are always disabled regardless of any other setting
             if section in saq.CONFIG['disabled_modules'] and saq.CONFIG['disabled_modules'].getboolean(section):
                 logging.info("{} is disabled".format(section))
                 continue
@@ -502,22 +330,21 @@ class Engine(object):
             #logging.info("{} enabled globally".format(section))
 
             # the module has to be specified in the engine configuration to be used
-            if section not in self.config and section not in group_configured_modules:
-                logging.debug("analysis module {} is not specified for {}".format(section, self.name))
-                continue
+            #if section not in self.config and section not in group_configured_modules:
+                #logging.debug("analysis module {} is not specified for {}".format(section, self.name))
+                #continue
 
             # and it must be enabled
-            if ( section in self.config and not self.config.getboolean(section) ) or (
-                 section in group_configured_modules and not group_configured_modules[section] ):
-                logging.debug("analysis module {} is disabled for {}".format(section, self.name))
-                continue
+            #if ( section in self.config and not self.config.getboolean(section) ) or (
+                 #section in group_configured_modules and not group_configured_modules[section] ):
+                #logging.debug("analysis module {} is disabled for {}".format(section, self.name))
+                #continue
 
             # we keep track of how much memory this module uses when it starts up
-            current_process = psutil.Process()
-            starting_rss = current_process.memory_info().rss
+            #current_process = psutil.Process()
+            #starting_rss = current_process.memory_info().rss
 
-            logging.info("loading analysis module from {}".format(section))
-            module_name = saq.CONFIG.get(section, 'module')
+            module_name = saq.CONFIG[section]['module']
             try:
                 _module = importlib.import_module(module_name)
             except Exception as e:
@@ -525,7 +352,7 @@ class Engine(object):
                 report_exception()
                 continue
 
-            class_name = saq.CONFIG.get(section, 'class')
+            class_name = saq.CONFIG[section]['class']
             try:
                 module_class = getattr(_module, class_name)
             except AttributeError as e:
@@ -550,69 +377,95 @@ class Engine(object):
                 continue
 
             # make sure the module generates analysis
+            # this would be a programming mistake by a module author
             if analysis_module.generated_analysis_type is None:
                 logging.critical("analysis module {} returns None for generated_analysis_type".format(analysis_module))
                 continue
 
             # make sure the generated analysis can initialize itself
-            check_analysis = analysis_module.generated_analysis_type()
             try:
+                check_analysis = analysis_module.generated_analysis_type()
                 check_analysis.initialize_details()
             except NotImplementedError:
                 if check_analysis.details is None:
-                    logging.critical("analysis module {} generated analysis {} fails to initialize".format(
+                    logging.critical("analysis module {} generated analysis {} fails to initialize -- did you forget "
+                                     "to override the initialize_details method of the Analysis object that is "
+                                     "generated by this AnalysisModule?".format(
                                      analysis_module, type(check_analysis)))
                 continue
-
 
             # we keep a reference to the engine here
             analysis_module.engine = self
             self.analysis_modules.append(analysis_module)
+            self.analysis_module_mapping[section] = analysis_module
 
-            # how much memory did we end up using here?
-            ending_rss = current_process.memory_info().rss
+            logging.info("loaded analysis module from {}".format(section))
 
-            # we want to warn if the memory usage is very large ( > 10MB)
-            if ending_rss - starting_rss > 1024 * 1024 * 10:
-                logging.warning("memory usage grew by {} bytes for loading analysis module {}".format(
-                                human_readable_size(ending_rss - starting_rss),
-                                analysis_module))
+        # now assign the analysis_modes to the analysis modules that should run in them
+        for section in saq.CONFIG.sections():
+            if section.startswith('analysis_mode_'):
+                mode = section[len('analysis_mode_'):]
+                self.analysis_mode_mapping[mode] = []
 
-        logging.debug("finished loading {} modules".format(len(self.analysis_modules)))
+                # iterate each module group this mode uses
+                for group_name in [_.strip() for _ in saq.CONFIG[section]['module_groups'].split(',') if _.strip()]:
+                    group_section = 'module_group_{}'.format(group_name)
+                    if group_section not in saq.CONFIG:
+                        logging.critical("{} defines invalid module group {}".format(section, group_name))
+                        continue
 
-    def initialize_profile_points(self):
-        """Initializes all the enabled profile points for this engine if profile points are enabled."""
-        if not self.profile_points_enabled:
-            return
-
-        self.profile_point_analyzers.clear()
-
-        disabled_profile_points = saq.CONFIG['profile_points']['disabled_profile_points'].split(',')
-
-        for module_name in saq.CONFIG['profile_points']['modules'].split(','):
-            logging.debug("loading profile points from module {}".format(module_name))
-
-            module = importlib.import_module(module_name)
-            
-            for name, obj in inspect.getmembers(module):
-                if inspect.isclass(obj):
-                    if obj.__module__ == module.__name__:
-                        if name in disabled_profile_points:
-                            logging.warning("profile point module {} is disabled".format(name))
+                    # add each analysis module this group specifies to this mode
+                    for module_section in saq.CONFIG[group_section].keys():
+                        # make sure this is in the configuration
+                        if module_section not in saq.CONFIG:
+                            logging.critical("{} references invalid analysis module {}".format(
+                                             group_section, module_section))
+                            continue
+                            
+                        if module_section not in self.analysis_module_mapping:
+                            logging.debug("{} specified for {} but is disabled globally".format(
+                                          module_section, group_section))
                             continue
 
-                        logging.info("loading profile point module {} from {}".format(name, module.__name__))
+                        self.analysis_mode_mapping[mode].append(self.analysis_module_mapping[module_section])
+                        logging.info("added {} to {}".format(module_section, section))
 
-                        try:
-                            pp_module = obj()
-                            if not isinstance(pp_module, ProfilePointAnalyzer):
-                                raise RuntimeError("{} does not extend ProfilePointAnalyzer".format(type(pp_module).__name__))
+                # and then add any other modules specified for this mode (besides the groups)
+                # NOTE this can also disable individual modules specified in
+                # groups by setting the value to "no" instead of "yes"
+                for key_name in saq.CONFIG[section].keys():
+                    if key_name.startswith('analysis_module_'):
+                        analysis_module_name = key_name[len('analysis_module_'):]
+                        # make sure this is in the configuration
+                        if key_name not in saq.CONFIG:
+                            logging.critical("{} references invalid analysis module {}".format(section, analysis_module_name))
+                            continue
 
-                            self.profile_point_analyzers.append(pp_module)
-                        except Exception as e:
-                            logging.error("unable to load profile point module {} from {}: {}".format(
-                                          name, module.__name__, e))
-                            report_exception()
+                        # make sure the module was loaded
+                        if key_name not in self.analysis_module_mapping:
+                            logging.info("{} specified for {} but is disabled globally".format(
+                                         analysis_module_name, section))
+                            continue
+
+                        # are we adding or removing?
+                        if saq.CONFIG[section].getboolean(key_name):
+                            self.analysis_mode_mapping[mode].append(self.analysis_module_mapping[key_name])
+                            logging.info("added {} to {}".format(analysis_module_name, section))
+                        else:
+                            if self.analysis_module_mapping[key_name] in self.analysis_mode_mapping[mode]:
+                                self.analysis_mode_mapping[mode].remove(self.analysis_module_mapping[key_name])
+                                logging.debug("removed {} from analysis mode {}".format(analysis_module_name, mode))
+
+            # how much memory did we end up using here?
+            #ending_rss = current_process.memory_info().rss
+
+            # we want to warn if the memory usage is very large ( > 10MB)
+            #if ending_rss - starting_rss > 1024 * 1024 * 10:
+                #logging.warning("memory usage grew by {} bytes for loading analysis module {}".format(
+                                #human_readable_size(ending_rss - starting_rss),
+                                #analysis_module))
+
+        logging.debug("finished loading {} modules".format(len(self.analysis_modules)))
 
     #
     # MAINTENANCE
@@ -666,10 +519,6 @@ class Engine(object):
 
         logging.info("maintenance loop ended")
 
-    def maintenance_execute(self):
-        from saq.email import maintain_archive
-        maintain_archive()
-
     #
     # STATUS AND PERFORMANCE
     # ------------------------------------------------------------------------
@@ -685,93 +534,34 @@ class Engine(object):
         return self.immediate_event.is_set()
 
     @property
-    def process_manager_shutdown(self):
-        """Returns True if the process managers are shutting down."""
-        return self.shutdown or self.process_manager_event.is_set()
-
-    @property
-    def collection_shutdown(self):
-        """Returns True if collection has ended."""
-        return self.shutdown or self.collection_event.is_set()
-
-    @property
-    def delayed_analysis_shutdown(self):
-        """Returns True if delayed analysis has ended."""
-        return self.shutdown or self.delayed_analysis_shutdown_event.is_set()
-
-    @property
-    def queue_manager_shutdown(self):
-        """Used to control queue manager."""
-        return self.shutdown or self.queue_manager_event.is_set()
+    def worker_shutdown(self):
+        """Returns True if the workers should be shutting down."""
+        return self.shutdown or self.worker_control_event.is_set()
 
     #
     # CONTROL FUNCTIONS
     # ------------------------------------------------------------------------
 
     def start(self):
-        """Starts the engine.
+        """Starts the engine."""
 
-        In SINGLE_THREADED mode the entire systems runs under a single thread and process and only one job is processed.
-        Otherwise various processes will start for the various subsystems."""
-
-        # make sure engine isn't already startef
+        # make sure engine isn't already started
         if self.started:
             logging.error("engine {} already started".format(self))
             return
 
-        # make sure this engine is actually enabled 
-        if not self.enabled:
-            logging.error("engine {} is disabled in configuration".format(self))
-            sys.exit(1)
-
-        if saq.SINGLE_THREADED:
-            self._single_threaded_start()
-            return
-
         self.initialize()
-        self.start_collection()
         if not self.start_engine():
-            self.stop_collection()
             sys.exit(1)
 
-        # the parent process will re-send SIGHUP and SIGTERM to collector and engine
-        def signal_handler(signum, frame):
-            if self.collection_process is not None:
-                if self.collection_process.is_alive():
-                    signal_process(self.collection_process, signum)
-
-            if self.engine_process is not None:
-                if self.engine_process.is_alive:
-                    signal_process(self.engine_process, signum)
-
-        signal.signal(signal.SIGHUP, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
         logging.debug("control PID {}".format(os.getpid()))
-
         self.started = True
 
-    def _single_threaded_start(self):
-        logging.warning("executing in SINGLE_THREADED mode")
-
+    def single_threaded_start(self, analysis_mode_priority=None, started_event=None):
+        """Typically used for debugging. Runs the entire process under a single thread."""
+        logging.warning("executing in single threaded mode")
         self.initialize()
-        self.initialize_modules()
-        self.initialize_profile_points()
-        self.initialize_engine()
-        self._initialize_collection()
-
-        # collect once
-        self.collect()
-
-        while True:
-            # run queue management and analysis until queues are empty
-            while self.work_queue.qsize() or self.ready_queue.qsize() or len(self.lock_queue):
-                self.queue_manager_execute()
-                self.execute()
-
-            # any delayed analysis required?
-            self._debug_delayed_analysis()
-            if not self.work_queue.qsize():
-                break
+        self.worker_loop(analysis_mode_priority, started_event)
 
     def stop(self):
         """Immediately stop the engine."""
@@ -781,27 +571,43 @@ class Engine(object):
     def controlled_stop(self):
         """Shutdown the engine in a controlled manner allowing existing jobs to complete."""
         logging.info("shutting down {}".format(self))
-        if self.control_event.is_set():
+        if self.controlled_shutdown:
             raise RuntimeError("already requested control_event")
         self.control_event.set()
 
     def wait(self):
-        """Assumes no more work will be generated by the collection process.  Waits for the engine to stop."""
-        # if we're running in SINGLE_THREADED mode then we didn't use processes at all
-        if saq.SINGLE_THREADED:
-            return
+        """Waits for the engine to stop."""
 
-        try:
-            logging.debug("waiting for collection process {0} to complete".format(self.collection_process.pid))
-            self.collection_process.join()
-        except Exception as e:
-            logging.error("unable to join collection process: {0}".format(str(e)))
+        self.initialize_signal_handlers()
+        logging.debug("waiting for engine process {} to complete".format(self.engine_process.pid))
 
-        try:
-            logging.debug("waiting for engine process {0} to complete".format(self.engine_process.pid))
-            self.engine_process.join()
-        except Exception as e:
-            logging.error("unable to join engine process {0}".format(str(e)))
+        while True:
+            try:
+                self.engine_process.join(0.1)
+                if not self.engine_process.is_alive():
+                    logging.debug("detected end of process {}".format(self.engine_process.pid))
+                    break
+
+                if self.sigterm_received:
+                    try:
+                        logging.info("sending SIGTERM to {}".format(self.engine_process.pid))
+                        os.kill(self.engine_process.pid, signal.SIGTERM)
+                    except Exception as e:
+                        logging.error("unable to send SIGTERM to {}: {}".format(self.engine_process.pid, e))
+                    finally:
+                        sigterm_received = False
+
+                if self.sighup_received:
+                    try:
+                        logging.info("sending SIGHUP to {}".format(self.engine_process.pid))
+                        os.kill(self.engine_process.pid, signal.SIGHUP)
+                    except Exception as e:
+                        logging.error("unable to send SIGHUP to {}: {}".format(self.engine_process.pid, e))
+                    finally:
+                        sighup_received = False
+
+            except Exception as e:
+                logging.error("unable to join engine process {}".format(e))
 
     def cancel_analysis(self):
         """Sends a single to all the analysis modules to shut down, stops the analysis loop."""
@@ -821,179 +627,52 @@ class Engine(object):
         return self.shutdown or self._cancel_analysis_flag
 
     #
-    # COLLECTION
+    # LOCK MANAGEMENT
     # ------------------------------------------------------------------------
 
-    def start_collection(self):
-        self.collection_startup_pipe_p, self.collection_startup_pipe_c = Pipe()
-        self.collection_event.clear()
-        self.collection_process = Process(target=self.collection_loop, name='{0} Collection'.format(self.name))
-        self.collection_process.start()
-
-        # wait for the message from the child that it started up
-        try:
-            if not self.collection_startup_pipe_p.poll(30):
-                raise RuntimeError("collection start timed out")
-
-            started = self.collection_startup_pipe_p.recv()
-            assert isinstance(started, bool)
-
-            if not started:
-                raise RuntimeError("collection start failed (returned False)")
-
-            logging.info("collection started")
-            self.collection_startup_pipe_p.close()
-            self.collection_startup_pipe_p = None
-
-        except Exception as e:
-            logging.error("collection engine failed to start: {}".format(e))
-            return False
-
-        return True
-
-    def stop_collection(self):
-        logging.debug("called stop_collection")
-        self.collection_event.set()
-
-    def _initialize_collection(self):
-        """Called when collection is started and when SIGHUP is received."""
-        # custom initialization
-        self.initialize_collection()
-
-    def collection_loop(self):
-
-        self.initialize_sighup_handler()
-
-        try:
-            self._initialize_collection()
-        except Exception as e:
-            logging.error("unable to initialize collection: {0}".format(str(e)))
-            report_exception()
-
-        # let the parent process know that we've started
-        self.collection_startup_pipe_c.send(True)
-        self.collection_startup_pipe_c.close()
-        self.collection_startup_pipe_c = None
-
-        logging.info("started collection loop on process {0}".format(os.getpid()))
-        while not self.collection_shutdown:
-            try:
-                if self.sighup_received:
-                    self.sighup_received = False
-                    logging.info("reloading collection configuration")
-
-                    saq.load_configuration()
-
-                    try:
-                        self._initialize_collection()
-                    except Exception as e:
-                        logging.error("unable to initialize collection: {0}".format(str(e)))
-                        report_exception()
-                    
-                try:
-                    self.collect()
-                except Exception as e:
-                    logging.error("uncaught exception: {0}".format(str(e)))
-                    report_exception()
-
-                # are we done collecting? (see stop_collection())
-                if self.collection_shutdown:
-                    logging.debug("detected collection ended flag")
-                    break
-
-                self.sleep(self.collection_frequency)
-
-            except KeyboardInterrupt:
-                logging.warning("caught user interrupt in collection_loop")
-                break
-
-        logging.info("collection loop ended")
-
-    # m:lock
-    # ROOT LOCK MANAGER
-    # ------------------------------------------------------------------------
-    def start_root_lock_manager(self):
-        """Starts a thread that executes keep alives messages if the root object is a LockableObject."""
-        if not isinstance(self.root, LockableObject):
-            logging.debug("{} is not a LockObject (not starting root lock manager)".format(self.root))
-            return
-
-        logging.debug("starting lock manager for {}".format(self.root.lock_identifier))
+    def start_root_lock_manager(self, uuid):
+        """Starts a thread that keeps a lock open."""
+        logging.debug("starting lock manager for {}".format(uuid))
 
         # we use this event for a controlled shutdown
-        self.root_lock_manager_event = threading.Event()
+        self.lock_manager_control_event = threading.Event()
 
         # start a thread that sends keep alives every N seconds
-        self.root_lock_keepalive_thread = threading.Thread(target=self.root_lock_manager_loop,
-                                                           name="Lock Manager ({})".format(self.root))
-        self.root_lock_keepalive_thread.daemon = True # we want this thread to die if the process dies
-        self.root_lock_keepalive_thread.start()
-        #record_metric(METRIC_THREAD_COUNT, threading.active_count())
+        self.lock_keepalive_thread = threading.Thread(target=self.root_lock_manager_loop,
+                                                           name="Lock Manager ({})".format(uuid),
+                                                           args=(uuid,))
+        self.lock_keepalive_thread.daemon = True # we want this thread to die if the process dies
+        self.lock_keepalive_thread.start()
 
     def stop_root_lock_manager(self):
         """Stops the root lock manager thread."""
-        if not isinstance(self.root, LockableObject):
-            return
-
-        if self.root_lock_manager_event is None:
+        if self.lock_manager_control_event is None:
             logging.warning("called stop_root_lock_manager() when no lock manager was running")
             return
 
-        logging.debug("stopping {}".format(self.root_lock_keepalive_thread))
-        self.root_lock_manager_event.set()
-        self.root_lock_keepalive_thread.join()
+        logging.debug("stopping {}".format(self.lock_keepalive_thread))
+        self.lock_manager_control_event.set()
+        self.lock_keepalive_thread.join()
 
-    def root_lock_manager_loop(self):
+    def root_lock_manager_loop(self, uuid):
         try:
-            while not self.root_lock_manager_event.is_set():
+            while not self.lock_manager_control_event.is_set():
+                if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
+                    logging.warning("failed to maintain lock")
+                    break
 
-                self.root_lock_manager_execute()
-
-                if self.root_lock_manager_event.wait(float(saq.CONFIG['global']['lock_keepalive_frequency'])):
+                if self.lock_manager_control_event.wait(float(saq.CONFIG['global']['lock_keepalive_frequency'])):
                     break
 
         except Exception as e:
-            logging.error("caught unknown error in {}: {}".format(self.root_lock_keepalive_thread, e))
+            logging.error("caught unknown error in {}: {}".format(self.lock_keepalive_thread, e))
             report_exception()
-
-    def root_lock_manager_execute(self):
-        self.root.refresh_lock()
-
-    # m:delayed
-    # DELAYED ANALYSIS 
+    #
+    # DELAYED ANALYSIS
     # ------------------------------------------------------------------------
-    # this gives us a way to keep track of what delayed analysis is outstanding
-    # the reason this exists is because the actual delayed analysis processing is multi-threaded multi-process
-    # so super difficult to share state without race conditions
-    def track_delayed_analysis_start(self, target, observable, analysis_module):
-        delayed_dir = os.path.join(target.storage_dir, '.delayed')
-        if not os.path.isdir(delayed_dir):
-            os.mkdir(delayed_dir)
-        
-        target_file = os.path.join(delayed_dir, '{}-{}'.format(analysis_module.config_section, observable.id))
-        if os.path.exists(target_file):
-            logging.warning("delayed analysis tracking file {} already exists".format(target_file))
-        else:
-            with open(target_file, 'w') as fp:
-                pass
 
-            logging.debug("delayed analysis tracking start {}".format(target_file))
-
-    def track_delayed_analysis_stop(self, target, observable, analysis_module):
-        delayed_dir = os.path.join(target.storage_dir, '.delayed')
-        if not os.path.isdir(delayed_dir):
-            logging.warning("missing tracking directory {}".format(delayed_dir))
-            return
-        
-        target_file = os.path.join(delayed_dir, '{}-{}'.format(analysis_module.config_section, observable.id))
-        if not os.path.exists(target_file):
-            logging.warning("missing delayed analysis tracking file {}".format(target_file))
-            return
-
-        os.remove(target_file)
-        logging.debug("delayed analysis tracking stop {}".format(target_file))
-
-    def delay_analysis(self, root, observable, analysis, analysis_module, 
+    @use_db
+    def delay_analysis(self, root, observable, analysis, analysis_module, db, c,
                        hours=None, minutes=None, seconds=None,
                        timeout_hours=None, timeout_minutes=None, timeout_seconds=None):
         assert hours or minutes or seconds
@@ -1002,428 +681,55 @@ class Engine(object):
         assert isinstance(analysis, Analysis)
         assert isinstance(analysis_module, AnalysisModule)
 
-        # have we already delayed analysis?
         if analysis.delayed:
-            logging.warning("already delayed analysis for {} by {} in {}".format(
-                            observable, analysis_module, root))
-            return False
-
-        start_time = None
-
-        # we keep track of when delayed analysis starts for a given observable + analysis module
-        # the first request to delay creates an entry in the delayed_analysis_tracking table of the RootAnalysis
-        # subsequent requests reference this time to see if it has timed out
+            logging.warning("analysis for {} by {} seems to already be scheduled".format(observable, analysis_module))
 
         # are we set to time out?
         if timeout_hours or timeout_minutes or timeout_seconds:
             # have we timed out?
             start_time = root.get_delayed_analysis_start_time(observable, analysis_module)
             if start_time is None:
-                start_time = datetime.datetime.now()
+                root.set_delayed_analysis_start_time(observable, analysis_module)
+            else:
+                timeout = start_time + datetime.timedelta(hours=0 if timeout_hours is None else timeout_hours, 
+                                                          minutes=0 if timeout_minutes is None else timeout_minutes,
+                                                          seconds=0 if timeout_seconds is None else timeout_seconds)
+                if datetime.datetime.now() > timeout:
+                    logging.error("delayed analysis for {} in {} has timed out".format(observable, analysis_module))
+                    return False
 
-            timeout = start_time + datetime.timedelta(hours=0 if timeout_hours is None else timeout_hours, 
-                                                      minutes=0 if timeout_minutes is None else timeout_minutes,
-                                                      seconds=0 if timeout_seconds is None else timeout_seconds)
-            if datetime.datetime.now() > timeout:
-                logging.error("delayed analysis for {} in {} has timed out".format(observable, analysis_module))
-                return False
-
-        if start_time is not None:
-            logging.info("delayed analysis for {} in {} has been waiting for {} seconds".format(
-                         observable, analysis_module, (datetime.datetime.now() - start_time).total_seconds()))
+                logging.info("delayed analysis for {} in {} has been waiting for {} seconds".format(
+                             observable, analysis_module, (datetime.datetime.now() - start_time).total_seconds()))
 
         # when do we resume analysis?
         next_analysis = datetime.datetime.now() + datetime.timedelta(hours=hours, minutes=minutes, seconds=seconds)
 
-        analysis.delayed = True
-
+        # add the request to the workload
         try:
-            root.track_delayed_analysis_start(observable, analysis_module)
+            if add_delayed_analysis_request(root, observable, analysis_module, next_analysis):
+                analysis.delayed = True
         except Exception as e:
-            logging.error("unable to start tracking delayed analysis: {}".format(e))
+            logging.error("unable to insert delayed analysis on {} by {} for {}: {}".format(
+                             root, analysis_module.config_section, observable, e))
             report_exception()
+            return False
 
-        # add it to the priority queue for processing
-        # note that it's a tuple: (timestamp, request)
-        self.delayed_analysis_buffer.append((next_analysis.timestamp(), 
-                                             DelayedAnalysisRequest(root, 
-                                                                    observable.id,
-                                                                    analysis_module.config_section,
-                                                                    next_analysis)))
         return True
 
-    def _initialize_delayed_analysis(self):
-        self.initialize_delayed_analysis()
-        self.load_delayed_analysis()
-
-    def _cleanup_delayed_analysis(self):
-        self.cleanup_delayed_analysis()
-
-    def start_delayed_analysis(self):
-        assert not self.delayed_analysis_thread
-        assert not self.delayed_analysis_xfer_thread
-
-        logging.debug("starting delayed analysis")
-        
-        try:
-            self.initialize_delayed_analysis()
-        except Exception as e:
-            logging.error("failed to initialize delayed analysis: {}".format(e))
-            report_exception()
-
-        self.delayed_analysis_shutdown_event.clear()
-        self.delayed_analysis_xfer_startup_event.clear()
-        self.delayed_analysis_startup_event.clear()
-
-        # we have a separete thread that pulls things out of the xfer queue and puts then into the priority queue
-        # since there is no multiprocess priority queue we have to do this
-        self.delayed_analysis_xfer_thread = threading.Thread(target=self.delayed_analysis_xfer_loop,
-                                                             name="delayed analysis xfer {}".format(self.name))
-        self.delayed_analysis_xfer_thread.start()
-        #record_metric(METRIC_THREAD_COUNT, threading.active_count())
-        logging.debug("waiting for delayed analysis xfer to start...")
-        self.delayed_analysis_xfer_startup_event.wait()
-        logging.debug("delayed analysis xfer started")
-
-        self.delayed_analysis_thread = threading.Thread(target=self.delayed_analysis_loop, 
-                                                        name="delayed analysis {}".format(self.name))
-        self.delayed_analysis_thread.start()
-        #record_metric(METRIC_THREAD_COUNT, threading.active_count())
-        logging.debug("waiting for delayed analysis to start...")
-        self.delayed_analysis_startup_event.wait()
-        logging.debug("delayed analysis started")
-
-
-        # this thread only starts once and continues to run for the life of the process
-        # we don't to control stop this thread because it's waiting on I/O from a FIFO
-        # and I can't figure out how to tell it to stop without doing non-blocking stuff which I don't want to do
-        if not self.delayed_analysis_monitor_thread:
-            self.delayed_analysis_monitor_thread = threading.Thread(target=self.delayed_analysis_monitor_loop,
-                                                                    name="delayed analysis monitor {}".format(self.name))
-            self.delayed_analysis_monitor_thread.daemon = True
-            self.delayed_analysis_monitor_thread.start()
-
-    def stop_delayed_analysis(self):
-        self.delayed_analysis_shutdown_event.set()
-        self.delayed_analysis_sync_event.set() # wakes up the sleeping thread
-        self.delayed_analysis_xfer_startup_event.set() # ^
-        self.delayed_analysis_startup_event.set() # ^
-        for t in [self.delayed_analysis_thread, self.delayed_analysis_xfer_thread]:
-            if t and t.is_alive():
-                logging.debug("waiting for delayed analysis thread {} to stop...".format(t))
-                t.join()
-                logging.debug("{} stopped".format(t))
-
-        self.delayed_analysis_thread = None
-        self.delayed_analysis_xfer_thread = None
-
-        try:
-            self._cleanup_delayed_analysis()
-        except Exception as e:
-            logging.error("delayed analysis cleanup failed: {}".format(e))
-            report_exception()
-
-    def delayed_analysis_monitor_loop(self):
-        while not self.delayed_analysis_shutdown:
-            try:
-                self.delayed_analysis_monitor_execute()
-            except Exception as e:
-                logging.error("unable to monitor {}: {}".format(self.name, e))
-                report_exception()
-                time.sleep(1)
-
-    def delayed_analysis_monitor_execute(self):
-        metrics_fifo_path = os.path.join(saq.SAQ_HOME, 'stats', 'metrics', 'delayed_analysis_queue_{}'.format(self.name))
-        if not ( os.path.exists(metrics_fifo_path) and stat.S_ISFIFO(os.stat(metrics_fifo_path).st_mode) ):
-            os.mkfifo(metrics_fifo_path)
-
-        try:
-            with open(metrics_fifo_path, 'w') as fp:
-                fp.write("delayed analysis queue size = {}\n".format(self.delayed_analysis_queue.qsize()))
-        # safe to ignore these, just means the reader bailed
-        except BrokenPipeError:
-            pass
-
-    def delayed_analysis_xfer_loop(self):
-        while not self.delayed_analysis_shutdown:
-            try:
-                self.delayed_analysis_xfer_execute()
-                # indicate that we've started if we haven't already
-                if not self.delayed_analysis_xfer_startup_event.is_set():
-                    self.delayed_analysis_xfer_startup_event.set()
-            except Exception as e:
-                logging.error("uncaught exception: {}".format(e))
-                report_exception()
-                time.sleep(1)
-
-        logging.debug("delayed analysis xfer exiting")
-
-    def delayed_analysis_xfer_execute(self):
-        try:
-            timestamp, request = self.delayed_analysis_xfer_queue.get(block=not saq.SINGLE_THREADED, timeout=0.05)
-        except Empty:
-            return
-
-        self.delayed_analysis_queue.put_nowait((timestamp, request))
-        logging.debug("moved {} with timeout {}".format(request, timestamp))
-        self.delayed_analysis_sync_event.set()
-
-    def delayed_analysis_loop(self):
-        while not self.delayed_analysis_shutdown:
-            try:
-                self.delayed_analysis_execute()
-                # we're no longer currently working on a request
-                self.current_delayed_analysis_request = None 
-            except Exception as e:
-                logging.error("uncaught exception: {}".format(e))
-                report_exception()
-                time.sleep(1)
-
-        # make sure this was fired
-        self.delayed_analysis_startup_event.set()
-        logging.debug("delayed analysis exiting")
-
-    def _process_delayed_analysis_request(self, request):
-        # add it to the work queue
-        # NOTE that we don't try to lock() here -- the queue manager does that for us
-        assert isinstance(request, DelayedAnalysisRequest)
-        self.add_work_item(request)
-
-    def delayed_analysis_execute(self):
-
-        # read the next item from the priority queue
-        # the priority queue returns the items with the lowest value first
-        # we place a tuple of (epoch, DelayedAnalysisRequest) on the queue
-        # thus the analysis to run in the future has a higher value than that runs runs now
-        try:
-            next_time, self.current_delayed_analysis_request = \
-            self.delayed_analysis_queue.get(block=not saq.SINGLE_THREADED, timeout=0.05)
-
-            if not self.delayed_analysis_startup_event.is_set():
-                self.delayed_analysis_startup_event.set()
-
-            if self.delayed_analysis_queue.qsize():
-                logging.debug("delayed analysis queue size {}".format(self.delayed_analysis_queue.qsize()))
-
-        except Empty:
-            # exit and return to loop to check shutdown status
-            if not self.delayed_analysis_startup_event.is_set():
-                self.delayed_analysis_startup_event.set()
-
-            return
-
-        # note that at any time past this queue.get() a new item might have been added
-        # so the event object might be set at this point
-
-        logging.debug("processing {} {}".format(next_time, self.current_delayed_analysis_request))
-
-        # is this ready to run now?
-        if datetime.datetime.now() >= self.current_delayed_analysis_request.next_analysis:
-            logging.debug("{} is ready to process".format(self.current_delayed_analysis_request))
-            self._process_delayed_analysis_request(self.current_delayed_analysis_request)
-            return
-
-        # if not then we need to sleep until it's ready
-        # we use the event to sync
-        # when we add something we need to check to see if the new thing is the next thing to run
-        # that changes how long we're sleeping for
-        timeout = (self.current_delayed_analysis_request.next_analysis - datetime.datetime.now()).total_seconds()
-        logging.debug("waiting for {} seconds for next delayed analysis processing".format(timeout))
-
-        # NOTE the first time a delayed analysis request is added, this event will already be set
-        # NOTE since we're setting the event each time we add
-        # NOTE so we cycle through this twice the first time
-
-        self.delayed_analysis_sync_event.wait(timeout=timeout) 
-        self.delayed_analysis_sync_event.clear()
-
-        # we could be shutting down at this point
-        if self.delayed_analysis_shutdown:
-            # put this back to so we can (possibly) persist it
-            self.delayed_analysis_queue.put_nowait((self.current_delayed_analysis_request.next_analysis.timestamp(), 
-                                                    self.current_delayed_analysis_request))
-            return
-
-        # when we exit this wait, we have either exited due to timeout or event sync
-        # so we check (again) to see if we need to run this analysis
-        now = datetime.datetime.now()
-        if now >= self.current_delayed_analysis_request.next_analysis:
-            logging.info("{} is ready to process".format(self.current_delayed_analysis_request))
-            self._process_delayed_analysis_request(self.current_delayed_analysis_request)
-            #self.add_work_item(request)
-            return
-
-        # if this is not true then something was added while we were waiting
-        # and it's possible that that new thing needs to run sooner than this
-        # so we put this item back on the work queue and try again
-        logging.debug("{} is not ready current time {} run time {} - returning to queue".format(
-                     self.current_delayed_analysis_request, now, self.current_delayed_analysis_request.next_analysis))
-        self.delayed_analysis_queue.put_nowait((self.current_delayed_analysis_request.next_analysis.timestamp(), 
-                                                self.current_delayed_analysis_request))
-
-    def _debug_delayed_analysis(self):
-        self.initialize_delayed_analysis()
-        self.delayed_analysis_xfer_execute()
-        self.delayed_analysis_execute()
     #
     # ANALYSIS ENGINE
     # ------------------------------------------------------------------------
 
-    # queue managments
-    def start_queue_manager(self):
-        logging.debug("starting queue manager")
-        self.queue_manager_event.clear()
-        self.queue_manager_thread = threading.Thread(target=self.queue_manager_loop, name="{} queue manager".format(
-                                                                                          self.name))
-        self.queue_manager_thread.start()
-        #record_metric(METRIC_THREAD_COUNT, threading.active_count())
-        logging.debug("started queue manager")
-
-    def stop_queue_manager(self):
-        self.queue_manager_event.set()
-        if self.queue_manager_thread:
-            if self.queue_manager_thread.is_alive():
-                logging.debug("waiting for queue mananger to stop...")
-                self.queue_manager_thread.join()
-                logging.debug("queue mananger stopped")
-
-        # make sure that the current_ready is unlocked
-        if self.current_ready:
-            try:
-                if isinstance(self.current_ready, LockableObject):
-                    self.current_ready.unlock()
-            except Exception as e:
-                logging.error("unable to unlock {}: {}".format(self.current_ready, e))
-                report_exception()
-
-            self.current_ready = None
-
-    def queue_manager_loop(self):
-
-        enable_cached_db_connections()
-
-        while not self.queue_manager_shutdown:
-            try:
-                self.queue_manager_execute()
-            except Exception as e:
-                logging.error("uncaught exception: {}".format(e))
-                report_exception()
-                time.sleep(1)
-
-        release_cached_db_connection()
-
-    def queue_manager_execute(self):
-        while True:
-            # do we need to send keep alives messages for LockableObjects?
-            send_keepalives = False
-            if (datetime.datetime.now() - self.last_lock_update_time).total_seconds() > saq.CONFIG['global'].getint('lock_keepalive_frequency'):
-                send_keepalives = True
-                self.last_lock_update_time = datetime.datetime.now()
-            
-            if send_keepalives:
-                # first we need to manage the keep alive for object that is currently waiting to get picked up
-                if self.current_active and isinstance(self.current_active, LockableObject):
-                    # is it still there?
-                    # this kind of sucks since the documentation says this is unreliable
-                    # worst case scenario, we ask for a keep alive on a lock that is released
-                    if self.ready_queue.qsize():
-                        self.current_active.refresh_lock()
-                    
-            # are we already trying to add something to the ready queue?
-            # if so, that is our only task in this routine
-            if self.current_ready is not None:
-
-                if send_keepalives and isinstance(self.current_ready, LockableObject):
-                    self.current_ready.refresh_lock()
-                
-                try:
-                    logging.debug("placing {} on ready queue".format(self.current_ready))
-                    self.ready_queue.put(self.current_ready, block=not saq.SINGLE_THREADED, timeout=0.05)
-                    self.current_active = self.current_ready # keep track of what is currently on the queue
-                    self.current_ready = None # clear this up for the next loop iteration
-                except Full:
-                    # if we are unable to place the item on the queue then it times out after 1 second
-                    # and we exit and try again
-                    return
-
-            # get the next work item to pass to the ready queue
-            # first we look at all the items in the locked queue
-            # these are LockableObject that were locked when we wanted to process them
-            for lockable in self.lock_queue:
-                # does this storage directory still exist?
-                #if not os.path.isdir(lockable.storage_dir): # XXX <-- this looks like an assumption (.storage_dir)
-                    #logging.debug("storage directory {} no longer exists - removing from queue".format(
-                                  #lockable.storage_dir))
-                    #self.lock_queue.remove(lockable)
-                    #return
-
-                # can we lock it?
-                if not lockable.lock():
-                    logging.debug("still unable to lock {}".format(lockable))
-                    continue
-
-                self.current_ready = lockable
-                self.lock_queue.remove(lockable)
-                return
-
-            if len(self.lock_queue):
-                logging.debug("lock queue size = {}".format(len(self.lock_queue)))
-
-            # nothing is available or ready in the lock queue
-            # so look for new stuff on the incoming work_queue
-            try:
-                self.current_ready = self.work_queue.get(block=not saq.SINGLE_THREADED, timeout=0.05)
-                logging.debug("got {} from work queue".format(self.current_ready))
-            except Empty:
-                return
-
-            # is this object lockable?
-            # some engines (brotex, carbon black) create work items that are specific to the engine
-            # and don't require locks 
-            if isinstance(self.current_ready, LockableObject):
-                if not self.current_ready.lock():
-                    logging.debug("unable to lock {}: moving to lock queue".format(self.current_ready))
-                    if self.current_ready in self.lock_queue:
-                        logging.error("{} already in lock queue".format(self.current_ready))
-                    else:
-                        self.lock_queue.append(self.current_ready)
-                        self.current_ready = None
-
-            # at this point we have somthing to do
-            # so we continue the loop
-
-    def add_work_item(self, item):
-        """Adds the given item to the work queue.  Blocks until the item can be added, or the engine has shut down."""
-        start_time = datetime.datetime.now()
-        while not self.shutdown:
-            try:
-                self.work_queue.put(item, block=not saq.SINGLE_THREADED, timeout=1)
-                logging.debug("added work item {} in {} seconds".format(item, 
-                              (datetime.datetime.now() - start_time).total_seconds()))
-                return
-            except Full:
-                #logging.debug("work queue is full...")
-                pass
-
     def start_engine(self):
-        self.engine_startup_pipe_p, self.engine_startup_pipe_c = Pipe()
-        self.engine_process = Process(target=self.engine_loop, name='{0} Engine'.format(self.name))
+
+        self.engine_process = Process(target=self.engine_loop, name='ACE Engine')
         self.engine_process.start()
         
         # wait for the message from the child that it started up
         try:
-            if not self.engine_startup_pipe_p.poll(30):
-                raise RuntimeError("start timed out")
-
-            started = self.engine_startup_pipe_p.recv()
-            assert isinstance(started, bool)
-
-            if not started:
-                raise RuntimeError("start failed (returned False)")
-
+            logging.debug("waiting for engine to start...")
+            self.engine_startup_event.wait()
             logging.info("engine started")
-            self.engine_startup_pipe_p.close()
-            self.engine_startup_pipe_p = None
 
         except Exception as e:
             logging.error("engine failed to start: {}".format(e))
@@ -1432,422 +738,430 @@ class Engine(object):
         return True
 
     def engine_loop(self):
-        logging.info("started engine {} on process {}".format(self.name, os.getpid()))
+        logging.info("started engine on process {}".format(os.getpid()))
 
-        self.initialize_sighup_handler()
-
-        # add the capability for a graceful shutdown
-        def handle_sigterm(signum, frame):
-            logging.warning("received SIGTERM in engine")
-            self.stop()
-
-        signal.signal(signal.SIGTERM, handle_sigterm)
-
-        self.initialize_modules()
-        self.initialize_profile_points()
-        self.initialize_engine()
-
-        if not saq.SINGLE_THREADED:
-            self.start_process_managers() # this needs to come first here
-            self.start_queue_manager()
-            self.start_delayed_analysis()
-
-            if self.auto_refresh_frequency:
-                self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
-                                              seconds=self.auto_refresh_frequency)
+        self.start_workers()
+        if self.auto_refresh_frequency:
+            self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
+                                          seconds=self.auto_refresh_frequency)
 
         self.start_maintenance_threads()
-
-        # let the parent process know that we've started
-        self.engine_startup_pipe_c.send(True)
-        self.engine_startup_pipe_c.close()
-        self.engine_startup_pipe_c = None
+        self.engine_startup_event.set()
+        self.initialize_signal_handlers()
 
         try:
-            # wait for collection to shutdown
-            while not self.shutdown and not self.collection_event.wait(timeout=1):
-                # every second we break out and look to see if we got a SIGHUP
-                # if or if reached a time limit that automatically reloads everything
-                if not saq.SINGLE_THREADED and (self.sighup_received or (self.auto_refresh_frequency and 
-                                            datetime.datetime.now() > self.next_auto_refresh_time)):
+            while True:
+                if self.sigterm_received:
+                    logging.warning("recevied SIGTERM -- shutting down")
+                    self.stop()
+                    break
+
+                if self.sighup_received:
+                    # we re-load the config when we receive SIGHUP
+                    logging.info("reloading engine configuration")
+                    saq.load_configuration()
+
+                    for worker in self.workers:
+                        try:
+                            logging.info("sending SIGHUP to {}".format(worker))
+                            os.kill(worker.pid, signal.SIGHUP)
+                        except Exception as e:
+                            logging.error("unable to send SIGHUP to {}".format(worker))
+                            report_exception()
 
                     self.sighup_received = False
-                    if self.auto_refresh_frequency:
-                        self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
-                                                      seconds=self.auto_refresh_frequency)
-
-                    logging.info("reloading modules")
-                    self.stop_delayed_analysis()
-                    self.stop_queue_manager()
-                    self.stop_maintenance_threads()
-
-                    if self.sighup_received:
-                        # we re-load the config when we receive SIGHUP
-                        logging.info("reloading engine configuration")
-                        saq.load_configuration()
-
-                    self.initialize_modules()
-                    self.initialize_profile_points()
-                    self.initialize_engine()
-                    self.restart_process_managers() # this needs to come first here
-                    self.start_queue_manager()
-                    self.start_delayed_analysis()
-                    self.start_maintenance_threads()
 
                 if self.sigusr1_received:
-                    try:
-                        for p in self.process_managers:
-                            logging.info("sending SIGUSR1 to process manager {}".format(p.pid))
-                            os.kill(p.pid, signal.SIGUSR1)
-                    except Exception as e:
-                        logging.error(str(e))
+                    for worker in self.workers:
+                        try:
+                            logging.info("sending SIGUSR1 to worker {}".format(worker))
+                            os.kill(worker.pid, signal.SIGUSR1)
+                        except Exception as e:
+                            logging.error("unable to send SIGUSR1 to worker {}".format(worker))
+                            report_exception()
                     
                     self.sigusr1_received = False
 
                 if self.sigusr2_received:
-                    try:
-                        for p in self.process_managers:
-                            logging.info("sending SIGUSR2 to process manager {}".format(p.pid))
-                            os.kill(p.pid, signal.SIGUSR2)
-                    except Exception as e:
-                        logging.error(str(e))
+                    for worker in self.workers:
+                        try:
+                            logging.info("sending SIGUSR2 to worker {}".format(worker))
+                            os.kill(worker.pid, signal.SIGUSR2)
+                        except Exception as e:
+                            logging.error("unable to send SIGUSR2 to worker {}".format(worker))
+                            report_exception()
+
                     self.sigusr2_received = False
+                
+                # if this event is set then we need to exit now
+                if self.immediate_event.wait(0.1):
+                    break
+        
+                if self.control_event.wait(0.1):
+                    break
 
-            # at this point collection is done 
-            # so we're just waiting for things to finish
+            # if we're shutting down then go ahead and tell the workers to shut down
+            if self.shutdown:
+                self.stop_workers()
+            else:
+                # otherwise just wait for the workers to finish working the queue
+                self.wait_workers()
 
-            # wait for the request to shutdown
-            # this will come from the engine_loop
-            logging.debug("detected collection shutdown -- waiting for shutdown message...")
-            while not self.shutdown and not self.controlled_shutdown:
-                time.sleep(0.1)
-
-            logging.debug("detected shutdown message -- waiting for queues to empty...")
-
-            # we have the request to shut down
-            # wait for the queues to empty out
-
-            while not self.shutdown and \
-                  ( self.delayed_analysis_xfer_queue.qsize() or 
-                  self.delayed_analysis_queue.qsize() or 
-                  self.current_delayed_analysis_request or 
-                  self.work_queue.qsize() or 
-                  self.lock_queue or 
-                  self.ready_queue.qsize() ):
-
-                if self.delayed_analysis_xfer_queue.qsize():
-                    logging.debug("queue status: delayed_analysis_xfer_queue = {}".format(self.delayed_analysis_xfer_queue.qsize()))
-                if self.delayed_analysis_queue.qsize():
-                    logging.debug("queue status: delayed_analysis_queue = {}".format(self.delayed_analysis_queue.qsize()))
-                if self.current_delayed_analysis_request:
-                    logging.debug("queue status: current_delayed_analysis_request = {}".format(self.current_delayed_analysis_request))
-                if self.work_queue.qsize():
-                    logging.debug("queue status: work_queue = {}".format(self.work_queue.qsize()))
-                if self.lock_queue:
-                    logging.debug("queue status: lock_queue = {}".format(self.lock_queue))
-                if self.ready_queue.qsize():
-                    logging.debug("queue status: ready_queue = {}".format(self.ready_queue.qsize()))
-
-                time.sleep(1.0)
-
-            self.stop_delayed_analysis()
-            self.stop_queue_manager()
-            self.stop_process_managers()
             self.stop_maintenance_threads()
-
-            # these should all be zero
-            #if self.delayed_analysis_xfer_queue.qsize():
-                #logging.error("delayed_analysis_xfer_queue = {}".format(self.delayed_analysis_xfer_queue.qsize()))
-            #if self.delayed_analysis_queue.qsize():
-                #logging.error("delayed_analysis_queue = {}".format(self.delayed_analysis_queue.qsize()))
-            #if self.current_delayed_analysis_request:
-                #logging.error("current_delayed_analysis_request = {}".format(self.current_delayed_analysis_request))
-            #if self.work_queue.qsize():
-                #logging.error("work_queue = {}".format(self.work_queue.qsize()))
-            #if self.lock_queue:
-                #logging.error("lock_queue = {}".format(self.lock_queue))
-            #if self.ready_queue.qsize():
-                #logging.error("ready_queue = {}".format(self.ready_queue.qsize()))
 
         except KeyboardInterrupt:
             logging.warning("caught user interrupt in engine_loop")
 
         logging.debug("ended engine loop")
 
-    def start_process_managers(self):
-        logging.debug("starting process managers")
-        self.process_manager_event.clear()
-        self.process_managers = []
+    #
+    # PROCESS MANAGEMENT
+    # ------------------------------------------------------------------------
 
-        for i in range(self.analysis_pool_size):
-            p = Process(target=self.process_manager_loop, name='{} Process Manager'.format(self.name))
-            p.start()
-            logging.debug("started process manager {}".format(p.pid))
-            self.process_managers.append(p)
+    def start_workers(self):
+        logging.debug("starting workers")
+        self.worker_control_event.clear()
+        self.workers = []
+        tracking = [] # of (process, event)
 
-    def stop_process_managers(self):
-        logging.debug("stopping process managers")
-        self.process_manager_event.set()
-        
-        for pm in self.process_managers:
-            logging.debug("waiting for process manager {}".format(pm.pid))
-            pm.join()
-            logging.debug("process manager {} stopped".format(pm.pid))
+        for key in self.config.keys():
+            if key.startswith('analysis_pool_size_'):
+                mode = key[len('analysis_pool_size_'):]
+                for i in range(self.config.getint(key)):
+                    event = Event()
+                    p = Process(target=self.worker_loop, 
+                                name='Worker {} [{}]'.format(i, mode), args=(mode, event))
+                    self.workers.append(p)
+                    tracking.append((p, event))
+                    p.start()
 
-    def restart_process_managers(self):
-        logging.info("restarting process managers for {}".format(self.name))
-        #
-        # NOTE before you call this make sure you don't have any threads running
-        # because new processes will inherit running threads
-        #
-        # keep track of which ones we've restarted
-        restarted = [False for p in self.process_managers]
-        
-        # the new list of process managers
-        new_process_managers = []
+        # do we NOT have any defined analysis pools?
+        if len(self.workers) == 0:
+            logging.info("no analysis pools defined -- defaulting to {} workers assigned to any pool".format(
+                         cpu_count()))
+            for core in range(cpu_count()):
+                event = Event()
+                p = Process(target=self.worker_loop, name='Worker {} [{}]'.format(core, 'any'), args=('any', event))
+                self.workers.append(p)
+                tracking.append((p, event))
+                p.start()
 
-        # tell them all to stop
-        self.stop_process_managers()
+        logging.info("waiting for workers to start...")
+        for p, event in tracking:
+            if not event.wait(5):
+                logging.critical("detected {} failed to start".format(p.name))
+                return False
 
-        # create a new event to use to control the new process managers
-        # the existing process managers will still have references to the old event that is now set
-        self.process_manager_event = Event()
+        logging.info("workers started")
+        return True
 
-        while not self.shutdown:
-            # as each of them stop, start up a new one
-            for index, p in enumerate(self.process_managers):
-                if restarted[index]:
-                    continue
+    def stop_workers(self):
+        logging.info("stopping workers")
+        self.worker_control_event.set()
+        self.wait_workers()
 
-                p.join(0.1)
-                if p.is_alive():
-                    continue
+    def wait_workers(self):
+        """Waits for all the workers to shutdown."""
+        for worker in self.workers:
+            logging.info("waiting for worker {}".format(worker.pid))
+            worker.join()
+            logging.info("worker {} stopped".format(worker.pid))
 
-                logging.debug("process manager {} stopped".format(p.pid))
-                new_process = Process(target=self.process_manager_loop, 
-                                      name='{} Process Manager'.format(self.name))
-                new_process.start()
-                new_process_managers.append(new_process)
-                restarted[index] = True
-                continue
+    def restart_workers(self):
+        logging.info("restarting workers")
+        self.stop_workers()
+        self.start_workers()
 
-            if all(restarted):
-                break
-
-        # we now have a new list of process managers
-        old_process_managers = self.process_managers
-        self.process_managers = new_process_managers
-
-        # if we broke out while we are shutting down then it's possible that there are
-        # child processes still running that haven't stop yet
-        if self.shutdown:
-            for p in old_process_managers:
-                logging.warning("sending SIGTERM to remaining child process {}".format(p.pid))
-                signal_process(p, signal.SIGTERM)
-                p.join(10)
-                if p.is_alive():
-                    logging.warning("sending SIGKILL to remaining child process {}".format(p.pid))
-                    signal_process(p, signal.SIGKILL)
-
-        logging.info("finished restarting process managers for {}".format(self.name))
-
-    def process_manager_loop(self):
-        logging.info("started process manager loop on process {}".format(os.getpid()))
+    def worker_loop(self, analysis_mode_priority, started_event):
+        logging.info("started worker loop on process {}".format(os.getpid()))
         enable_cached_db_connections()
 
-        def handle_sigusr1(signum, frame):
-            self.sigusr1_received = True
+        # this determines what kind of work we look for first
+        self.analysis_mode_priority = analysis_mode_priority
 
-        def handle_sigusr2(signum, frame):
-            self.sigusr2_received = True
+        # set up our lock
+        self.lock_uuid = str(uuid.uuid4())
+        self.lock_owner = '{}-{}-{}'.format(saq.SAQ_NODE, analysis_mode_priority, os.getpid())
 
-        signal.signal(signal.SIGUSR1, handle_sigusr1)
-        signal.signal(signal.SIGUSR2, handle_sigusr2)
+        try:
+            self.initialize_modules()
+        except Exception as e:
+            logging.error("unable to initialize modules: {} (worker exiting)".format(e))
+            report_exception()
+            return
+
+        self.initialize_signal_handlers()
+
+        # let the main process know we started
+        if started_event is not None:
+            started_event.set()
         
-        while not self.process_manager_shutdown:
+        while not self.shutdown and not self.worker_shutdown:
+            # we're not doing anything with these signals atm
             if self.sigusr1_received:
-                try:
-                    from pympler import tracker
-                    if not hasattr(self, '_memory_tracker'):
-                        logging.info("creating initial summary - send another SIGUSR1 to compare")
-                        self._memory_tracker = tracker.SummaryTracker()
-                        logging.info("finished creating initial summary")
-                    else:
-                        logging.info("calculating object diff...")
-                        self._memory_tracker.print_diff()
-                except Exception as e:
-                    logging.error(str(e))
-
                 self.sigusr1_received = False
 
             if self.sigusr2_received:
-                try:
-                    pass
-                except Exception as e:
-                    logging.error(str(e))
-
                 self.sigusr2_received = False
 
             try:
-                self.execute()
-            except KeyboardInterrupt:
-                logging.warning("caught user interrupt in process_manager_loop")
-                self.process_manager_event.set()
-            except Exception as e:
-                logging.error("uncaught exception in process management: {}".format(str(e)))
-                report_exception()
-                time.sleep(1)
+                # if the control event is set then it means we're looking to exit when everything is done
+                if self.control_event.is_set():
+                    if self.delayed_analysis_queue_is_empty and self.workload_queue_is_empty:
+                        self.stop() # XXX not sure we actually need this
+                        return
 
-        logging.debug("process manager {} exiting".format(os.getpid()))
+                # if execute returns True it means it discovered and processed a work_item
+                # in that case we assume there is more work to do and we check again immediately
+                if self.execute():  
+                    continue
+
+                # otherwise we wait a second until we go again
+                self.sleep(1)
+                    
+            except KeyboardInterrupt:
+                logging.warning("caught user interrupt in worker_loop")
+                self.worker_control_event.set()
+            except Exception as e:
+                logging.error("uncaught exception in worker_loop: {}".format(str(e)))
+                report_exception()
+                self.sleep(1)
+
+        logging.debug("worker {} exiting".format(os.getpid()))
         release_cached_db_connection()
 
-    def log_process_statistics(self):
-        if self.statistic_dump_frequency == 0:
-            return
+    #
+    # ANALYSIS
+    # ------------------------------------------------------------------------
+    
+    @use_db
+    def transfer_work_target(self, uuid, node, db, c):
+        """Moves the given work target from the given remote node to the local node."""
+        logging.info("moving work target {} from {}".format(uuid, node))
 
-        if ( self.last_statistic_dump is None or datetime.datetime.now() > 
-                self.last_statistic_dump + datetime.timedelta(seconds=self.statistic_dump_frequency) ):
+        # get the main data.json
+        # get all the analysis objects
+        # get all the files
+        
+        # change the node entry
+        return True
 
-            logging.debug("process {} pid {} run time {}".format(
-                          self.child_process.name, 
-                          self.child_process.pid, 
-                          datetime.datetime.now() - self.child_process_start_time))
+    @use_db
+    def get_delayed_analysis_work_target(self, db, c):
+        """Returns the next DelayedAnalysisRequest that is ready, or None if none are ready."""
+        # get the next thing to do
+        # first we look for any delayed analysis that needs to complete
+        c.execute("""
+SELECT 
+    delayed_analysis.id, 
+    delayed_analysis.uuid, 
+    delayed_analysis.observable_uuid, 
+    delayed_analysis.analysis_module, 
+    delayed_analysis.delayed_until
+FROM
+    delayed_analysis LEFT JOIN locks ON delayed_analysis.uuid = locks.uuid
+WHERE
+    delayed_analysis.node = %s
+    AND locks.uuid IS NULL
+    AND NOW() > delayed_until
+ORDER BY
+    delayed_until ASC
+""", (saq.SAQ_NODE,))
 
-            self.last_statistic_dump = datetime.datetime.now()
+        for _id, uuid, observable_uuid, analysis_module, delayed_until in c:
+            if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
+                continue
 
-    def execute(self):
+            return DelayedAnalysisRequest(uuid,
+                                          observable_uuid,
+                                          analysis_module,
+                                          delayed_until,
+                                          database_id=_id)
+
+        return None
+
+    @use_db
+    def get_work_target(self, db, c, priority=True, local=True):
+        """Returns the next work item available. 
+           If priority is True then only work items with analysis_modes that match the analysis_mode_priority
+           of this worker are selected.
+           If local is True then only work items on the local node are selected.
+           Remote work items are moved to become local.
+           Returns a valid work item, or None if none are available."""
+    
+        where_clause = [ 'locks.uuid IS NULL' ]
+        params = []
+
+        if priority:
+            where_clause.append('workload.analysis_mode = %s')
+            params.append(self.analysis_mode_priority)
+
+        if local:
+            where_clause.append('workload.node = %s')
+            params.append(saq.SAQ_NODE)
+
+        where_clause = ' AND '.join(['({})'.format(clause) for clause in where_clause])
+
+        logging.debug("looking for work with {} ({})".format(where_clause, ','.join(params)))
+
+        c.execute("""
+SELECT
+    workload.id,
+    workload.uuid,
+    workload.analysis_mode,
+    workload.insert_date,
+    workload.node
+FROM
+    workload LEFT JOIN locks ON workload.uuid = locks.uuid
+WHERE
+    {where_clause}
+ORDER BY
+    id ASC
+LIMIT 16""".format(where_clause=where_clause), tuple(params))
+
+        for _id, uuid, analysis_mode, insert_date, node in c:
+            if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
+                continue
+
+            # is this work item on a different node?
+            if node != saq.SAQ_NODE:
+                if not self.transfer_work_target(uuid, node):
+                    return None
+
+            return RootAnalysis(uuid=uuid, storage_dir=storage_dir_from_uuid(uuid))
+
+        return None
+
+    def get_next_work_target(self):
         try:
-            # get the next thing to do
-            # I'm using this blocking get() call to throttle the use of the CPU (FYI)
-            work_item = self.ready_queue.get(block=not saq.SINGLE_THREADED, timeout=0.05)
-        except Empty:
+            # get any delayed analysis work that is ready to be processed
+            target = self.get_delayed_analysis_work_target()
+            if target:
+                return target
+
+            # get any local work with high priority
+            target = self.get_work_target(priority=True, local=True)
+            if target:
+                return target
+
+            # get any work with high priority
+            target = self.get_work_target(priority=True, local=False)
+            if target:
+                return target
+
+            # get any available local work
+            target = self.get_work_target(priority=False, local=True)
+            if target:
+                return target
+
+            # get any available work
+            target = self.get_work_target(priority=False, local=False)
+            if target:
+                return target
+
+        except Exception as e:
+            logging.error("unable to get work target: {}".format(e))
+            report_exception()
+
+        # no work available anywhere
+        return None
+
+    @use_db
+    def clear_work_target(self, target, db, c):
+        if isinstance(target, DelayedAnalysisRequest):
+            execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE id = %s", (target.database_id,))
+        else:
+            execute_with_retry(db, c, "DELETE FROM workload WHERE uuid = %s", (target.uuid))
+
+        execute_with_retry(db, c, "DELETE FROM locks where uuid = %s", (target.uuid))
+        db.commit()
+        logging.debug("cleared work target {}".format(target))
+
+    def process_work_item(self, work_item):
+        """Processes the work item."""
+        assert isinstance(work_item, DelayedAnalysisRequest) or isinstance(work_item, RootAnalysis)
+
+        self.delayed_analysis_request = None
+        self.root = None
+
+        # both RootAnalysis and DelayedAnalysisRequest define storage_dir
+        if not os.path.isdir(work_item.storage_dir):
+            logging.warning("storage directory {} missing - already processed?".format(work_item.storage_dir))
             return
+
+        if isinstance(work_item, DelayedAnalysisRequest):
+            self.delayed_analysis_request = work_item
+            self.delayed_analysis_request.load()
+            self.root = self.delayed_analysis_request.root
+
+            # reset the delay flag for this analysis
+            self.delayed_analysis_request.analysis.delayed = False
+
+        elif isinstance(work_item, RootAnalysis):
+            self.root = work_item
+            self.root.load()
+
+        self.analyze(work_item)
+        
+    def execute(self):
+
+        # get the next thing to work on
+        work_item = self.get_next_work_target()
+        if work_item is None:
+            return False
 
         logging.info("got work item {}".format(work_item))
+        # at this point the thing to work on is locked (using the locks database table)
 
         # give the modules a chance to update their configurations
-        if self.auto_reload_frequency:
-            if (datetime.datetime.now() - self.last_auto_reload_check).total_seconds() > self.auto_reload_frequency:
-                logging.info("running autoreload for modules...")
-                self.last_auto_reload_check = datetime.datetime.now()
-                for analysis_module in self.analysis_modules:
-                    try:
-                        analysis_module.check_watched_files()
-                        analysis_module.auto_reload()
-                    except Exception as e:
-                        logging.error("unable to auto-reload {}: {}".format(analysis_module, e))
-                        report_exception()
+        #if self.auto_reload_frequency:
+            #if (datetime.datetime.now() - self.last_auto_reload_check).total_seconds() > self.auto_reload_frequency:
+                #logging.info("running autoreload for modules...")
+                #self.last_auto_reload_check = datetime.datetime.now()
+                #for analysis_module in self.analysis_modules:
+                    #try:
+                        #analysis_module.check_watched_files()
+                        #analysis_module.auto_reload()
+                    #except Exception as e:
+                        #logging.error("unable to auto-reload {}: {}".format(analysis_module, e))
+                        #report_exception()
 
-        target_function = None
+        # start a secondary thread that just keeps the lock open
+        self.start_root_lock_manager(work_item.uuid)
 
-        # reset state flags
-        self._cancel_analysis_flag = False
-
-        # if the work item is a delayed analysis request then it goes straight to processing
-        if isinstance(work_item, DelayedAnalysisRequest):
-            target_function = self.analyze
-        # did this come from processing?
-        else:
-            # otherwise the work_item is abstract and given to the process function for processing
-            target_function = self.process
-
-        # TODO start a thread to the side that logs the process statistics
         try:
-            target_function(work_item)
+            self.process_work_item(work_item)
         except Exception as e:
-            logging.error("processing of {} failed: {}".format(work_item, e))
+            logging.error("error processing work item {}: {}".format(work_item, e))
             report_exception()
+
+        self.stop_root_lock_manager()
+
+        try:
+            self.clear_work_target(work_item)
+        except Exception as e:
+            logging.error("unable to clear work item {}: {}".format(work_item, e))
 
         # ensure the engine has a chance to clean up
-        try:
-            logging.debug("calling cleanup for {}".format(work_item))
-            self.cleanup(work_item)
-        except Exception as e:
-            logging.error("unable to cleanup work item {}: {}".format(work_item, e))
-            report_exception()
-
-    def child_process_wrapper(self, target_function, *args, **kwargs):
-        try:
-            target_function(*args, **kwargs)
-        except KeyboardInterrupt:
-            logging.warning("caught user interrupt in child_process_wrapper")
+        #try:
+            #logging.debug("calling cleanup for {}".format(work_item))
+            #self.cleanup(work_item)
+        #except Exception as e:
+            #logging.error("unable to cleanup work item {}: {}".format(work_item, e))
+            #report_exception()
 
     def analyze(self, target):
         assert isinstance(target, saq.analysis.RootAnalysis) or isinstance(target, DelayedAnalysisRequest)
-    
-        # make sure root analysis has it's storage directory available
-        if isinstance(target, saq.analysis.RootAnalysis):
-            if not os.path.exists(target.storage_dir):
-                logging.error("missing storage directory for {}".format(target))
-                return
 
+        # reset state flags
+        self._cancel_analysis_flag = False
+    
         # reset total analysis measurements
         self.total_analysis_time.clear()
 
-        # when we receive SIGTERM we want to cancel the current analysis efforts
-        #def handle_sigterm(signum, frame):
-            #logging.info("analysis processing for {} received SIGTERM pid {}".format(target, os.getpid()))
-            #self.cancel_analysis_flag = True
-
-        #signal.signal(signal.SIGTERM, handle_sigterm)
-
-        self.root = target # usually this is the RootAnalysis
-        self.delayed_analysis_request = None
-
-        # are we completing an analysis request?
-        if isinstance(target, DelayedAnalysisRequest):
-            self.delayed_analysis_request = target
-
-            # when we create the DelayedAnalysisRequest we also record what the type of the target was
-            # so that we can instaniate it here with the correct type
-            self.root = self.delayed_analysis_request.target_type(
-                        storage_dir=self.delayed_analysis_request.storage_dir)
-
-            # sanity check, we can remove this later
-            assert isinstance(self.root, RootAnalysis)
-
-            if not os.path.isdir(self.root.storage_dir):
-                logging.warning("storage directory {} missing - already processed?".format(self.root.storage_dir))
-                # don't leave locks behind
-                self.delayed_analysis_request.unlock()
-                return
-
-            # load from JSON
-            self.root.load()
-
-            # transfer locks from the DelayedAnalysisRequest
-            self.delayed_analysis_request.transfer_locks_to(self.root)
-
-            # at this point the delayed analysis *request* is done (even though we are currently analyzing)
-            # so we delete the tracking we're doing
-            try:
-                observable = self.root.get_observable(self.delayed_analysis_request.observable_uuid)
-                analysis_module = None
-                for _analysis_module in self.analysis_modules:
-                    if _analysis_module.config_section == self.delayed_analysis_request.analysis_module:
-                        analysis_module = _analysis_module
-                        break
-
-                if observable and analysis_module:
-                    self.root.track_delayed_analysis_stop(observable, analysis_module)
-
-                # we also need to reset the delay flag for this analysis
-                target_analysis = observable.get_analysis(analysis_module.generated_analysis_type)
-                if target_analysis:
-                    target_analysis.delayed = False
-
-            except Exception as e:
-                logging.error("unable to stop tracking delayed analysis: {}".format(e))
-                report_exception()
-
-        # if we ARE in SINGLE_THREADED mode then we need to initialize the modules (each time)
-        if saq.SINGLE_THREADED:
-            logging.warning("re-initializing modules in SINGLE_THREADED mode")
-            self.initialize_modules()
-        else:
-            # reset each module to it's default state
-            for analysis_module in self.analysis_modules:
-                analysis_module.reset()
+        # reset each module to it's default state
+        for analysis_module in self.analysis_modules:
+            analysis_module.reset()
 
         # tell all the analysis modules what alert they'll be processing
         for analysis_module in self.analysis_modules:
@@ -1859,12 +1173,11 @@ class Engine(object):
         logging_handler.setFormatter(logging.getLogger().handlers[0].formatter)
         logging.getLogger().addHandler(logging_handler)
 
-        # if self.root is a LockableObject then we need to manage "keep alives" for the object
-        # this is done on the side in a thread
-        self.start_root_lock_manager()
-
         elapsed_time = None
         error_report_path = None
+
+        # remember what the analysis mode was before we started
+        current_analysis_mode = self.root.analysis_mode
 
         try:
             start_time = time.time()
@@ -1875,21 +1188,19 @@ class Engine(object):
             elapsed_time = time.time() - start_time
             logging.info("completed analysis {} in {:.2f} seconds".format(target, elapsed_time))
 
-            if self.root.delayed:
-                self.root.save()
-            else:
-                self.execute_module_post_analysis()
-                self.execute_profile_point_analysis()
+            # do we NOT have any outstanding delayed analysis requests?
+            if not self.root.delayed:
+                for analysis_module in self.analysis_modules:
+                    try:
+                        # give the modules an opportunity to do something after all analysis has completed
+                        # NOTE that this does NOT allow adding any new observables or analysis
+                        analysis_module.execute_post_analysis()
+                    except Exception as e:
+                        logging.error("post analysis module {} failed".format(analysis_module))
+                        report_exception()
 
-                # give the engine a chance to review the analysis
-                # it may want to do something with it like create an alert to notify someone
-                self.post_analysis(self.root)
-
-                # save all the changes we've made
-                self.root.save() # TODO this is saving even before we may be about to delete
-
-                # notify that we've fully completed analysis for this
-                self.root_analysis_completed(self.root)
+            # save all the changes we've made
+            self.root.save() 
 
         except Exception as e:
             elapsed_time = time.time() - start_time
@@ -1909,24 +1220,13 @@ class Engine(object):
             # turn off the root lock manager
             self.stop_root_lock_manager()
 
-        # unlock the root if it isn't already
-        if isinstance(self.root, LockableObject):
-            self.root.unlock()
-
-        # cleanup
+        # give the modules a chance to cleanup
         for analysis_module in self.analysis_modules:
             try:
                 analysis_module.cleanup()
             except Exception as e:
                 logging.error("unable to clean up analysis module {}: {}".format(analysis_module, e))
                 report_exception()
-
-        # transfer any delayed analysis requests over to the delayed analysis manager
-        logging.debug("transfering {} delayed analysis requests".format(len(self.delayed_analysis_buffer)))
-        for next_analysis, request in self.delayed_analysis_buffer:
-            self.delayed_analysis_xfer_queue.put_nowait((next_analysis, request))
-    
-        self.delayed_analysis_buffer.clear()
 
         # if analysis failed, copy all the details to error_reports for review
         error_report_stats_dir = None
@@ -1982,6 +1282,17 @@ class Engine(object):
 
         except Exception as e:
             logging.error("unable to record statistics: {}".format(e))
+
+        # did the analysis mode change?
+        if self.root.analysis_mode != current_analysis_mode:
+            logging.info("analysis mode for {} changed from {} to {}".format(
+                          self.root, current_analysis_mode, self.root.analysis_mode))
+
+            try:
+                add_workload(self.root.uuid, self.root.analysis_mode)
+            except Exception as e:
+                logging.error("unable to add {} to workload: {}".format(self.root, e))
+                report_exception()
 
         return
 
@@ -2056,13 +1367,16 @@ class Engine(object):
         # if this was a delayed analysis request then we want to start with a specific observable and analysis module
         if self.delayed_analysis_request is not None:
             logging.debug("processing delayed analysis request {}".format(self.delayed_analysis_request))
+            work_stack.append(WorkTarget(observable=self.delayed_analysis_request.observable,
+                                         analysis_module=self.delayed_analysis_request.analysis_module))
+
             # find the analysis module that needs to analyze this observable
-            for analysis_module in self.analysis_modules:
-                if analysis_module.config_section == self.delayed_analysis_request.analysis_module:
-                    work_stack.append(WorkTarget(
-                                      observable=self.root.get_observable(self.delayed_analysis_request.observable_uuid), 
-                                      analysis_module=analysis_module))
-                    break
+            #for analysis_module in self.analysis_modules:
+                #if analysis_module.config_section == self.delayed_analysis_request.analysis_module:
+                    #work_stack.append(WorkTarget(
+                                      #observable=self.root.get_observable(self.delayed_analysis_request.observable_uuid), 
+                                      #analysis_module=analysis_module))
+                    #break
 
             # we should have found 1 exactly
             if len(work_stack) != 1:
@@ -2283,8 +1597,9 @@ class Engine(object):
                     continue
 
             # select the analysis modules we want to use
-            # normally we want to analyze with all the enabled modules
-            analysis_modules = self.analysis_modules
+            # first we limit ourselves to whatever analysis modules are available for the current analysis mode
+            logging.info("analyzing {} in mode {}".format(self.root, self.root.analysis_mode))
+            analysis_modules = self.analysis_mode_mapping[self.root.analysis_mode]
                 
             # an Observable can specify a limited set of analysis modules to run
             # by using the limit_analysis() function
@@ -2299,9 +1614,6 @@ class Engine(object):
             elif work_item.analysis_module:
                 logging.debug("analysis for {} limited to {}".format(work_item, work_item.analysis_module))
                 analysis_modules = [work_item.analysis_module]
-            
-            else:
-                logging.debug("analysis for {} not limited".format(work_item))
 
             # analyze this thing with the analysis modules we've selected
             for analysis_module in analysis_modules:
@@ -2493,33 +1805,8 @@ class Engine(object):
 
     def execute_module_post_analysis(self):
         logging.debug("executing post analysis on {}".format(self.root))
-        for analysis_module in self.analysis_modules:
-            try:
-                analysis_module.execute_post_analysis()
-            except Exception as e:
-                logging.error("post analysis module {} failed".format(analysis_module))
-                report_exception()
 
-    def execute_profile_point_analysis(self):
-        self.root.clear_profile_points()
-        for pp_module in self.profile_point_analyzers:
-            logging.debug("executing {} on {}".format(pp_module, self.root))
-            try:
-                result = pp_module.analyze(self.root)
-                if not result:
-                    continue
-                elif isinstance(result, ProfilePoint):
-                    self.root.add_profile_point(result)
-                elif isinstance(result, list):
-                    for profile_point in result:
-                        assert isinstance(profile_point, ProfilePoint)
-                        self.root.add_profile_point(profile_point)
-                else:
-                    raise ValueError("expected either False (or None), ProfilePoint or list of ProfilePoint")
-            except Exception as e:
-                logging.error("profile point module {} failed: {}".format(pp_module, e))
-                report_exception()
-
+    # XXX this comes out
     def should_alert(self, root):
         """Returns True if we should fire an alert for this analysis.
 
@@ -2571,69 +1858,40 @@ class Engine(object):
             time.sleep(1.0 if seconds > 0 else seconds)
             seconds -= 1.0
 
-class DelayedAnalysisRequest(LocalLockableObject):
+class DelayedAnalysisRequest(object):
     """Encapsulates a request for delayed analysis."""
-    def __init__(self, target, observable_uuid, analysis_module, next_analysis, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, uuid, observable_uuid, analysis_module, next_analysis, database_id=None):
 
-        assert isinstance(target, RootAnalysis)
+        assert isinstance(uuid, str) and uuid
         assert isinstance(observable_uuid, str) and observable_uuid
         assert isinstance(analysis_module, str) and analysis_module
         
-        self.storage_dir = target.storage_dir
-        self.target_type = type(target) # we end up using this in the analyze() call
+        self.uuid = uuid
         self.observable_uuid = observable_uuid
         self.analysis_module = analysis_module
-        self.uuid = target.uuid
         self.next_analysis = next_analysis
+        self.database_id = database_id
 
-        # if the target is lockable then we use a "lock proxy" to managing that locking
-        # see lib/saq/lock.py for details
-        self.lock_proxy = None
-        if isinstance(target, LockableObject):
-            self.lock_proxy = target.create_lock_proxy()
+        self.root = None
 
-    def lock(self):
-        if self.lock_proxy:
-            return self.lock_proxy.lock()
+    @property
+    def storage_dir(self):
+        return storage_dir_from_uuid(self.uuid)
 
-        return super().lock()
-
-    def unlock(self):
-        if self.lock_proxy:
-            return self.lock_proxy.unlock()
-
-        return super().unlock()
-
-    def is_locked(self):
-        if self.lock_proxy:
-            return self.lock_proxy.is_locked()
-
-        return super().is_locked()
-
-    def refresh_lock(self):
-        if self.lock_proxy:
-            return self.lock_proxy.refresh_lock()
-
-        return super().refresh_lock()
-
-    def transfer_locks_to(self, lockable):
-        if self.lock_proxy:
-            self.lock_proxy.transfer_locks_to(lockable)
-            return
-
-        super().transfer_locks_to(lockable)
+    def load(self):
+        self.root = RootAnalysis(uuid=self.uuid, storage_dir=self.storage_dir)
+        self.root.load()
+        
+        self.observable = self.root.get_observable(self.observable_uuid)
+        self.analysis_module = CURRENT_ENGINE.analysis_module_mapping[self.analysis_module]
+        self.analysis = self.observable.get_analysis(self.analysis_module.generated_analysis_type)
     
     def __str__(self):
-        return "DelayedAnalysisRequest for {} type {} by {} @ {}".format(
-                self.storage_dir, str(self.target_type), self.analysis_module, self.next_analysis)
+        return "DelayedAnalysisRequest for {} by {} @ {}".format(
+                self.uuid, self.analysis_module, self.next_analysis)
 
     def __repr__(self):
         return self.__str__()
-
-    # we need to override this for when next_analysis is equal
-    def __lt__(self, other):
-        return False
 
 class SSLNetworkServer(Engine):
     """An Engine that implements an SSL socket to receive work."""

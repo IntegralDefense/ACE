@@ -31,6 +31,7 @@ SAQ_NODE = None
 SAQ_RELATIVE_DIR = None
 CONFIG = None
 CONFIG_PATHS = []
+DATA_DIR = None
 DEFAULT_ENCODING = None
 SEMAPHORES_ENABLED = False
 PROXIES = {}
@@ -78,6 +79,9 @@ YSS_SOCKET_DIR = None
 # set to True to cause tracebacks to be dumped to standard output
 # useful when debugging or testing
 DUMP_TRACEBACKS = False
+
+# the amount of time (in seconds) that a lock in the locks table is valid
+LOCK_TIMEOUT_SECONDS = None
 
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
@@ -209,6 +213,8 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     global MODULE_STATS_DIR
     global YSS_BASE_DIR
     global YSS_SOCKET_DIR
+    global DATA_DIR
+    global LOCK_TIMEOUT_SECONDS
 
     # go ahead and try to figure out what text encoding we're using
     DEFAULT_ENCODING = locale.getpreferredencoding()
@@ -280,6 +286,11 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     except Exception as e:
         sys.stderr.write("ERROR: unable to load configuration: {0}".format(str(e)))
         sys.exit(1)
+
+    DATA_DIR = CONFIG['global']['data_dir']
+
+    minutes, seconds = map(int, CONFIG['global']['lock_timeout'].split(':'))
+    LOCK_TIMEOUT_SECONDS = (minutes * 60) + seconds
 
     # user specified log level
     LOG_LEVEL = logging.INFO

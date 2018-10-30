@@ -3,10 +3,12 @@
 import logging
 import os, os.path
 import pickle
+import re
 import shutil
 import signal
 import tarfile
 import tempfile
+import threading
 import unittest
 import uuid
 
@@ -18,11 +20,12 @@ from saq.anp import *
 from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, Observable
 from saq.constants import *
 from saq.database import get_db_connection
-from saq.engine import Engine, DelayedAnalysisRequest, SSLNetworkServer, MySQLCollectionEngine, ANPNodeEngine
+from saq.engine import Engine, DelayedAnalysisRequest, SSLNetworkServer, MySQLCollectionEngine, ANPNodeEngine, add_workload
 from saq.lock import LocalLockableObject
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
 from saq.test import *
+from saq.util import storage_dir_from_uuid
 
 class TrackableWorkItem(object):
     def __init__(self):
@@ -49,45 +52,14 @@ class AnalysisRequest(LocalLockableObject):
         self.uuid = target.uuid
         self.storage_dir = target.storage_dir
 
-class TerminatingMarker(object):
-    pass
-
 class TestEngineBase(Engine):
-        
-    @property
-    def name(self):
-        return 'unittest'
-
     def enable_module(self, module_name):
         """Adds a module to be enabled."""
         saq.CONFIG[module_name]['enabled'] = 'yes'
-        saq.CONFIG['engine_unittest'][module_name] = 'yes'
+        saq.CONFIG['analysis_mode_test_empty'][module_name] = 'yes'
 
-class BasicEngine(TestEngineBase):
-    def collect(self):
-        self.stop_collection()
-
-class CollectionEngine(TestEngineBase):
-    def __init__(self, work, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.work = work
-
-    def collect(self):
-        if not self.work:
-            self.stop_collection()
-            return None
-
-        target = self.work[0]
-        self.work = self.work[1:]
-        return self.add_work_item(target)
-
-    def process(self, work_item):
-        if isinstance(work_item, TerminatingMarker):
-            self.controlled_stop()
-            return
-
-        assert isinstance(work_item, TrackableWorkItem)
-        work_item.mark_processed()
+    def set_analysis_pool_size(self, count):
+        saq.CONFIG['engine']['analysis_pool_size_any'] = str(count)
 
 class AnalysisEngine(TestEngineBase):
     def __init__(self, *args, **kwargs):
@@ -173,10 +145,29 @@ class ANPEnabledEngine(ANPNodeEngine, AnalysisEngine):
 
 class EngineTestCase(ACEEngineTestCase):
 
-    @modify_logging_level(logging.ERROR)
-    def test_engine_000_basic_engine_controlled_stop(self):
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+        
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("DELETE FROM workload")
+            c.execute("DELETE FROM locks")
+            c.execute("DELETE FROM delayed_analysis")
+            db.commit()
 
-        engine = BasicEngine()
+        # we only want to enable specific modules
+        for section in saq.CONFIG.keys():
+            if section.startswith('analysis_module_'):
+                saq.CONFIG[section]['enabled'] = 'no'
+
+    def tearDown(self, *args, **kwargs):
+        super().tearDown()
+        # reload the configuration
+        saq.load_configuration()
+
+    def test_engine_000_controlled_stop(self):
+
+        engine = Engine()
 
         try:
             engine.start()
@@ -186,10 +177,9 @@ class EngineTestCase(ACEEngineTestCase):
             engine.stop()
             engine.wait()
 
-    @modify_logging_level(logging.ERROR)
-    def test_engine_001_basic_engine_immediate_stop(self):
+    def test_engine_immediate_stop(self):
 
-        engine = BasicEngine()
+        engine = Engine()
 
         try:
             engine.start()
@@ -199,92 +189,205 @@ class EngineTestCase(ACEEngineTestCase):
             engine.stop()
             engine.wait()
 
-    @modify_logging_level(logging.ERROR)
-    def test_engine_002_basic_engine_signal_terminate(self):
+    def test_engine_signal_terminate(self):
 
-        engine = BasicEngine()
+        engine = Engine()
 
         try:
             engine.start()
-            os.kill(os.getpid(), signal.SIGTERM)
+            
+            def _send_sigterm(pid):
+                wait_for_log_count('waiting for engine process', 1)
+                logging.info("sending SIGTERM to {}".format(pid))
+                os.kill(pid, signal.SIGTERM)
+
+            t = threading.Thread(target=_send_sigterm, args=(os.getpid(),))
+            t.start()
+
             engine.wait()
+
         except KeyboardInterrupt:
             engine.stop()
             engine.wait()
 
-    def verify_work_items_processed(self, work):
-        for item in work:
-            if isinstance(item, TrackableWorkItem):
-                self.assertTrue(item.is_processed())
+    def test_engine_single_process(self):
+        """Test starting and stopping in single-process mode."""
 
-    def cleanup_work_items(self, work):
-        for item in work:
-            if isinstance(item, TrackableWorkItem):
-                item.cleanup()
+        engine = Engine()
+        started_event = threading.Event()
+        
+        def _terminate():
+            started_event.wait()
+            engine.stop()
 
-    @modify_logging_level(logging.ERROR)
-    def test_engine_003_single_collection(self):
-        work = [TerminatingMarker()]
-        engine = CollectionEngine(work)
-        self.execute_engine_test(engine)
-        self.verify_work_items_processed(work)
-        self.cleanup_work_items(work)
+        t = threading.Thread(target=_terminate)
+        t.start()
 
-    @modify_logging_level(logging.ERROR)
-    def test_engine_004_multiple_collection(self):
-        work = [TrackableWorkItem() for _ in range(10)]
-        work.append(TerminatingMarker())
-        engine = CollectionEngine(work)
-        self.execute_engine_test(engine)
-        self.verify_work_items_processed(work)
-        self.cleanup_work_items(work)
+        try:
+            engine._single_threaded_start(started_event=started_event)
+        except KeyboardInterrupt:
+            pass
 
-    def basic_analysis_test(self, count):
-        if count > 1:
-            saq.CONFIG['engine_unittest']['analysis_pool_size'] = str(count)
+        t.join()
 
-        engine = AnalysisEngine()
+    def test_engine_default_pools(self):
+        """Test starting with no analysis pools defined."""
+        engine = Engine()
+        engine.start()
+        engine.stop()
+        engine.wait()
+
+        regex = re.compile(r'no analysis pools defined -- defaulting to (\d+) workers assigned to any pool')
+        results = search_log_regex(regex)
+        self.assertEquals(len(results), 1)
+        m = regex.search(results[0].getMessage())
+        self.assertIsNotNone(m)
+        self.assertEquals(int(m.group(1)), cpu_count())
+
+    def test_engine_analysis_modes(self):
+        """Tests analysis mode module loading."""
+
+        engine = TestEngineBase()
         engine.enable_module('analysis_module_basic_test')
-        self.start_engine(engine)
+        engine.enable_module('analysis_module_test_delayed_analysis')
+        engine.enable_module('analysis_module_test_engine_locking')
+        engine.enable_module('analysis_module_test_final_analysis')
+        engine.enable_module('analysis_module_test_post_analysis')
 
-        o_uuids = {} # key = storage_dir, value = o_uuid
+        engine.initialize()
+        engine.initialize_modules()
 
-        for i in range(count):
-            root = create_root_analysis(uuid=str(uuid.uuid4()))
-            root.initialize_storage()
-            o_uuids[root.storage_dir] = root.add_observable(F_TEST, 'test_1').id
-            root.save()
-            engine.queue_work_item(root.storage_dir)
+        # analysis mode test_empty should have 0 modules
+        self.assertEquals(len(engine.analysis_mode_mapping['test_empty']), 0)
+    
+        # analysis mode test_single should have 1 module
+        self.assertEquals(len(engine.analysis_mode_mapping['test_single']), 1)
+        self.assertEquals(engine.analysis_mode_mapping['test_single'][0].config_section, 'analysis_module_basic_test')
 
-        engine.queue_work_item(TerminatingMarker())
-        self.wait_engine(engine)
+        # analysis mode test_groups should have 5 modules
+        self.assertEquals(len(engine.analysis_mode_mapping['test_groups']), 5)
 
-        from saq.modules.test import BasicTestAnalysis
+        # analysis mode test_disabled should have 4 modules (minus basic_test)
+        self.assertEquals(len(engine.analysis_mode_mapping['test_disabled']), 4)
+        self.assertTrue('analysis_module_basic_test' not in [m.config_section for m in engine.analysis_mode_mapping['test_disabled']])
 
-        for storage_dir in o_uuids.keys():
-            root = create_root_analysis(storage_dir=storage_dir)
-            root.load()
-            analysis = root.get_observable(o_uuids[storage_dir]).get_analysis(BasicTestAnalysis)
-            self.assertTrue(analysis.test_result)
-
-    def test_engine_005_basic_analysis(self):
-        self.basic_analysis_test(1)
-
-    def test_engine_005_2_no_analysis(self):
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_basic_test')
-        self.start_engine(engine)
+    def test_engine_single_process_analysis(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+
+        engine = TestEngineBase()
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.single_threaded_start(analysis_mode_priority='test_single')
+
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+    def test_engine_multi_process_analysis(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+
+        engine = TestEngineBase()
+        engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+    def test_engine_multi_process_multi_analysis(self):
+
+        uuids = []
+
+        for _ in range(3):
+            root = create_root_analysis(uuid=str(uuid.uuid4()))
+            root.storage_dir = storage_dir_from_uuid(root.uuid)
+            root.initialize_storage()
+            observable = root.add_observable(F_TEST, 'test_1')
+            root.analysis_mode = 'test_empty'
+            root.save()
+            root.schedule()
+            uuids.append((root.uuid, observable.id))
+
+        engine = TestEngineBase()
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        for root_uuid, observable_uuid in uuids:
+            root = RootAnalysis(uuid=root_uuid)
+            root.storage_dir = storage_dir_from_uuid(root_uuid)
+            root.load()
+            observable = root.get_observable(observable_uuid)
+            self.assertIsNotNone(observable)
+            from saq.modules.test import BasicTestAnalysis
+            analysis = observable.get_analysis(BasicTestAnalysis)
+            self.assertIsNotNone(analysis)
+
+    def test_engine_locks(self):
+        from saq.database import acquire_lock, release_lock
+        first_lock_uuid = str(uuid.uuid4())
+        second_lock_uuid = str(uuid.uuid4())
+        target_lock = str(uuid.uuid4())
+        self.assertTrue(acquire_lock(target_lock, first_lock_uuid))
+        self.assertFalse(acquire_lock(target_lock, second_lock_uuid))
+        self.assertTrue(acquire_lock(target_lock, first_lock_uuid))
+        release_lock(target_lock, first_lock_uuid)
+        self.assertTrue(acquire_lock(target_lock, second_lock_uuid))
+        self.assertFalse(acquire_lock(target_lock, first_lock_uuid))
+        release_lock(target_lock, second_lock_uuid)
+
+    def test_engine_lock_timeout(self):
+        from saq.database import acquire_lock, release_lock
+        OLD_TIMEOUT = saq.LOCK_TIMEOUT_SECONDS
+        saq.LOCK_TIMEOUT_SECONDS = 0
+        first_lock_uuid = str(uuid.uuid4())
+        second_lock_uuid = str(uuid.uuid4())
+        target_lock = str(uuid.uuid4())
+        self.assertTrue(acquire_lock(target_lock, first_lock_uuid))
+        self.assertTrue(acquire_lock(target_lock, second_lock_uuid))
+        saq.LOCK_TIMEOUT_SECONDS = OLD_TIMEOUT
+
+    def test_engine_no_analysis(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_2')
+        root.analysis_mode = 'test_empty'
         root.save()
-        engine.queue_work_item(root.storage_dir)
+        root.schedule()
 
-        engine.queue_work_item(TerminatingMarker())
-        self.wait_engine(engine)
+        engine = TestEngineBase()
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
 
-        root = create_root_analysis(storage_dir=root.storage_dir)
+        root = RootAnalysis(uuid=root.uuid, storage_dir=root.storage_dir)
         root.load()
         observable = root.get_observable(observable.id)
 
@@ -293,21 +396,22 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertTrue(isinstance(observable.get_analysis(BasicTestAnalysis), bool))
         self.assertFalse(observable.get_analysis(BasicTestAnalysis))
 
-    def test_engine_005_3_no_analysis_no_return(self):
-        engine = AnalysisEngine()
+    def test_engine_no_analysis_no_return(self):
+        engine = TestEngineBase()
         engine.enable_module('analysis_module_basic_test')
-        self.start_engine(engine)
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_3')
         root.save()
-        engine.queue_work_item(root.storage_dir)
+        root.schedule()
 
-        engine.queue_work_item(TerminatingMarker())
-        self.wait_engine(engine)
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
 
-        root = create_root_analysis(storage_dir=root.storage_dir)
+        root = RootAnalysis(uuid=root.uuid, storage_dir=root.storage_dir)
         root.load()
         observable = root.get_observable(observable.id)
 
@@ -317,32 +421,58 @@ class EngineTestCase(ACEEngineTestCase):
         # execute_final_analysis defaults to returning False
         self.assertFalse(observable.get_analysis(BasicTestAnalysis))
 
-    def delayed_analysis_test(self, count):
-        if count > 1:
-            saq.CONFIG['engine_unittest']['analysis_pool_size'] = str(count)
+    def test_engine_delayed_analysis_single(self):
 
-        engine = AnalysisEngine()
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, '0:01|0:05')
+        root.save()
+        root.schedule()
+
+        engine = TestEngineBase()
+        engine.set_analysis_pool_size(1)
         engine.enable_module('analysis_module_test_delayed_analysis')
-        self.start_engine(engine)
-
-        o_uuids = {} # key = storage_dir, value = o_uuid
-        
-        for i in range(count):
-            root = create_root_analysis(uuid=str(uuid.uuid4()))
-            root.initialize_storage()
-            o_uuids[root.storage_dir] = root.add_observable(F_TEST, '0:01|0:05').id
-            root.save()
-            engine.queue_work_item(root.storage_dir)
-
-        engine.queue_work_item(TerminatingMarker())
-        self.wait_engine(engine)
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
 
         from saq.modules.test import DelayedAnalysisTestAnalysis
 
-        for storage_dir in o_uuids.keys():
-            root = create_root_analysis(storage_dir=storage_dir)
+        root = create_root_analysis(uuid=root.uuid, storage_dir=storage_dir_from_uuid(root.uuid))
+        root.load()
+        analysis = root.get_observable(observable.id).get_analysis(DelayedAnalysisTestAnalysis)
+        self.assertTrue(analysis.initial_request)
+        self.assertTrue(analysis.delayed_request)
+        self.assertEquals(analysis.request_count, 2)
+        self.assertTrue(analysis.completed)
+
+    def test_engine_delayed_analysis_multiple(self):
+
+        uuids = []
+        
+        for i in range(3):
+            root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+            root.storage_dir = storage_dir_from_uuid(root.uuid)
+            root.initialize_storage()
+            observable = root.add_observable(F_TEST, '0:01|0:05')
+            root.save()
+            root.schedule()
+            uuids.append((root.uuid, observable.id))
+
+        engine = TestEngineBase()
+        engine.set_analysis_pool_size(2)
+        engine.enable_module('analysis_module_test_delayed_analysis')
+        engine.control_event.set()
+        engine.start()
+        engine.wait()
+
+        from saq.modules.test import DelayedAnalysisTestAnalysis
+
+        for root_uuid, observable_uuid in uuids:
+            root = create_root_analysis(uuid=root_uuid, storage_dir=storage_dir_from_uuid(root_uuid))
             root.load()
-            analysis = root.get_observable(o_uuids[storage_dir]).get_analysis(DelayedAnalysisTestAnalysis)
+            analysis = root.get_observable(observable_uuid).get_analysis(DelayedAnalysisTestAnalysis)
             self.assertTrue(analysis.initial_request)
             self.assertTrue(analysis.delayed_request)
             self.assertEquals(analysis.request_count, 2)

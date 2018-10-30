@@ -2009,6 +2009,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
                  storage_dir=None,
                  company_name=None,
                  company_id=None,
+                 analysis_mode=None,
                  *args, **kwargs):
 
         import uuid as uuidlib
@@ -2022,6 +2023,10 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
         # we are the root
         self.root = self
+
+        self._analysis_mode = ANALYSIS_MODE_ANALYSIS
+        if analysis_mode:
+            self.analysis_mode = analysis_mode
 
         self._uuid = str(uuidlib.uuid4()) # default is new uuid
         if uuid:
@@ -2140,6 +2145,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
     #
     
     # json keys
+    KEY_ANALYSIS_MODE = 'analysis_mode'
     KEY_ID = 'id'
     KEY_UUID = 'uuid'
     KEY_TOOL = 'tool'
@@ -2164,6 +2170,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
     def json(self):
         result = Analysis.json.fget(self)
         result.update({
+            RootAnalysis.KEY_ANALYSIS_MODE: self.analysis_mode,
             RootAnalysis.KEY_UUID: self.uuid,
             RootAnalysis.KEY_TOOL: self.tool,
             RootAnalysis.KEY_TOOL_INSTANCE: self.tool_instance,
@@ -2195,6 +2202,8 @@ class RootAnalysis(LocalLockableObject, Analysis):
         Analysis.json.fset(self, value)
 
         # load this alert from the given json data
+        if RootAnalysis.KEY_ANALYSIS_MODE in value:
+            self.analysis_mode = value[RootAnalysis.KEY_ANALYSIS_MODE]
         if RootAnalysis.KEY_UUID in value:
             self.uuid = value[RootAnalysis.KEY_UUID]
         if RootAnalysis.KEY_TOOL in value:
@@ -2227,6 +2236,17 @@ class RootAnalysis(LocalLockableObject, Analysis):
                 self.delayed_analysis_tracking[key] = dateutil.parser.parse(self.delayed_analysis_tracking[key])
         if RootAnalysis.KEY_DEPENDECY_TRACKING in value:
             self.dependency_tracking = value[RootAnalysis.KEY_DEPENDECY_TRACKING]
+
+    @property
+    def analysis_mode(self):
+        if self._analysis_mode is None:
+            return saq.CONFIG['global']['default_analysis_mode']
+        return self._analysis_mode
+
+    @analysis_mode.setter
+    def analysis_mode(self, value):
+        assert isinstance(value, str) and value
+        self._analysis_mode = value
 
     @property
     def uuid(self):
@@ -2319,7 +2339,6 @@ class RootAnalysis(LocalLockableObject, Analysis):
     def summary(self, value):
         """This does nothing, but it does get called when you assign to the json property."""
         pass
-
 
     @property
     def action_counters(self):
@@ -2484,39 +2503,13 @@ class RootAnalysis(LocalLockableObject, Analysis):
         except KeyError:
             return None
 
-    def track_delayed_analysis_start(self, observable, analysis_module):
+    def set_delayed_analysis_start_time(self, observable, analysis_module):
         """Called by the engine when we need to start tracking delayed analysis for a given observable."""
-        if not os.path.isdir(self.delayed_dir):
-            os.mkdir(self.delayed_dir)
-        
-        target_file = os.path.join(self.delayed_dir, '{}-{}'.format(analysis_module.config_section, observable.id))
-        if os.path.exists(target_file):
-            logging.warning("delayed analysis tracking file {} already exists".format(target_file))
-        else:
-            with open(target_file, 'w') as fp:
-                pass
-
-            logging.debug("delayed analysis tracking start {}".format(target_file))
-
         # if this is the first time we've delayed analysis (for this analysis module and observable)
         # then we want to remember when we started so we can eventually time out
         key = '{}:{}'.format(analysis_module.config_section, observable.id)
         if key not in self.delayed_analysis_tracking:
             self.delayed_analysis_tracking[key] = datetime.datetime.now()
-
-    def track_delayed_analysis_stop(self, observable, analysis_module):
-        """Called by the engine when we need to stop tracking delayed analysis for a given observable."""
-        if not os.path.isdir(self.delayed_dir):
-            logging.warning("missing tracking directory {}".format(self.delayed_dir))
-            return
-        
-        target_file = os.path.join(self.delayed_dir, '{}-{}'.format(analysis_module.config_section, observable.id))
-        if not os.path.exists(target_file):
-            logging.warning("missing delayed analysis tracking file {}".format(target_file))
-            return
-
-        os.remove(target_file)
-        logging.debug("delayed analysis tracking stop {}".format(target_file))
 
     def add_dependency(self, source_observable, source_analysis, target_observable, target_analysis):
         from saq.modules import AnalysisModule
@@ -2675,6 +2668,11 @@ class RootAnalysis(LocalLockableObject, Analysis):
             return None
 
         return self.record_observable(observable)
+
+    def schedule(self):
+        """Schedules analysis of this RootAnalysis object by ACE."""
+        from saq.database import add_workload
+        add_workload(self.uuid, self.analysis_mode)
 
     def submit(self, target_company=None):
         """Submit this RootAnalysis as an Alert to the ACE system."""
