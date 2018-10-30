@@ -1,6 +1,6 @@
 # vim: sw=4:ts=4:et
 #
-# ACE API alert routines
+# ACE API analysis routines
 
 import datetime
 import json
@@ -14,16 +14,17 @@ from .. import db, json_result, json_request
 
 import saq
 from saq import LOCAL_TIMEZONE
-from saq.analysis import _JSONEncoder
+from saq.analysis import RootAnalysis, _JSONEncoder
 from saq.constants import *
-from saq.database import Alert
 from saq.util import parse_event_time
 
 from flask import Blueprint, request, abort, Response
 from werkzeug import secure_filename
 
-alert_bp = Blueprint('alert', __name__, url_prefix='/alert')
+analysis_bp = Blueprint('analysis', __name__, url_prefix='/analysis')
 
+KEY_ANALYSIS_MODE = 'analysis_mode'
+KEY_LOG_LEVEL = 'log_level'
 KEY_TOOL = 'tool'
 KEY_TOOL_INSTANCE = 'tool_instance'
 KEY_TYPE = 'type'
@@ -39,6 +40,7 @@ KEY_O_VALUE = 'value'
 KEY_O_TIME = 'time'
 KEY_O_TAGS = 'tags'
 KEY_O_DIRECTIVES = 'directives'
+KEY_O_LIMITED_ANALYSIS = 'limited_analysis'
 
 @alert_bp.route('/submit', methods=['POST'])
 def submit():
@@ -57,30 +59,32 @@ def submit():
     if KEY_DESCRIPTION not in r:
         abort(Response("missing {} field in submission".format(KEY_DESCRIPTION), 400))
 
-    alert = Alert()
-    alert.company_id = saq.CONFIG['global'].getint('company_id')
-    alert.tool = r[KEY_TOOL] if KEY_TOOL in r else 'api'
-    alert.tool_instance = r[KEY_TOOL_INSTANCE] if KEY_TOOL_INSTANCE in r else 'api({})'.format(request.remote_addr)
-    alert.alert_type = r[KEY_TYPE] if KEY_TYPE in r else saq.CONFIG['api']['default_alert_type']
-    alert.description = r[KEY_DESCRIPTION]
-    alert.event_time = LOCAL_TIMEZONE.localize(datetime.datetime.now())
+    root = RootAnalysis()
+    root.company_id = saq.CONFIG['global'].getint('company_id')
+    root.tool = r[KEY_TOOL] if KEY_TOOL in r else 'api'
+    root.tool_instance = r[KEY_TOOL_INSTANCE] if KEY_TOOL_INSTANCE in r else 'api({})'.format(request.remote_addr)
+    root.alert_type = r[KEY_TYPE] if KEY_TYPE in r else saq.CONFIG['api']['default_alert_type']
+    root.description = r[KEY_DESCRIPTION]
+    root.event_time = LOCAL_TIMEZONE.localize(datetime.datetime.now())
     if KEY_EVENT_TIME in r:
         try:
-            alert.event_time = parse_event_time(r[KEY_EVENT_TIME])
+            root.event_time = parse_event_time(r[KEY_EVENT_TIME])
         except ValueError as e:
             abort(Response("invalid event time format for {} (use {} format)".format(r[KEY_EVENT_TIME], event_time_format_json_tz), 400))
 
-    alert.details = r[KEY_DETAILS] if KEY_DETAILS in r else {}
+    root.details = r[KEY_DETAILS] if KEY_DETAILS in r else {}
+
+    # TODO add a try/catch to clean up a failed upload
 
     # go ahead and allocate storage
-    alert.uuid = str(uuid.uuid4())
+    root.uuid = str(uuid.uuid4())
     # XXX use temp dir instead...
-    alert.storage_dir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE, alert.uuid[0:3], alert.uuid)
-    alert.initialize_storage()
+    root.storage_dir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE, root.uuid[0:3], root.uuid)
+    root.initialize_storage()
 
     if KEY_TAGS in r:
         for tag in r[KEY_TAGS]:
-            alert.add_tag(tag)
+            root.add_tag(tag)
 
     # add the observables
     if KEY_OBSERVABLES in r:
@@ -100,7 +104,7 @@ def submit():
                     abort(Response("an observable has an invalid time format {} (use {} format)".format(
                                    o[KEY_O_TIME], event_time_format_json_tz), 400))
 
-            observable = alert.add_observable(o_type, o_value, o_time=o_time)
+            observable = root.add_observable(o_type, o_value, o_time=o_time)
 
             if KEY_O_TAGS in o:
                 for tag in o[KEY_O_TAGS]:
@@ -132,7 +136,7 @@ def submit():
                 logging.error("unable to save file to {}: {}".format(_path, e))
                 abort(400)
 
-            full_path = os.path.join(alert.storage_dir, f.filename)
+            full_path = os.path.join(root.storage_dir, f.filename)
 
             try:
                 dest_dir = os.path.dirname(full_path)
@@ -147,11 +151,11 @@ def submit():
                 shutil.copy(_path, full_path)
 
                 # add this as a F_FILE type observable
-                alert.add_observable(F_FILE, os.path.relpath(full_path, start=alert.storage_dir))
+                root.add_observable(F_FILE, os.path.relpath(full_path, start=root.storage_dir))
 
             except Exception as e:
-                logging.error("unable to copy file from {} to {} for alert {}: {}".format(
-                              _path, full_path, alert, e))
+                logging.error("unable to copy file from {} to {} for root {}: {}".format(
+                              _path, full_path, root, e))
                 abort(400)
 
         except Exception as e:
@@ -166,12 +170,12 @@ def submit():
                 logging.error("unable to delete temp dir {}: {}".format(temp_dir, e))
 
     try:
-        if not alert.sync():
-            logging.error("unable to sync alert")
+        if not root.save():
+            logging.error("unable to save analysis")
             abort(Response("an error occured trying to save the alert - review the logs", 400))
 
-        # send the alert to the automated analysis engine
-        alert.request_correlation()
+        # add this analysis to the workload
+        root.schedule()
 
     except Exception as e:
         logging.error("unable to sync to database: {}".format(e))

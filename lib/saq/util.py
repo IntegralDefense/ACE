@@ -4,6 +4,7 @@
 #
 
 import datetime
+import os.path
 import re
 
 import saq
@@ -116,3 +117,7 @@ def parse_event_time(event_time):
         return saq.LOCAL_TIMEZONE.localize(datetime.datetime.strptime(event_time, event_time_format_json))
     else:
         raise ValueError("invalid date format {}".format(event_time))
+
+def storage_dir_from_uuid(uuid):
+    """Returns the path (relative to SAQ_HOME) to the storage directory for the given uuid."""
+    return os.path.join(saq.DATA_DIR, saq.SAQ_NODE, uuid[0:3], uuid)

@@ -127,6 +127,8 @@ __all__ = [
     'TARGET_EMAIL_RCPT_TO',
     'TARGET_VX_IPDOMAINSTREAMS',
     'VALID_TARGETS',
+    'ANALYSIS_MODE_CORRELATION',
+    'ANALYSIS_MODE_ANALYSIS',
 ]
 
 # 
@@ -526,3 +528,7 @@ VALID_TARGETS = [
 # constants defined for keys to dicts (typically in json files)
 KEY_DESCRIPTION = 'description'
 KEY_DETAILS = 'details'
+
+# analysis modes (more can be added)
+ANALYSIS_MODE_CORRELATION = 'correlation'
+ANALYSIS_MODE_ANALYSIS = 'analysis'

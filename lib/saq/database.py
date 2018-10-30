@@ -19,6 +19,7 @@ from saq.performance import track_execution_time
 
 import businesstime
 import pymysql
+import pymysql.err
 
 from businesstime.holidays import Holidays
 
@@ -29,6 +30,21 @@ _global_db_cache_lock = threading.RLock()
 # used to determine if cached db connections are enabled for this process + thread
 _use_cache_flags = set() # key = current_process_id:current_thread_id
 _use_cache_flags_lock = threading.RLock()
+
+def use_db(target_function):
+    """Utility decorator to pass an opened database connection and cursor object as keyword
+       parameters db and c respectively. Execute is wrapped in a try/catch for database errors.
+       Returns None on error and logs error message and stack trace."""
+    def wrapper(*args, **kwargs):
+        try:
+            with get_db_connection() as db:
+                c = db.cursor()
+                return target_function(db=db, c=c, *args, **kwargs)
+        except pymysql.err.MySQLError as e:
+            logging.error("database error: {}".format(e))
+            report_exception()
+            return None
+    return wrapper
 
 def _get_cache_identifier():
     """Returns the key for _use_cache_flags"""
@@ -186,7 +202,7 @@ def get_db_connection(*args, **kwargs):
 
         raise e
 
-def execute_with_retry(cursor, sql, params, attempts=2):
+def execute_with_retry(db, cursor, sql, params, attempts=2):
     """Executes the given SQL (and params) against the given cursor with re-attempts up to N times (defaults to 2) on deadlock detection."""
     count = 1
     while True:
@@ -198,6 +214,7 @@ def execute_with_retry(cursor, sql, params, attempts=2):
             # to explain e.args[0]
             if (e.args[0] == 1213 or e.args[0] == 1205) and count < attempts:
                 logging.debug("deadlock detected -- trying again...")
+                db.rollback()
                 count += 1
                 continue
             else:
@@ -1407,25 +1424,6 @@ class Similarity:
         self.disposition = disposition
         self.percent = round(float(percent))
 
-class EngineWorkload(Base):
-
-    __tablename__ = 'workload'
-
-    id = Column(
-        Integer,
-        primary_key=True,
-        nullable=False)
-
-    alert_id = Column(
-        Integer,
-        ForeignKey('alerts.id'),
-        nullable=False)
-
-    node = Column(String(256), nullable=True, index=True)
-
-    # one-to-one
-    alert = relationship('saq.database.Alert', backref=backref('workload_item', uselist=False))
-
 class UserAlertMetrics(Base):
     
     __tablename__ = 'user_alert_metrics'
@@ -1584,25 +1582,6 @@ class TagMapping(Base):
     alert = relationship('saq.database.Alert', backref='tag_mapping')
     tag = relationship('saq.database.Tag', backref='tag_mapping')
 
-class DelayedAnalysis(Base):
-
-    __tablename__ = 'delayed_analysis'
-
-    alert_id = Column(
-        Integer,
-        ForeignKey('alerts.id'),
-        primary_key = True)
-
-    observable_id = Column(
-        String(36),
-        primary_key = True)
-
-    analysis_module = Column(
-        String(512),
-        primary_key = True)
-
-    alert = relationship('saq.database.Alert', backref='delayed_analysis')
-
 class ProfilePoint(Base):
     
     __tablename__ = 'profile_points'
@@ -1698,6 +1677,194 @@ class Remediation(Base):
         BOOLEAN,
         nullable=True,
         default=False)
+
+class Workload(Base):
+
+    __tablename__ = 'workload'
+
+    id = Column(
+        Integer,
+        primary_key=True)
+
+    uuid = Column(
+        String(36), 
+        nullable=False,
+        unique=True)
+
+    node = Column(
+        String(256), 
+        nullable=False, 
+        index=True)
+
+    analysis_mode = Column(
+        String(256),
+        nullable=False,
+        index=True)
+
+    insert_date = Column(
+        TIMESTAMP, 
+        nullable=False, 
+        index=True,
+        server_default=text('CURRENT_TIMESTAMP'))
+
+@use_db
+def add_workload(uuid, analysis_mode, db, c):
+    """Adds the given work item to the workload queue."""
+    execute_with_retry(db, c, """
+INSERT INTO workload (
+    uuid,
+    node,
+    analysis_mode )
+VALUES ( %s, %s, %s )""", (uuid, saq.SAQ_NODE, analysis_mode))
+    db.commit()
+    logging.info("added {} to workload with analysis mode {}".format(uuid, analysis_mode))
+
+class Lock(Base):
+    
+    __tablename__ = 'locks'
+
+    uuid = Column(
+        String(36),
+        primary_key=True)
+
+    lock_uuid = Column(
+        String(36),
+        nullable=False,
+        unique=False,
+        index=True)
+    
+    lock_time = Column(
+        TIMESTAMP, 
+        nullable=False, 
+        index=True,
+        server_default=text('CURRENT_TIMESTAMP'))
+
+    lock_owner = Column(
+        String(512),
+        nullable=True)
+
+@use_db
+def acquire_lock(uuid, lock_uuid, db, c, lock_owner=None):
+    """Attempts to acquire a lock on a workitem by inserting the uuid into the locks database table.
+       Returns False if a lock already exists or True if the lock was acquired."""
+    try:
+        execute_with_retry(db,c , "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
+                          ( uuid, lock_uuid, lock_owner ))
+        db.commit()
+        return True
+
+    except pymysql.err.IntegrityError as e:
+        # if a lock already exists -- make sure it's owned by someone else
+        try:
+            db.rollback()
+            # assume we already own the lock -- this will be true in subsequent calls
+            # to acquire the lock
+            execute_with_retry(db, c, """
+UPDATE locks 
+SET 
+    lock_time = NOW(),
+    lock_uuid = %s,
+    lock_owner = %s
+WHERE 
+    uuid = %s 
+    AND ( lock_uuid = %s OR TIMESTAMPDIFF(SECOND, lock_time, NOW()) >= %s )
+""", (lock_uuid, lock_owner, uuid, lock_uuid, saq.LOCK_TIMEOUT_SECONDS))
+            db.commit()
+
+            c.execute("SELECT lock_uuid, lock_owner FROM locks WHERE uuid = %s", (uuid,))
+            row = c.fetchone()
+            if row:
+                current_lock_uuid, current_lock_owner = row
+                if current_lock_uuid == lock_uuid:
+                    return True
+
+                # lock was acquired by someone else
+                logging.info("attempt to acquire lock {} failed (already locked by {}: {})".format(
+                             uuid, current_lock_uuid, current_lock_owner))
+
+            else:
+                # lock was acquired by someone else
+                logging.info("attempt to acquire lock {} failed".format(uuid))
+
+            return False
+
+        except Exception as e:
+            logging.error("attempt to acquire lock failed: {}".format(e))
+            report_exception()
+            return False
+
+    except Exception as e:
+        logging.error("attempt to acquire lock failed: {}".format(e))
+        report_exception()
+        return False
+
+@use_db
+def release_lock(uuid, lock_uuid, db, c):
+    """Releases a lock acquired by acquire_lock."""
+    try:
+        execute_with_retry(db, c, "DELETE FROM locks WHERE uuid = %s AND lock_uuid = %s", (uuid, lock_uuid,))
+        db.commit()
+    except Exception as e:
+        logging.error("unable to release lock {}: {}".format(uuid, e))
+        report_exception()
+
+class DelayedAnalysis(Base):
+
+    __tablename__ = 'delayed_analysis'
+
+    id = Column(
+        Integer,
+        primary_key=True)
+
+    uuid = Column(
+        String(36),
+        nullable=False,
+        index=True)
+
+    observable_uuid = Column(
+        String(36),
+        nullable=False)
+
+    analysis_module = Column(
+        String(512),
+        nullable=False)
+
+    insert_date = Column(
+        TIMESTAMP, 
+        nullable=False, 
+        index=True,
+        server_default=text('CURRENT_TIMESTAMP'))
+
+    delayed_until = Column(
+        TIMESTAMP, 
+        nullable=False, 
+        index=True)
+
+    node = Column(
+        String(256), 
+        nullable=False, 
+        index=True)
+
+@use_db
+def add_delayed_analysis_request(root, observable, analysis_module, next_analysis, db, c):
+    try:
+        execute_with_retry(db, c, """
+                           INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node ) 
+                           VALUES ( %s, %s, %s, %s, %s )""", 
+                          ( root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE ))
+
+        db.commit()
+
+    except pymysql.err.IntegrityError:
+        logging.warning("already waiting for delayed analysis on {} by {} for {}".format(
+                         root, analysis_module.config_section, observable))
+        return True
+    except Exception as e:
+        logging.error("unable to insert delayed analysis on {} by {} for {}: {}".format(
+                         root, analysis_module.config_section, observable, e))
+        report_exception()
+        return False
+    
     
 def initialize_database():
 

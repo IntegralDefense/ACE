@@ -259,8 +259,8 @@ class AnalysisModule(object):
 
         if o_value not in self.observable_exclusions[o_type]:
             self.observable_exclusions[o_type].append(o_value)
-            logging.debug("loaded observable exclusion type {} value {} for {}".format(
-                o_type, o_value, self))
+            #logging.debug("loaded observable exclusion type {} value {} for {}".format(
+                #o_type, o_value, self))
 
     def is_excluded(self, observable):
         """Returns True if the given observable is excluded from analysis for this module."""

@@ -912,7 +912,7 @@ network_server_parser.set_defaults(func=network_server)
 #
 
 def correlation_engine(args):
-    from saq.engine.ace import ACE
+    from saq.engine import Engine
     from saq.error import report_exception
     from saq.process_server import initialize_process_server
 
@@ -940,7 +940,7 @@ def correlation_engine(args):
         signal.signal(signal.SIGTERM, handle_sigterm)
 
         try:
-            ace_engine = ACE()
+            ace_engine = Engine()
             ace_engine.start()
             ace_engine.wait()
         except KeyboardInterrupt:
