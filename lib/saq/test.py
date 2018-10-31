@@ -16,10 +16,10 @@ __all__ = [
     'modify_logging_level',
     'reset_config',
     'reset_alerts',
-    'cleanup_delayed_analysis',
     'log_count',
     'wait_for_log_count',
     'clear_log',
+    'clear_error_reports',
     'WaitTimedOutError',
     'wait_for_log_entry',
     'track_io',
@@ -52,6 +52,7 @@ import saq
 from saq.analysis import RootAnalysis, _enable_io_tracker, _disable_io_tracker
 from saq.database import initialize_database, get_db_connection
 from saq.error import report_exception
+from saq.util import storage_dir_from_uuid
 
 from splunklib import SplunkQueryObject
 
@@ -89,20 +90,21 @@ def track_io(target_function):
             _disable_io_tracker()
     return wrapper
 
+def clear_error_reports(target_function):
+    def wrapper(*args, **kwargs):
+        result = target_function(*args, **kwargs)
+        try:
+            shutil.rmtree(os.path.join(saq.SAQ_HOME, 'error_reports'))
+            os.makedirs(os.path.join(saq.SAQ_HOME, 'error_reports'))
+        except Exception as e:
+            sys.stderr.write("unable to clear error_reports: {}\n".format(e))
+        return result
+    return wrapper
+
 def clear_log(target_function):
     def wrapper(*args, **kwargs):
         memory_log_handler.clear()
         return target_function(*args, **kwargs)
-    return wrapper
-
-def cleanup_delayed_analysis(target_function):
-    def wrapper(*args, **kwargs):
-        try:
-            return target_function(*args, **kwargs)
-        finally:
-            delayed_analysis_dir = os.path.join(saq.SAQ_HOME, 'var', 'unittest', 'delayed_analysis')
-            if os.path.exists(delayed_analysis_dir):
-                shutil.rmtree(delayed_analysis_dir)
     return wrapper
 
 def force_alerts(target_function):
@@ -399,10 +401,10 @@ def create_root_analysis(tool=None, tool_instance=None, alert_type=None, desc=No
                         state=state if state else None,
                         uuid=uuid if uuid else EV_ROOT_ANALYSIS_UUID,
                         location=location if location else None,
-                        storage_dir=storage_dir if storage_dir else os.path.join(saq.SAQ_HOME, 'var', 'test', uuid if uuid else EV_ROOT_ANALYSIS_UUID),
+                        storage_dir=storage_dir if storage_dir else storage_dir_from_uuid(uuid if uuid else EV_ROOT_ANALYSIS_UUID),
                         company_name=company_name if company_name else None,
                         company_id=company_id if company_id else None,
-                        analysis_mode=analysis_mode if analysis_mode else 'analysis')
+                        analysis_mode=analysis_mode if analysis_mode else None)
 
 class ServerProcess(object):
     def __init__(self, args):
@@ -492,11 +494,12 @@ class GUIServer(ServerProcess):
 class ACEBasicTestCase(TestCase):
 
     def setUp(self):
-        saq.DUMP_TRACEBACKS = True
+        #saq.DUMP_TRACEBACKS = True
         logging.info("TEST: {}".format(self.id()))
         initialize_test_environment()
         saq.load_configuration()
         open_test_comms()
+        memory_log_handler.clear()
 
     def tearDown(self):
         close_test_comms()

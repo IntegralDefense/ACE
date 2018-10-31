@@ -821,8 +821,8 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         if Analysis.KEY_ALERTED in value:
             self.alerted = value[Analysis.KEY_ALERTED]
 
-        if Analysis.KEY_DELAYED in value:
-            self.delayed = value[Analysis.KEY_DELAYED]
+        #if Analysis.KEY_DELAYED in value:
+            #self.delayed = value[Analysis.KEY_DELAYED]
 
     @property
     def delayed(self):
@@ -2024,7 +2024,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
         # we are the root
         self.root = self
 
-        self._analysis_mode = ANALYSIS_MODE_ANALYSIS
+        self._analysis_mode = None
         if analysis_mode:
             self.analysis_mode = analysis_mode
 
@@ -2239,13 +2239,11 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
     @property
     def analysis_mode(self):
-        if self._analysis_mode is None:
-            return saq.CONFIG['global']['default_analysis_mode']
         return self._analysis_mode
 
     @analysis_mode.setter
     def analysis_mode(self, value):
-        assert isinstance(value, str) and value
+        assert value is None or ( isinstance(value, str) and value )
         self._analysis_mode = value
 
     @property
@@ -2475,25 +2473,19 @@ class RootAnalysis(LocalLockableObject, Analysis):
         self.set_modified()
 
     @property
-    def delayed_dir(self):
-        """Returns the subdirectory the contains tracking files for delayed analysis."""
-        if not self.storage_dir:
-            return None
-
-        return os.path.join(self.storage_dir, '.delayed')
-
-    @property
     def delayed(self):
         """Returns True if any delayed analysis is outstanding."""
-        try:
-            return len(os.listdir(self.delayed_dir)) > 0
-        except FileNotFoundError:
-            return False
+        for observable in self.observables:
+            for analysis in observable.all_analysis:
+                if analysis.delayed:
+                    return True
+
+        return False
 
     @delayed.setter
     def delayed(self, value):
         """This is computed so this value is thrown away."""
-        pass
+        raise RuntimeError("delayed is read-only on RootAnalysis object")
 
     def get_delayed_analysis_start_time(self, observable, analysis_module):
         """Returns the time of the first attempt to delay analysis for this analysis module and observable, or None otherwise."""
