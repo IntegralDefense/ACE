@@ -1464,6 +1464,13 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         assert all([isinstance(x, str) for x in value])
         self._limited_analysis = value
 
+    def limit_analysis(self, analysis_module):
+        """Limit the analysis of this observable to the analysis module specified by configuration section name.
+           For example, if you have a section for a module called [analysis_module_something] then you would pass
+           the value "something" as the analysis_module."""
+        assert isinstance(analysis_module, str)
+        self._limited_analysis.append(analysis_module)
+
     @property
     def excluded_analysis(self):
         """Returns a list of analysis modules in the form of module:class that are excluded from analyzing this Observable."""

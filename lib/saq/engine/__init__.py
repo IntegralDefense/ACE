@@ -1598,8 +1598,14 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             # by using the limit_analysis() function
             # (this is ignored if there is a dependency - we'll use that instead)
             if work_item.dependency is None and work_item.observable and work_item.observable.limited_analysis:
-                analysis_modules = [x for x in self.analysis_modules 
-                                    if type(x).__name__ in work_item.observable.limited_analysis]
+                analysis_modules = []
+                for target_module in work_item.observable.limited_analysis:
+                    target_module_section = 'analysis_module_{}'.format(target_module)
+                    if target_module_section not in self.analysis_module_mapping:
+                        logging.error("{} specified unknown limited analysis {}".format(work_item, target_module))
+                    else:
+                        analysis_modules.append(analysis_module_mapping[target_module_section])
+
                 logging.debug("analysis for {} limited to {} modules ({})".format(
                               work_item.observable, len(analysis_modules), ','.join(work_item.observable.limited_analysis)))
 

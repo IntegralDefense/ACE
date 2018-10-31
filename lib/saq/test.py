@@ -29,7 +29,6 @@ __all__ = [
     'wait_for',
     'enable_module',
     'force_alerts',
-    'protect_production',
     'GUIServer',
     'search_log',
     'search_log_regex',
@@ -115,21 +114,6 @@ def force_alerts(target_function):
             return target_function(*args, **kwargs)
         finally:
             saq.FORCED_ALERTS = False
-    return wrapper
-
-def protect_production(target_function):
-    """Do not allow this to run on a production system."""
-    def wrapper(*args, **kwargs):
-        if saq.CONFIG['global']['instance_type'] not in [ 'PRODUCTION', 'QA', 'DEV' ]:
-            sys.stderr.write('\n\n *** CRITICAL ERROR *** \n\ninvalid instance_type setting in configuration\n')
-            sys.exit(1)
-
-        if saq.CONFIG['global']['instance_type'] == 'PRODUCTION':
-            sys.stderr.write('\n\n *** PROTECT PRODUCTION *** \ndo not execute this in production, idiot\n')
-            sys.exit(1)
-
-        return target_function(*args, **kwargs)
-
     return wrapper
 
 def reset_alerts(target_function):
@@ -349,6 +333,14 @@ def initialize_test_environment():
                    logging_config_path=os.path.join(saq_home, 'etc', 'unittest_logging.ini'), 
                    args=None, relative_dir=None)
 
+    if saq.CONFIG['global']['instance_type'] not in [ 'PRODUCTION', 'QA', 'DEV' ]:
+        sys.stderr.write('\n\n *** CRITICAL ERROR *** \n\ninvalid instance_type setting in configuration\n')
+        sys.exit(1)
+
+    if saq.CONFIG['global']['instance_type'] == 'PRODUCTION':
+        sys.stderr.write('\n\n *** PROTECT PRODUCTION *** \ndo not execute this in production, idiot\n')
+        sys.exit(1)
+
     # additional logging required for testing
     initialize_unittest_logging()
 
@@ -528,7 +520,6 @@ class ACEBasicTestCase(TestCase):
 
             time.sleep(delay)
 
-    @protect_production
     def reset_brocess(self):
         # clear the brocess db
         with get_db_connection('brocess') as db:
@@ -537,7 +528,6 @@ class ACEBasicTestCase(TestCase):
             c.execute("""DELETE FROM smtplog""")
             db.commit()
 
-    @protect_production
     def reset_cloudphish(self):
         # clear cloudphish db
         with get_db_connection('cloudphish') as db:
@@ -559,7 +549,6 @@ class ACEBasicTestCase(TestCase):
                 shutil.rmtree(cache_dir)
                 os.makedirs(cache_dir)
 
-    @protect_production
     def reset_correlation(self):
         data_subdir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE)
         if os.path.isdir(data_subdir):
@@ -580,7 +569,6 @@ class ACEBasicTestCase(TestCase):
             c.execute("DELETE FROM remediation")
             db.commit()
 
-    @protect_production
     def reset_email_archive(self):
         import socket
         archive_subdir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'], 
