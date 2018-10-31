@@ -1224,3 +1224,67 @@ class EngineTestCase(ACEEngineTestCase):
             new_observable = analysis.observables[0]
             new_analysis = new_observable.get_analysis(BasicTestAnalysis)
             self.assertFalse(new_analysis)
+
+    def test_limited_analysis(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        observable.limit_analysis('basic_test')
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.enable_module('analysis_module_test_delayed_analysis')
+        engine.enable_module('analysis_module_test_engine_locking')
+        engine.enable_module('analysis_module_test_final_analysis')
+        engine.enable_module('analysis_module_test_post_analysis')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+
+        # there should only be one analysis performed
+        self.assertEquals(len(observable.all_analysis), 1)
+        
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+        self.assertTrue(len(search_log('analysis for test(test_1) limited to 1 modules (basic_test)')) > 0)
+
+    def test_limited_analysis_invalid(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        observable.limit_analysis('basic_tast') # mispelled test
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.enable_module('analysis_module_test_delayed_analysis')
+        engine.enable_module('analysis_module_test_engine_locking')
+        engine.enable_module('analysis_module_test_final_analysis')
+        engine.enable_module('analysis_module_test_post_analysis')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+
+        # there should be no analysis
+        self.assertEquals(len(observable.all_analysis), 0)
+        
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNone(analysis)
+
+        self.assertTrue(len(search_log('specified unknown limited analysis')) > 0)

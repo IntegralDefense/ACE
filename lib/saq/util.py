@@ -118,6 +118,10 @@ def parse_event_time(event_time):
     else:
         raise ValueError("invalid date format {}".format(event_time))
 
+UUID_REGEX = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.I)
 def storage_dir_from_uuid(uuid):
     """Returns the path (relative to SAQ_HOME) to the storage directory for the given uuid."""
+    if not UUID_REGEX.match(uuid):
+        raise ValueError("invalid UUID {}".format(uuid))
+
     return os.path.join(saq.DATA_DIR, saq.SAQ_NODE, uuid[0:3], uuid)

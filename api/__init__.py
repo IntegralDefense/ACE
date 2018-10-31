@@ -80,8 +80,8 @@ def create_app(testing=False):
     from .common import common as common_blueprint
     app.register_blueprint(common_blueprint)
 
-    from .alert import alert_bp as alert_blueprint
-    app.register_blueprint(alert_blueprint)
+    from .analysis import analysis_bp as analysis_blueprint
+    app.register_blueprint(analysis_blueprint)
 
     return app
 
