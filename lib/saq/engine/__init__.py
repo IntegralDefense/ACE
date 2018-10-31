@@ -75,13 +75,14 @@ class Engine(object):
     # INITIALIZATION
     # ------------------------------------------------------------------------
 
-    def __init__(self):
+    def __init__(self, name='ace'):
 
         global CURRENT_ENGINE
         CURRENT_ENGINE = self
 
-        # TODO refactor out the use of the \.name property since we only have one "engine" now
-        self.name = 'ace' # XXX backwards compat
+        # the name of the engine, usually you want the default unless you're doing something different
+        # like unit testing
+        self.name = name
 
         # the engine configuration
         self.config = saq.CONFIG['engine']
@@ -116,9 +117,6 @@ class Engine(object):
         # used to start and stop the workers
         self.worker_control_event = Event()
 
-        # every N minutes we act as though we received a SIGHUP
-        self.next_auto_refresh_time = None
-
         # the modules that will perform the analysis
         self.analysis_modules = []
 
@@ -127,6 +125,13 @@ class Engine(object):
 
         # a mapping of analysis module configuration section headers to the load analysis modules
         self.analysis_module_mapping = {} # key = analysis_module_blah, value = AnalysisModule
+
+        # the default analysis mode for RootAnalysis objects assigned to invalid analysis modes
+        self.default_analysis_mode = self.config['default_analysis_mode']
+        # make sure this analysis mode is valid
+        if 'analysis_mode_{}'.format(self.default_analysis_mode) not in saq.CONFIG:
+            logging.critical("engine.default_analysis_mode value {} invalid (no such analysis mode defined)".format(
+                              self.default_analysis_mode))
 
         # things we do *not* want to analyze
         self.observable_exclusions = {} # key = o_type, value = [] of values
@@ -143,12 +148,11 @@ class Engine(object):
         self.sigusr1_received = False
         self.sigusr2_received = False
 
-        # auto reload frequency (in seconds)
-        # every so often we give the analysis modules a chance to "reload"
-        self.auto_reload_frequency = self.config.getint('auto_reload_frequency')
-        
-        # the last time we checked for module auto-reload
-        self.last_auto_reload_check = datetime.datetime.now()
+        # how often do we automatically reload the workers?
+        self.auto_refresh_frequency = self.config.getint('auto_refresh_frequency')
+
+        # every N minutes we act as though we received a SIGHUP
+        self.next_auto_refresh_time = None
 
         # the RootAnalysis object the current process is analyzing
         self.root = None
@@ -191,15 +195,6 @@ class Engine(object):
 
     def __str__(self):
         return "Engine ({})".format(saq.SAQ_NODE)
-
-    @property
-    def auto_refresh_frequency(self):
-        """How often do we refresh the workers (in seconds.)"""
-        try:
-            return self.config.getint('auto_refresh_frequency')
-        except:
-            # defaults to 30 minutes if we didnt' specify
-            return 60 * 30
 
     @property
     @use_db
@@ -756,18 +751,26 @@ class Engine(object):
                     self.stop()
                     break
 
+                if self.auto_refresh_frequency and datetime.datetime.now() > self.next_auto_refresh_time:
+                    logging.info("auto refresh frequency {} triggered reload of worker modules".format(
+                                 self.auto_refresh_frequency))
+
+                    self.stop_workers()
+                    saq.load_configuration()
+                    self.start_workers()
+
+                    self.next_auto_refresh_time = datetime.datetime.now() + \
+                    datetime.timedelta(seconds=self.auto_refresh_frequency)
+                    logging.debug("next auto refresh scheduled for {}".format(self.next_auto_refresh_time))
+
                 if self.sighup_received:
                     # we re-load the config when we receive SIGHUP
                     logging.info("reloading engine configuration")
-                    saq.load_configuration()
 
-                    for worker in self.workers:
-                        try:
-                            logging.info("sending SIGHUP to {}".format(worker))
-                            os.kill(worker.pid, signal.SIGHUP)
-                        except Exception as e:
-                            logging.error("unable to send SIGHUP to {}".format(worker))
-                            report_exception()
+                    # reload the workers
+                    self.stop_workers()
+                    saq.load_configuration()
+                    self.start_workers()
 
                     self.sighup_received = False
 
@@ -841,7 +844,8 @@ class Engine(object):
                          cpu_count()))
             for core in range(cpu_count()):
                 event = Event()
-                p = Process(target=self.worker_loop, name='Worker {} [{}]'.format(core, 'any'), args=('any', event))
+                p = Process(target=self.worker_loop, name='Worker {} [{}]'.format(core, 'equal priority'), 
+                            args=(None, event))
                 self.workers.append(p)
                 tracking.append((p, event))
                 p.start()
@@ -992,7 +996,7 @@ ORDER BY
         where_clause = [ 'locks.uuid IS NULL' ]
         params = []
 
-        if priority:
+        if self.analysis_mode_priority and priority:
             where_clause.append('workload.analysis_mode = %s')
             params.append(self.analysis_mode_priority)
 
@@ -1039,15 +1043,16 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             if target:
                 return target
 
-            # get any local work with high priority
-            target = self.get_work_target(priority=True, local=True)
-            if target:
-                return target
+            if self.analysis_mode_priority:
+                # get any local work with high priority
+                target = self.get_work_target(priority=True, local=True)
+                if target:
+                    return target
 
-            # get any work with high priority
-            target = self.get_work_target(priority=True, local=False)
-            if target:
-                return target
+                # get any work with high priority
+                target = self.get_work_target(priority=True, local=False)
+                if target:
+                    return target
 
             # get any available local work
             target = self.get_work_target(priority=False, local=True)
@@ -1111,21 +1116,8 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             return False
 
         logging.info("got work item {}".format(work_item))
+
         # at this point the thing to work on is locked (using the locks database table)
-
-        # give the modules a chance to update their configurations
-        #if self.auto_reload_frequency:
-            #if (datetime.datetime.now() - self.last_auto_reload_check).total_seconds() > self.auto_reload_frequency:
-                #logging.info("running autoreload for modules...")
-                #self.last_auto_reload_check = datetime.datetime.now()
-                #for analysis_module in self.analysis_modules:
-                    #try:
-                        #analysis_module.check_watched_files()
-                        #analysis_module.auto_reload()
-                    #except Exception as e:
-                        #logging.error("unable to auto-reload {}: {}".format(analysis_module, e))
-                        #report_exception()
-
         # start a secondary thread that just keeps the lock open
         self.start_root_lock_manager(work_item.uuid)
 
@@ -1141,14 +1133,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             self.clear_work_target(work_item)
         except Exception as e:
             logging.error("unable to clear work item {}: {}".format(work_item, e))
-
-        # ensure the engine has a chance to clean up
-        #try:
-            #logging.debug("calling cleanup for {}".format(work_item))
-            #self.cleanup(work_item)
-        #except Exception as e:
-            #logging.error("unable to cleanup work item {}: {}".format(work_item, e))
-            #report_exception()
 
     def analyze(self, target):
         assert isinstance(target, saq.analysis.RootAnalysis) or isinstance(target, DelayedAnalysisRequest)
@@ -1599,7 +1583,16 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             # select the analysis modules we want to use
             # first we limit ourselves to whatever analysis modules are available for the current analysis mode
             logging.info("analyzing {} in mode {}".format(self.root, self.root.analysis_mode))
-            analysis_modules = self.analysis_mode_mapping[self.root.analysis_mode]
+            # if we didn't specify an analysis mode then we just use the default
+            if self.root.analysis_mode is None:
+                analysis_modules = self.analysis_mode_mapping[self.default_analysis_mode]
+            else:
+                try:
+                    analysis_modules = self.analysis_mode_mapping[self.root.analysis_mode]
+                except KeyError:
+                    logging.warning("{} specifies invalid analysis mode {} - defaulting to {}".format(
+                                    self.root, self.root.analysis_mode, self.default_analysis_mode))
+                    analysis_modules = self.analysis_mode_mapping[self.default_analysis_mode]
                 
             # an Observable can specify a limited set of analysis modules to run
             # by using the limit_analysis() function
@@ -1802,9 +1795,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         if len(work_stack):
             logging.info("work on {} was incomplete".format(self.root))
             self.work_incomplete(self.root)
-
-    def execute_module_post_analysis(self):
-        logging.debug("executing post analysis on {}".format(self.root))
 
     # XXX this comes out
     def should_alert(self, root):
