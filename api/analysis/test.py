@@ -1,10 +1,11 @@
 # vim: sw=4:ts=4:et
 
-import os, os.path
 import datetime
 import io
 import json
 import logging
+import os, os.path
+import uuid
 
 import saq
 from saq.analysis import _JSONEncoder
@@ -12,6 +13,7 @@ from saq.constants import *
 from saq.database import use_db
 from saq.test import *
 from api.test import APIBasicTestCase
+from saq.util import parse_event_time
 
 import pytz
 from flask import url_for
@@ -107,6 +109,22 @@ class APIAlertTestCase(APIBasicTestCase):
         result = self.client.get(url_for('analysis.get_file', uuid=uuid, file_uuid=file_uuid))
         self.assertEquals(result.status_code, 200)
         self.assertEquals(result.data, b'Hello, world!')
+
+        result = self.client.get(url_for('analysis.get_status', uuid=uuid))
+        self.assertEquals(result.status_code, 200)
+        result = result.get_json()
+        self.assertIsNotNone(result)
+        result = result['result']
+        self.assertTrue('workload' in result)
+        self.assertTrue('delayed_analysis' in result)
+        self.assertTrue('locks' in result)
+        self.assertEquals(result['delayed_analysis'], [])
+        self.assertIsNone(result['locks'])
+        self.assertTrue(isinstance(result['workload']['id'], int))
+        self.assertEquals(result['workload']['uuid'], uuid)
+        self.assertEquals(result['workload']['node'], saq.SAQ_NODE)
+        self.assertEquals(result['workload']['analysis_mode'], 'analysis')
+        self.assertTrue(isinstance(parse_event_time(result['workload']['insert_date']), datetime.datetime))
 
     def test_api_analysis_submit_invalid(self):
         result = self.client.post(url_for('analysis.submit'), data={}, content_type='multipart/form-data')
@@ -273,3 +291,12 @@ class APIAlertTestCase(APIBasicTestCase):
         self.assertTrue('has invalid directive' in result.data.decode())
         # there should be nothing in the data directory (it should have been removed)
         self.assertTrue(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
+
+    def test_api_analysis_invalid_status(self):
+        result = self.client.get(url_for('analysis.get_status', uuid='invalid'))
+        self.assertEquals(result.status_code, 400)
+
+        test_uuid = str(uuid.uuid4())
+        result = self.client.get(url_for('analysis.get_status', uuid=test_uuid))
+        self.assertEquals(result.status_code, 400)
+        self.assertEquals(result.data.decode(), 'invalid uuid {}'.format(test_uuid))

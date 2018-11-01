@@ -15,8 +15,9 @@ from .. import db, json_result, json_request
 import saq
 from saq import LOCAL_TIMEZONE
 from saq.analysis import RootAnalysis, _JSONEncoder
+from saq.database import get_db_connection
 from saq.constants import *
-from saq.util import parse_event_time, storage_dir_from_uuid
+from saq.util import parse_event_time, storage_dir_from_uuid, validate_uuid
 
 from flask import Blueprint, request, abort, Response, send_from_directory
 from werkzeug import secure_filename
@@ -207,6 +208,100 @@ def get_analysis(uuid):
     root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
     root.load()
     return json_result({'result': root.json})
+
+@analysis_bp.route('/status/<uuid>', methods=['GET'])
+def get_status(uuid):
+
+    try:
+        validate_uuid(uuid)
+    except ValueError as e:
+        abort(Response(str(e), 400))
+
+    if not os.path.exists(storage_dir_from_uuid(uuid)):
+        abort(Response("invalid uuid {}".format(uuid), 400))
+
+    result = {
+        'workload': None,
+        'delayed_analysis': [],
+        'locks': None
+    }
+
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        # is this still in the workload?
+        c.execute("""
+SELECT 
+    id, 
+    uuid, 
+    node, 
+    analysis_mode, 
+    insert_date
+FROM
+    workload
+WHERE
+    uuid = %s
+""", (uuid,))
+        row = c.fetchone()
+        if row is not None:
+            result['workload'] = {
+                'id': row[0],
+                'uuid': row[1],
+                'node': row[2],
+                'analysis_mode': row[3],
+                'insert_date': row[4]
+            }
+
+        # is there any delayed analysis scheduled for it?
+        c.execute("""
+SELECT
+    id,
+    uuid,
+    observable_uuid,
+    analysis_module,
+    insert_date,
+    delayed_until,
+    node
+FROM
+    delayed_analysis
+WHERE
+    uuid = %s
+ORDER BY
+    delayed_until
+""", (uuid,))
+        for row in c:
+            result['delayed_analysis'].append({
+                'id': row[0],
+                'uuid': row[1],
+                'observable_uuid': row[2],
+                'analysis_module': row[3],
+                'insert_date': row[4],
+                'delayed_until': row[5],
+                'node': row[6]
+            })
+
+        # are there any locks on it?
+        c.execute("""
+SELECT
+    uuid,
+    lock_uuid,
+    lock_time,
+    lock_owner
+FROM
+    locks
+WHERE
+    uuid = %s
+""", (uuid,))
+        row = c.fetchone()
+        if row is not None:
+            result['locks'] = {
+                'uuid': row[0],
+                'lock_uuid': row[1],
+                'lock_time': row[2],
+                'lock_owner': row[3]
+            }
+
+    return json_result({'result': result})
 
 @analysis_bp.route('/details/<uuid>/<name>', methods=['GET'])
 def get_details(uuid, name):
