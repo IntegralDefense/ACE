@@ -1288,3 +1288,47 @@ class EngineTestCase(ACEEngineTestCase):
 
         self.assertTrue(len(search_log('specified unknown limited analysis')) > 0)
 
+    def test_cleanup(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_cleanup')
+        root.initialize_storage()
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        self.assertFalse(os.path.isdir(root.storage_dir))
+
+    def test_no_cleanup(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.initialize_storage()
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        self.assertTrue(os.path.isdir(root.storage_dir))
+
+    def test_cleanup_with_delayed_analysis(self):
+        # we are set to cleanup, however, we don't because we have delayed analysis
+        saq.CONFIG['analysis_mode_test_empty']['cleanup'] = 'yes'
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, '00:01|00:05')
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.set_analysis_pool_size(1)
+        engine.enable_module('analysis_module_test_delayed_analysis')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        self.assertFalse(os.path.isdir(root.storage_dir))
+        self.assertEquals(log_count('not cleaning up RootAnalysis({}) (found outstanding work)'.format(root.uuid)), 1)
