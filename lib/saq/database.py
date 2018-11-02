@@ -1140,7 +1140,7 @@ WHERE
                     break
                 else:
                     try:
-                        execute_with_retry(cursor, "INSERT IGNORE INTO tags ( name ) VALUES ( %s )""", ( tag.name, ))
+                        execute_with_retry(db, cursor, "INSERT IGNORE INTO tags ( name ) VALUES ( %s )""", ( tag.name, ))
                         db.commit()
                         continue
                     except pymysql.err.InternalError as e:
@@ -1161,7 +1161,7 @@ WHERE
                 return
 
             try:
-                execute_with_retry(cursor, "INSERT IGNORE INTO tag_mapping ( alert_id, tag_id ) VALUES ( %s, %s )", ( self.id, tag_id ))
+                execute_with_retry(db, cursor, "INSERT IGNORE INTO tag_mapping ( alert_id, tag_id ) VALUES ( %s, %s )", ( self.id, tag_id ))
                 db.commit()
                 logging.debug("mapped tag {} to {}".format(tag, self))
             except pymysql.err.InternalError as e:
@@ -1194,7 +1194,7 @@ WHERE
                     break
                 else:
                     try:
-                        execute_with_retry(cursor, "INSERT IGNORE INTO observables ( type, value ) VALUES ( %s, %s )""", 
+                        execute_with_retry(db, cursor, "INSERT IGNORE INTO observables ( type, value ) VALUES ( %s, %s )""", 
                                           ( observable.type, observable.value ))
                         db.commit()
                         continue
@@ -1218,7 +1218,7 @@ WHERE
                 return
 
             try:
-                execute_with_retry(cursor, "INSERT IGNORE INTO observable_mapping ( alert_id, observable_id ) VALUES ( %s, %s )", ( self.id, observable_id ))
+                execute_with_retry(db, cursor, "INSERT IGNORE INTO observable_mapping ( alert_id, observable_id ) VALUES ( %s, %s )", ( self.id, observable_id ))
                 db.commit()
                 logging.debug("mapped observable {} to {}".format(observable, self))
             except pymysql.err.InternalError as e:
@@ -1400,23 +1400,23 @@ WHERE
 
         return similarities
 
-    @property
-    def delayed(self):
-        try:
-            return len(self.delayed_analysis) > 0
-        except DetachedInstanceError:
-            with get_db_connection() as db:
-                c = db.cursor()
-                c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE alert_id = %s", (self.id,))
-                result = c.fetchone()
-                if not result:
-                    return
+    #@property
+    #def delayed(self):
+        #try:
+            #return len(self.delayed_analysis) > 0
+        #except DetachedInstanceError:
+            #with get_db_connection() as db:
+                #c = db.cursor()
+                #c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE alert_id = %s", (self.id,))
+                #result = c.fetchone()
+                #if not result:
+                    #return
 
-                return result[0]
+                #return result[0]
 
-    @delayed.setter
-    def delayed(self, value):
-        pass
+    #@delayed.setter
+    #def delayed(self, value):
+        #pass
 
 class Similarity:
     def __init__(self, uuid, disposition, percent):
@@ -1748,7 +1748,7 @@ def acquire_lock(uuid, lock_uuid, db, c, lock_owner=None):
     """Attempts to acquire a lock on a workitem by inserting the uuid into the locks database table.
        Returns False if a lock already exists or True if the lock was acquired."""
     try:
-        execute_with_retry(db,c , "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
+        execute_with_retry(db, c , "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
                           ( uuid, lock_uuid, lock_owner ))
         db.commit()
         return True
