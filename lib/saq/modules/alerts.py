@@ -8,6 +8,7 @@ import os
 import os.path
 import saq
 
+import saq
 import saq.database
 
 from saq.analysis import Analysis, Observable
@@ -15,6 +16,41 @@ from saq.constants import *
 from saq.database import get_db_connection
 from saq.error import report_exception
 from saq.modules import AnalysisModule
+
+class ACEDetectionAnalysis(Analysis):
+    """Does this analysis contain a detection?"""
+    def initialize_details(self):
+        self.details = False
+
+    def generate_summary(self):
+        return None
+
+class ACEDetectionAnalyzer(AnalysisModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_mode = self.config['target_mode']
+
+    def verify_environment(self):
+        # make sure the target_mode is valid
+        if 'analysis_mode_{}'.format(self.config['target_mode']) not in saq.CONFIG:
+            raise ValueError("target_mode {} invalid".format(self.config['target_mode']))
+
+    @property
+    def generated_analysis_type(self):
+        return ACEDetectionAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return None
+
+    def execute_analysis(self, observable):
+        if self.root.has_detections():
+            logging.info("{} has {} detection points - changing mode to {}".format(
+                         self.root, len(self.root.all_detection_points), self.target_mode))
+            self.root.analysis_mode = self.target_mode
+            return True
+
+        return None
 
 class ACEAlertsAnalysis(Analysis):
     """What other alerts have we seen this in?"""

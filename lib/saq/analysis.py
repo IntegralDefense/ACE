@@ -3262,13 +3262,13 @@ class RootAnalysis(LocalLockableObject, Analysis):
         """Returns True if this RootAnalysis could become an Alert (has at least one DetectionPoint somewhere.)"""
         if saq.FORCED_ALERTS:
             return True
-        if self.has_detection_points:
+        if self.has_detection_points():
             return True
         for a in self.all_analysis:
-            if a.has_detection_points:
+            if a.has_detection_points():
                 return True
         for o in self.all_observables:
-            if o.has_detection_points:
+            if o.has_detection_points():
                 return True
 
 def recurse_down(target, callback):

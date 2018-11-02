@@ -54,6 +54,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_5(test)
         elif test.value == 'test_6':
             return self.execute_analysis_6(test)
+        elif test.value == 'test_7':
+            return self.execute_analysis_7(test)
         else:
             return False
 
@@ -80,6 +82,11 @@ class BasicTestAnalyzer(AnalysisModule):
         new_observable = analysis.add_observable(F_TEST, 'result_2')
         # exclude by type
         new_observable.exclude_analysis(BasicTestAnalyzer)
+        return True
+
+    def execute_analysis_7(self, test):
+        analysis = self.create_analysis(test)
+        analysis.add_detection_point('test detection')
         return True
 
 class MergeTestAnalysis(TestAnalysis):

@@ -1081,7 +1081,55 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         execute_with_retry(db, c, "DELETE FROM locks where uuid = %s", (target.uuid))
         db.commit()
         logging.debug("cleared work target {}".format(target))
+        
+    def execute(self):
 
+        # get the next thing to work on
+        work_item = self.get_next_work_target()
+        if work_item is None:
+            return False
+
+        logging.info("got work item {}".format(work_item))
+
+        # at this point the thing to work on is locked (using the locks database table)
+        # start a secondary thread that just keeps the lock open
+        self.start_root_lock_manager(work_item.uuid)
+
+        try:
+            self.process_work_item(work_item)
+        except Exception as e:
+            logging.error("error processing work item {}: {}".format(work_item, e))
+            report_exception()
+
+        # at this point self.root is set and loaded
+        # remember what the analysis mode was before we started analysis
+        current_analysis_mode = self.root.analysis_mode
+
+        try:
+            self.analyze(work_item)
+        except Exception as e:
+            logging.error("error analyzing {}: {}".format(work_item, e))
+            report_exception()
+
+        self.stop_root_lock_manager()
+
+        try:
+            self.clear_work_target(work_item)
+        except Exception as e:
+            logging.error("unable to clear work item {}: {}".format(work_item, e))
+
+        # did the analysis mode change?
+        # NOTE that we do this AFTER locks are released
+        if self.root.analysis_mode != current_analysis_mode:
+            logging.info("analysis mode for {} changed from {} to {}".format(
+                          self.root, current_analysis_mode, self.root.analysis_mode))
+
+            try:
+                add_workload(self.root.uuid, self.root.analysis_mode)
+            except Exception as e:
+                logging.error("unable to add {} to workload: {}".format(self.root, e))
+                report_exception()
+    
     def process_work_item(self, work_item):
         """Processes the work item."""
         assert isinstance(work_item, DelayedAnalysisRequest) or isinstance(work_item, RootAnalysis)
@@ -1105,34 +1153,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         elif isinstance(work_item, RootAnalysis):
             self.root = work_item
             self.root.load()
-
-        self.analyze(work_item)
-        
-    def execute(self):
-
-        # get the next thing to work on
-        work_item = self.get_next_work_target()
-        if work_item is None:
-            return False
-
-        logging.info("got work item {}".format(work_item))
-
-        # at this point the thing to work on is locked (using the locks database table)
-        # start a secondary thread that just keeps the lock open
-        self.start_root_lock_manager(work_item.uuid)
-
-        try:
-            self.process_work_item(work_item)
-        except Exception as e:
-            logging.error("error processing work item {}: {}".format(work_item, e))
-            report_exception()
-
-        self.stop_root_lock_manager()
-
-        try:
-            self.clear_work_target(work_item)
-        except Exception as e:
-            logging.error("unable to clear work item {}: {}".format(work_item, e))
 
     def analyze(self, target):
         assert isinstance(target, saq.analysis.RootAnalysis) or isinstance(target, DelayedAnalysisRequest)
@@ -1159,9 +1179,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         elapsed_time = None
         error_report_path = None
-
-        # remember what the analysis mode was before we started
-        current_analysis_mode = self.root.analysis_mode
 
         try:
             start_time = time.time()
@@ -1267,16 +1284,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         except Exception as e:
             logging.error("unable to record statistics: {}".format(e))
 
-        # did the analysis mode change?
-        if self.root.analysis_mode != current_analysis_mode:
-            logging.info("analysis mode for {} changed from {} to {}".format(
-                          self.root, current_analysis_mode, self.root.analysis_mode))
-
-            try:
-                add_workload(self.root.uuid, self.root.analysis_mode)
-            except Exception as e:
-                logging.error("unable to add {} to workload: {}".format(self.root, e))
-                report_exception()
 
         return
 
@@ -1604,7 +1611,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                     if target_module_section not in self.analysis_module_mapping:
                         logging.error("{} specified unknown limited analysis {}".format(work_item, target_module))
                     else:
-                        analysis_modules.append(analysis_module_mapping[target_module_section])
+                        analysis_modules.append(self.analysis_module_mapping[target_module_section])
 
                 logging.debug("analysis for {} limited to {} modules ({})".format(
                               work_item.observable, len(analysis_modules), ','.join(work_item.observable.limited_analysis)))
@@ -1676,6 +1683,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         # by returning False here
                         try:
                             module_start_time = datetime.datetime.now()
+                            current_analysis_mode = self.root.analysis_mode
                             analysis_result = analysis_module.analyze(work_item.observable, final_analysis_mode)
                         finally:
                             # make sure we stop the monitor thread
@@ -1801,27 +1809,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         if len(work_stack):
             logging.info("work on {} was incomplete".format(self.root))
             self.work_incomplete(self.root)
-
-    # XXX this comes out
-    def should_alert(self, root):
-        """Returns True if we should fire an alert for this analysis.
-
-        Analysis and Observable objects implement a function called has_detection_points which
-        returns True if the object has anything that would result in a detection.
-
-        """
-
-        if root.alerted:
-            return False
-
-        has_detection = False
-        for analysis in root.all_analysis:
-            has_detection |= analysis.has_detection_points()
-        for observable in root.all_observables:
-            has_detection |= observable.has_detection_points()
-
-        # there's a flag that tells ACE to always signal something as an alert
-        return has_detection or saq.FORCED_ALERTS
 
     def is_module_enabled(self, _type_or_string):
         """Returns True if the given module is enabled. 

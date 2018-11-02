@@ -69,7 +69,7 @@ def submit():
 
     try:
 
-        root.analysis_mode = r[KEY_ANALYSIS_MODE] if KEY_ANALYSIS_MODE in r else None
+        root.analysis_mode = r[KEY_ANALYSIS_MODE] if KEY_ANALYSIS_MODE in r else saq.CONFIG['engine']['default_analysis_mode']
         root.company_id = saq.CONFIG['global'].getint('company_id')
         root.tool = r[KEY_TOOL] if KEY_TOOL in r else 'api'
         root.tool_instance = r[KEY_TOOL_INSTANCE] if KEY_TOOL_INSTANCE in r else 'api({})'.format(request.remote_addr)
