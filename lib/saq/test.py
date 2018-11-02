@@ -49,7 +49,7 @@ from subprocess import Popen, PIPE
 
 import saq
 from saq.analysis import RootAnalysis, _enable_io_tracker, _disable_io_tracker
-from saq.database import initialize_database, get_db_connection
+from saq.database import initialize_database, get_db_connection, use_db
 from saq.error import report_exception
 from saq.util import storage_dir_from_uuid
 
@@ -568,6 +568,13 @@ class ACEBasicTestCase(TestCase):
             c.execute("DELETE FROM events")
             c.execute("DELETE FROM remediation")
             db.commit()
+
+    @use_db
+    def reset_workload(self, db, c):
+        c.execute("DELETE FROM workload")
+        c.execute("DELETE FROM locks")
+        c.execute("DELETE FROM delayed_analysis")
+        db.commit()
 
     def reset_email_archive(self):
         import socket
