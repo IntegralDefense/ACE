@@ -400,6 +400,10 @@ class Engine(object):
         for section in saq.CONFIG.sections():
             if section.startswith('analysis_mode_'):
                 mode = section[len('analysis_mode_'):]
+                # make sure every analysis mode defines cleanup
+                if 'cleanup' not in saq.CONFIG[section]:
+                    logging.critical("{} missing cleanup key".format(section))
+
                 self.analysis_mode_mapping[mode] = []
 
                 # iterate each module group this mode uses
@@ -1129,6 +1133,39 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             except Exception as e:
                 logging.error("unable to add {} to workload: {}".format(self.root, e))
                 report_exception()
+        # if the analysis mode did NOT change
+        # then we look to see if we should clean this up
+        else:
+            # is this analysis_mode one that we want to clean up?
+            if self.root.analysis_mode is not None \
+            and saq.CONFIG['analysis_mode_{}'.format(self.root.analysis_mode)].getboolean('cleanup'):
+                # OK then is there any outstanding work assigned to this uuid?
+                try:
+                    with get_db_connection() as db:
+                        c = db.cursor()
+                        c.execute("""SELECT uuid FROM workload
+                                     UNION SELECT uuid FROM delayed_analysis
+                                     UNION SELECT uuid FROM locks 
+                                     WHERE uuid = %s
+                                     LIMIT 1
+                                     """, (self.root.uuid,))
+
+                        row = c.fetchone()
+                        db.commit() # XXX I assume this releases whatever lock the SELECT statement holds
+
+                        if row is None:
+                            # OK then it's time to clean this one up
+                            logging.debug("clearing {}".format(self.root.storage_dir))
+                            try:
+                                shutil.rmtree(self.root.storage_dir)
+                            except Exception as e:
+                                logging.error("unable to clear {}: {}".format(self.root.storage_dir))
+                        else:
+                            logging.debug("not cleaning up {} (found outstanding work)".format(self.root))
+
+                except Exception as e:
+                    logging.error("trouble checking finished status of {}: {}".format(self.root, e))
+                    report_exception()
     
     def process_work_item(self, work_item):
         """Processes the work item."""
