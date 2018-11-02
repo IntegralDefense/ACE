@@ -19,7 +19,7 @@ import saq, saq.test
 from saq.anp import *
 from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, Observable
 from saq.constants import *
-from saq.database import get_db_connection
+from saq.database import get_db_connection, use_db
 from saq.engine import Engine, DelayedAnalysisRequest, SSLNetworkServer, MySQLCollectionEngine, ANPNodeEngine, add_workload
 from saq.lock import LocalLockableObject
 from saq.network_client import submit_alerts
@@ -236,6 +236,7 @@ class EngineTestCase(ACEEngineTestCase):
         # the analysis mode should default to test_empty
         root = RootAnalysis(storage_dir=root.storage_dir)
         root.load()
+        self.assertIsNone(root.analysis_mode)
         observable = root.get_observable(observable.id)
         self.assertIsNotNone(observable)
         from saq.modules.test import BasicTestAnalysis
@@ -1288,3 +1289,55 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertIsNone(analysis)
 
         self.assertTrue(len(search_log('specified unknown limited analysis')) > 0)
+
+    @use_db
+    def test_engine_detection(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_7')
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.set_analysis_pool_size(1)
+        engine.enable_module('analysis_module_basic_test')
+        engine.enable_module('analysis_module_detection')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        # the analysis mode should have changed
+        self.assertEquals(root.analysis_mode, saq.CONFIG['analysis_module_detection']['target_mode'])
+
+        # make sure we detected the change in modes
+        self.assertTrue(log_count('analysis mode for RootAnalysis({}) changed from test_empty to correlation'.format(root.uuid)) > 0)
+        self.assertEquals(log_count('completed analysis RootAnalysis({})'.format(root.uuid)), 2)
+
+    @use_db
+    def test_engine_no_detection(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.set_analysis_pool_size(1)
+        engine.enable_module('analysis_module_basic_test')
+        engine.enable_module('analysis_module_detection')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        # the analysis mode should be the same
+        self.assertEquals(root.analysis_mode, 'test_empty')
+
+        # make sure we detected the change in modes
+        self.assertEquals(log_count('analysis mode for RootAnalysis({}) changed from test_empty to correlation'.format(root.uuid)), 0)
+        self.assertEquals(log_count('completed analysis RootAnalysis({})'.format(root.uuid)), 1)
