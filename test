@@ -47,19 +47,21 @@ fi
 if [ "$#" -eq "0" ]
 then
     PYTHONPATH=lib python3 -W ignore -m unittest -f -v \
+        saq.test_observables \
+        saq.test_crypto \
         saq.test_analysis \
         saq.test_database \
         saq.test_lock \
         saq.test_anp \
+        saq.test_util \
         saq.engine.test_engine \
-        saq.engine.test_email \
-        saq.engine.test_ace \
+        saq.modules.test_alerts \
         saq.modules.test_asset \
         saq.modules.test_url \
         saq.modules.test_file_analysis \
         saq.modules.test_email \
         saq.test_detection \
-        api.alert \
+        api.analysis.test \
 
         # TODO reintroduce these next two somehow
         #saq.engine.test_cloudphish \
@@ -67,6 +69,10 @@ then
         #saq.test_pds \
         #saq.modules.test_pds \
         #saq.modules.test_vx \
+
+        # no longer a thing
+        #saq.engine.test_email \
+        #saq.engine.test_ace \
 
     exit 0
 fi

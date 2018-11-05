@@ -11,7 +11,7 @@ import uuid
 import saq, saq.test
 from saq.constants import *
 from saq.database import get_db_connection
-from saq.engine.test_engine import AnalysisEngine, TerminatingMarker
+from saq.engine.test_engine import TestEngine
 from saq.test import *
 
 class EmailModuleTestCase(ACEModuleTestCase):
@@ -23,13 +23,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
             shutil.rmtree(splunk_log_dir)
             os.mkdir(splunk_log_dir)
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
@@ -37,9 +30,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_logger')
+        engine.enable_module('analysis_module_url_extraction')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         # we should expect three files in this directory now
@@ -87,18 +86,11 @@ class EmailModuleTestCase(ACEModuleTestCase):
                                   'cc,env_mail_from,env_rcpt_to,extracted_urls,first_received,headers,last_received,mail_from,'
                                   'mail_to,message_id,originating_ip,path,reply_to,size,subject,user_agent,archive_path,x_mailer')
 
-    @protect_production
     def test_email_000a_update_brocess(self):
 
         # make sure we update the brocess database when we can scan email
 
         self.reset_brocess()
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        self.start_engine(engine)
 
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
@@ -107,9 +99,14 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_logger')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -135,12 +132,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         # and then we do it again and make sure the count increased
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'),
@@ -148,9 +139,14 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_logger')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         with get_db_connection('brocess') as db:
@@ -160,7 +156,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
             count = c.fetchone()
             self.assertEquals(count[0], 2)
 
-    @protect_production
     def test_email_000b_elk_logging(self):
 
         # clear elk logging directory
@@ -169,13 +164,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
             shutil.rmtree(elk_log_dir)
             os.mkdir(elk_log_dir)
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
@@ -183,9 +171,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_logger')
+        engine.enable_module('analysis_module_url_extraction')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         wait_for_log_count('creating json logging directory ', 1, 5)
@@ -205,7 +199,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
             self.assertTrue(field in log_entry)
 
-    @protect_production
     def test_email_001_archive(self):
 
         # clear email archive
@@ -223,14 +216,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
             except Exception as e:
                 self.fail("unable to clear archive dir {}: {}".format(archive_dir, e))
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
@@ -239,9 +224,16 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_file_hash_analyzer')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_archiver')
+        engine.enable_module('analysis_module_url_extraction')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         # there should be a single entry in the archive
@@ -270,7 +262,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
                 value = row[0]
                 self.assertEquals(value, field_value)
 
-    @protect_production
     def test_email_002_archive(self):
 
         # clear email archive
@@ -288,15 +279,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
             except Exception as e:
                 self.fail("unable to clear archive dir {}: {}".format(archive_dir, e))
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        engine.enable_module('analysis_module_pdf_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'pdf_attachment.email.rfc822'), 
@@ -305,9 +287,17 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_file_hash_analyzer')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_archiver')
+        engine.enable_module('analysis_module_url_extraction')
+        engine.enable_module('analysis_module_pdf_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         # there should be a single entry in the archive
@@ -340,14 +330,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         # process the email first -- we'll find it when we pivot
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
@@ -356,16 +338,19 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_file_hash_analyzer')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_archiver')
+        engine.enable_module('analysis_module_url_extraction')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         saq.load_configuration()
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_url_email_pivot_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='cloudphish')
         root.initialize_storage()
@@ -385,9 +370,12 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         url_observable = root.add_observable(F_URL, 'https://www.alienvault.com')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_url_email_pivot_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -412,14 +400,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         # process the email first -- we'll find it when we pivot
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
@@ -428,20 +408,24 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_file_hash_analyzer')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_email_archiver')
+        engine.enable_module('analysis_module_url_extraction')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         saq.load_configuration()
+
         # force this to exceed the limit
         saq.CONFIG['analysis_module_url_email_pivot_analyzer']['result_limit'] = '0'
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_url_email_pivot_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='cloudphish')
+
         root.initialize_storage()
 
         # make up some details
@@ -459,9 +443,12 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         url_observable = root.add_observable(F_URL, 'https://www.alienvault.com')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_url_email_pivot_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -479,11 +466,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # this test email has an attachment that contains a message-id
         # we need to make sure we do not extract that one as the message-id observable
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'extra_message_id.email.rfc822'), 
@@ -491,9 +473,13 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -511,11 +497,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
     def test_email_006_basic_email_parsing(self):
 
         # parse a basic email message
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -524,9 +505,13 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        root.schedule()
+        
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
         
         root.load()
@@ -563,11 +548,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
     def test_email_007_o365_journal_email_parsing(self):
 
         # parse an office365 journaled message
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -576,11 +556,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
-        engine.wait()
+        root.schedule()
         
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
         root.load()
         from saq.modules.email import EmailAnalysis
         file_observable = root.get_observable(file_observable.id)
@@ -625,11 +609,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
         with open(whitelist_path, 'w') as fp:
             fp.write('smtp_from:ap@someothercompany.com')
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'o365_journaled.email.rfc822'), 
@@ -637,11 +616,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
-        
+
         root.load()
         from saq.modules.email import EmailAnalysis
         file_observable = root.get_observable(file_observable.id)
@@ -662,11 +645,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
         with open(whitelist_path, 'w') as fp:
             fp.write('smtp_to:lulu.zingzing@company.com')
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'o365_journaled.email.rfc822'), 
@@ -674,9 +652,13 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
         
         root.load()
@@ -692,12 +674,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         # we usually render HTML attachments to emails
         # but not if it has a tag of "no_render" assigned by a yara rule
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -706,11 +682,16 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
-        engine.wait()
+        root.schedule()
         
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_yara_scanner_v3_4')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
         root.load()
         from saq.modules.email import EmailAnalysis
         file_observable = root.get_observable(file_observable.id)
