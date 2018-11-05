@@ -21,7 +21,6 @@ from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, 
 from saq.constants import *
 from saq.database import get_db_connection, use_db
 from saq.engine import Engine, DelayedAnalysisRequest, add_workload
-from saq.lock import LocalLockableObject
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
 from saq.test import *
@@ -1114,7 +1113,6 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(len(instance_copy), 1)
         self.assertEquals(instance_copy[0].id, existing_observable.id)
 
-    @reset_config
     def test_engine_error_reporting(self):
         # trigger the failure this way
         saq.CONFIG['global']['maximum_cumulative_analysis_fail_time'] = '0'

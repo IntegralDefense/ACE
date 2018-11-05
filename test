@@ -51,7 +51,6 @@ then
         saq.test_crypto \
         saq.test_analysis \
         saq.test_database \
-        saq.test_lock \
         saq.test_anp \
         saq.test_util \
         saq.engine.test_engine \
@@ -73,6 +72,7 @@ then
         # no longer a thing
         #saq.engine.test_email \
         #saq.engine.test_ace \
+        #saq.test_lock \
 
     exit 0
 fi
