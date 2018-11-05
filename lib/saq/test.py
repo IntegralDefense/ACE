@@ -396,7 +396,7 @@ def create_root_analysis(tool=None, tool_instance=None, alert_type=None, desc=No
                         storage_dir=storage_dir if storage_dir else storage_dir_from_uuid(uuid if uuid else EV_ROOT_ANALYSIS_UUID),
                         company_name=company_name if company_name else None,
                         company_id=company_id if company_id else None,
-                        analysis_mode=analysis_mode if analysis_mode else None)
+                        analysis_mode=analysis_mode if analysis_mode else 'test_empty')
 
 class ServerProcess(object):
     def __init__(self, args):
@@ -674,12 +674,14 @@ class ACEEngineTestCase(ACEBasicTestCase):
         for key in saq.CONFIG.keys():
             if key.startswith('analysis_module_'):
                 saq.CONFIG[key]['enabled'] = 'no'
-        
 
 class CloudphishServer(EngineProcess):
     def __init__(self):
         super().__init__(['python3', 'saq', '-L', 'etc/console_debug_logging.ini', '--start', 'cloudphish'])
 
 class ACEModuleTestCase(ACEEngineTestCase):
-    pass
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+        self.reset_correlation()
+        self.reset_workload()
 

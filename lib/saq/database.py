@@ -1,6 +1,5 @@
-# vim: sw=4:ts=4:et
-
 import datetime
+import functools
 import logging
 import shutil
 import threading
@@ -31,19 +30,25 @@ _global_db_cache_lock = threading.RLock()
 _use_cache_flags = set() # key = current_process_id:current_thread_id
 _use_cache_flags_lock = threading.RLock()
 
-def use_db(target_function):
+def use_db(method=None, name=None):
     """Utility decorator to pass an opened database connection and cursor object as keyword
        parameters db and c respectively. Execute is wrapped in a try/catch for database errors.
        Returns None on error and logs error message and stack trace."""
+
+    if method is None:
+        return functools.partial(use_db, name=name)
+
+    @functools.wraps(method)
     def wrapper(*args, **kwargs):
         try:
-            with get_db_connection() as db:
+            with get_db_connection(name=name) as db:
                 c = db.cursor()
-                return target_function(db=db, c=c, *args, **kwargs)
+                return method(db=db, c=c, *args, **kwargs)
         except pymysql.err.MySQLError as e:
             logging.error("database error: {}".format(e))
             report_exception()
-            return None
+            raise e
+
     return wrapper
 
 def _get_cache_identifier():
@@ -81,6 +86,9 @@ def _cached_db_connections_enabled():
 
 def _get_cached_db_connection(name='ace'):
     """Returns the database connection by the given name.  Defaults to the ACE db config."""
+    if name is None:
+        name = 'ace'
+
     config_section = 'database_{}'.format(name)
 
     if config_section not in saq.CONFIG:
@@ -134,6 +142,9 @@ def _get_cached_db_connection(name='ace'):
 
 def release_cached_db_connection(name='ace'):
 
+    if name is None:
+        name = 'ace'
+
     # make sure this process + thread is using cached connections
     if not _cached_db_connections_enabled():
         return
@@ -159,6 +170,9 @@ def release_cached_db_connection(name='ace'):
 
 def _get_db_connection(name='ace'):
     """Returns the database connection by the given name.  Defaults to the ACE db config under [mysql]."""
+
+    if name is None:
+        name = 'ace'
 
     if _cached_db_connections_enabled():
         return _get_cached_db_connection(name)

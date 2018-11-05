@@ -23,7 +23,7 @@ from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree
 from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_source_email
 from saq.constants import *
 from saq.crypto import encrypt, decrypt
-from saq.database import get_db_connection, execute_with_retry, Alert
+from saq.database import get_db_connection, execute_with_retry, Alert, use_db
 from saq.email import normalize_email_address, search_archive, get_email_archive_sections
 from saq.error import report_exception
 from saq.modules import AnalysisModule, SplunkAnalysisModule, AnalysisModule, PostAnalysisModule
@@ -2278,7 +2278,8 @@ class EmailLoggingAnalyzer(AnalysisModule):
             fp.write(json.dumps(entry))
             fp.write('\n')
 
-    def export_to_brocess(self, entry):
+    @use_db(name='brocess')
+    def export_to_brocess(self, entry, db, c):
 
         if not self.update_brocess:
             return
@@ -2288,20 +2289,18 @@ class EmailLoggingAnalyzer(AnalysisModule):
         logging.debug("updating brocess for {}".format(mail_from))
 
         try:
-            with get_db_connection('brocess') as db:
-                c = db.cursor()
-                for email_address in entry['env_rcpt_to']:
-                    email_address = normalize_email_address(email_address)
-                    if not email_address:
-                        continue
+            for email_address in entry['env_rcpt_to']:
+                email_address = normalize_email_address(email_address)
+                if not email_address:
+                    continue
 
-                    sql = """INSERT INTO smtplog ( source, destination, numconnections, firstconnectdate )
-                             VALUES (%s, %s, 1, UNIX_TIMESTAMP(NOW()))
-                             ON DUPLICATE KEY UPDATE numconnections = numconnections + 1"""
-                    params = (mail_from, email_address)
-                    execute_with_retry(c, sql, params)
+                sql = """INSERT INTO smtplog ( source, destination, numconnections, firstconnectdate )
+                         VALUES (%s, %s, 1, UNIX_TIMESTAMP(NOW()))
+                         ON DUPLICATE KEY UPDATE numconnections = numconnections + 1"""
+                params = (mail_from, email_address)
+                execute_with_retry(db, c, sql, params)
 
-                db.commit()
+            db.commit()
 
         except Exception as e:
             logging.error("unable to update brocess: {}".format(e))

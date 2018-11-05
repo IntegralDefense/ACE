@@ -20,7 +20,7 @@ from saq.anp import *
 from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, Observable
 from saq.constants import *
 from saq.database import get_db_connection, use_db
-from saq.engine import Engine, DelayedAnalysisRequest, SSLNetworkServer, MySQLCollectionEngine, ANPNodeEngine, add_workload
+from saq.engine import Engine, DelayedAnalysisRequest, add_workload
 from saq.lock import LocalLockableObject
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
@@ -218,6 +218,7 @@ class EngineTestCase(ACEEngineTestCase):
 
         # we're not setting the analysis mode here
         root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.analysis_mode = None
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
@@ -432,7 +433,7 @@ class EngineTestCase(ACEEngineTestCase):
     def test_engine_delayed_analysis_timing(self):
         root_1 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
         root_1.initialize_storage()
-        o_1 = root_1.add_observable(F_TEST, '0:02|0:10')
+        o_1 = root_1.add_observable(F_TEST, '0:04|0:10')
         root_1.save()
         root_1.schedule()
 

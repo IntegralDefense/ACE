@@ -10,7 +10,7 @@ import unittest
 import saq, saq.test
 from saq.constants import *
 from saq.test import *
-from saq.engine.test_engine import AnalysisEngine, TerminatingMarker
+from saq.engine.test_engine import TestEngine
 
 LOCAL_PORT = 43124
 web_server = None
@@ -47,21 +47,20 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
 
     def test_crawlphish_000_basic_download(self):
         from saq.modules.url import CrawlphishAnalysisV2
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_crawlphish')
-        self.start_engine(engine)
 
         root = create_root_analysis()
         root.initialize_storage()
         url = root.add_observable(F_URL, 'http://localhost:{}/test_data/crawlphish.000'.format(LOCAL_PORT))
         url.add_directive(DIRECTIVE_CRAWL)
         root.save()
+        root.schedule()
         
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_crawlphish')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
-
+        
         root.load()
         url = root.get_observable(url.id)
         analysis = url.get_analysis(CrawlphishAnalysisV2)
@@ -82,19 +81,18 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
     def test_crawlphish_001_download_404(self):
         """We should not extract URLs from data downloaded from URLs that returned a 404."""
         from saq.modules.url import CrawlphishAnalysisV2
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_crawlphish')
-        self.start_engine(engine)
 
         root = create_root_analysis()
         root.initialize_storage()
         url = root.add_observable(F_URL, 'http://localhost:{}/test_data/crawlphish.001'.format(LOCAL_PORT))
         url.add_directive(DIRECTIVE_CRAWL)
         root.save()
+        root.schedule()
         
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_crawlphish')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -118,20 +116,19 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
 
         from saq.modules.url import CrawlphishAnalysisV2
         from saq.modules.url import LiveBrowserAnalysis
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_crawlphish')
-        engine.enable_module('analysis_module_live_browser_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis()
         root.initialize_storage()
         url = root.add_observable(F_URL, 'http://localhost:{}/test_data/live_browser.000.html'.format(LOCAL_PORT))
         url.add_directive(DIRECTIVE_CRAWL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        root.schedule()
+        
+        engine = TestEngine()
+        engine.enable_module('analysis_module_crawlphish')
+        engine.enable_module('analysis_module_live_browser_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -155,11 +152,6 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
 
         from saq.modules.url import CrawlphishAnalysisV2
         from saq.modules.url import LiveBrowserAnalysis
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_crawlphish')
-        engine.enable_module('analysis_module_live_browser_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis()
         root.initialize_storage()
@@ -167,9 +159,13 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         url = root.add_observable(F_URL, 'http://localhost:{}/test_data/live_browser.dne.html'.format(LOCAL_PORT))
         url.add_directive(DIRECTIVE_CRAWL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        root.schedule()
+        
+        engine = TestEngine()
+        engine.enable_module('analysis_module_crawlphish')
+        engine.enable_module('analysis_module_live_browser_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -180,19 +176,18 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertEquals(len(file_observables), 0)
 
     def test_protected_url_000_outlook_safelinks(self):
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
         url = root.add_observable(F_URL, 'https://na01.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.getbusinessready.com.au%2FInvoice-Number-49808%2F&data=02%7C01%7Ccyoung%40northernaviationservices.aero%7C8a388036cbf34f90ec5808d5724be7ed%7Cfc01978435d14339945c4161ac91c300%7C0%7C0%7C636540592704791165&sdata=%2FNQGqAp09WTNgnVnpoWIPcYNVAYsJ11ULuSS7cCsS3Q%3D&reserved=0')
         url.add_directive(DIRECTIVE_CRAWL) # not actually going to crawl, just testing that it gets copied over
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -209,10 +204,6 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertTrue(extracted_url.has_directive(DIRECTIVE_CRAWL))
 
     def test_protected_url_001_dropbox(self):
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
@@ -223,10 +214,14 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         url_with_dl0.add_directive(DIRECTIVE_CRAWL) # not actually going to crawl, just testing that it gets copied over
         url_with_dl1.add_directive(DIRECTIVE_CRAWL) 
         url_without_dl.add_directive(DIRECTIVE_CRAWL)
-        root.save()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -257,19 +252,18 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertTrue(extracted_url.has_directive(DIRECTIVE_CRAWL))
 
     def test_protected_url_002_google_drive(self):
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
         url = root.add_observable(F_URL, 'https://drive.google.com/file/d/1ls_eBCsmf3VG_e4dgQiSh_5VUM10b9s2/view')
         url.add_directive(DIRECTIVE_CRAWL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -286,21 +280,20 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertTrue(extracted_url.has_directive(DIRECTIVE_CRAWL))
 
     def test_protected_url_003_sharepoint(self):
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
         url = root.add_observable(F_URL, 'https://lahia-my.sharepoint.com/:b:/g/personal/secure_onedrivemsw_bid/EVdjoBiqZTxMnjAcDW6yR4gBqJ59ALkT1C2I3L0yb_n0uQ?e=naeXYD')
         url.add_directive(DIRECTIVE_CRAWL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
-
+        
         root.load()
         url = root.get_observable(url.id)
         from saq.modules.url import ProtectedURLAnalysis, PROTECTION_TYPE_SHAREPOINT
