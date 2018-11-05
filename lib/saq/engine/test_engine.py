@@ -701,7 +701,6 @@ class EngineTestCase(ACEEngineTestCase):
 
         self.assertEquals(log_count("depends on"), 1)
 
-    @clear_error_reports
     def test_engine_wait_for_disabled_analysis(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
         root.initialize_storage()
@@ -726,6 +725,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertIsNone(test_observable.get_analysis(WaitAnalysis_B))
 
         #self.assertEquals(log_count("requested to wait for disabled (or missing) module"), 1)
+        self.clear_error_reports()
 
     def test_engine_wait_for_analysis_circ_dep(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')

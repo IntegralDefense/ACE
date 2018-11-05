@@ -29,7 +29,6 @@ class CloudphishAnaysisModuleTestCase(ACEModuleTestCase):
     def tearDown(self):
         ACEModuleTestCase.tearDown(self)
     
-    @clear_log
     def test_cloudphish_000_invalid_scheme(self):
         engine = self.create_engine(AnalysisEngine)
         engine.enable_module('analysis_module_cloudphish')
@@ -47,7 +46,6 @@ class CloudphishAnaysisModuleTestCase(ACEModuleTestCase):
 
         self.assertEquals(log_count('is not a supported scheme for cloudphish'), 1)
 
-    @clear_log
     def test_cloudphish_001_invalid_fqdn(self):
         engine = self.create_engine(AnalysisEngine)
         engine.enable_module('analysis_module_cloudphish')
@@ -65,7 +63,6 @@ class CloudphishAnaysisModuleTestCase(ACEModuleTestCase):
 
         self.assertEquals(log_count('ignoring invalid FQDN'), 1)
 
-    @clear_log
     def test_cloudphish_002_cached_entry(self):
         local_cache_dir = saq.CONFIG['analysis_module_cloudphish']['local_cache_dir']
         shutil.rmtree(local_cache_dir)

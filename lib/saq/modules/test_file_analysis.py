@@ -400,7 +400,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         url = analysis.get_observables_by_type(F_URL)
         self.assertEquals(len(url), 1)
 
-    @clear_log
     def test_file_analysis_004_yara_000_basic_scan(self):
 
         self.initialize_yss()
@@ -439,7 +438,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # the yara rule should have detections
         self.assertTrue(yara_rule.detections)
 
-    @clear_log
     def test_file_analysis_004_yara_001_local_scan(self):
         
         # we do not initalize the local yss scanner so it should not be available for scanning
@@ -480,7 +478,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # the yara rule should have detections
         self.assertTrue(yara_rule.detections)
 
-    @clear_log
     def test_file_analysis_004_yara_002_no_alert(self):
         
         self.initialize_yss()
@@ -516,7 +513,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # the yara rule should NOT have detections
         self.assertFalse(yara_rule.detections)
 
-    @clear_log
     def test_file_analysis_004_yara_003_directives(self):
         
         self.initialize_yss()
@@ -555,7 +551,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # and we should have an extra directive
         self.assertTrue(_file.has_directive(DIRECTIVE_EXTRACT_URLS))
 
-    @clear_log
     def test_file_analysis_004_yara_004_crits(self):
         
         self.initialize_yss()
