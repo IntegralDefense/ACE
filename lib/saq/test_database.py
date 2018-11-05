@@ -17,16 +17,6 @@ from saq.database import get_db_connection, Alert, \
                          enable_cached_db_connections, disable_cached_db_connections
 from saq.test import *
 
-def reset_database(target_function):
-    def wrapper(*args, **kwargs):
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("DELETE FROM alerts")
-            db.commit()
-            return target_function(*args, **kwargs)
-
-    return wrapper
-
 class DatabaseTestCase(ACEBasicTestCase):
 
     def insert_alert(self):
@@ -47,19 +37,20 @@ class DatabaseTestCase(ACEBasicTestCase):
         session = saq.database.DatabaseSession()
         self.assertIsNotNone(session)
 
-    @reset_database
     def test_database_001_insert_alert(self):
         alert = self.insert_alert()
 
-    @reset_database
     def test_database_002_lock(self):
         alert = self.insert_alert()
 
         self.assertTrue(alert.lock())
         # something that was locked is locked
         self.assertTrue(alert.is_locked())
-        # and cannot be locked again
-        self.assertFalse(alert.lock())
+        # and can be locked again
+        self.assertTrue(alert.lock())
+        # but not by another Alert object
+        another_alert = Alert(uuid=alert.uuid)
+        self.assertFalse(another_alert.lock())
         # can be unlocked
         self.assertTrue(alert.unlock())
         # truely is unlocked
@@ -70,7 +61,6 @@ class DatabaseTestCase(ACEBasicTestCase):
         self.assertTrue(alert.lock())
         self.assertTrue(alert.is_locked())
 
-    @reset_database
     #@unittest.skip("...")
     def test_database_003_multiprocess_lock(self):
         alert = self.insert_alert()
@@ -120,76 +110,17 @@ class DatabaseTestCase(ACEBasicTestCase):
                 p.terminate()
                 p.join()
 
-    @reset_database
-    @reset_config
     def test_database_003_expired(self):
         # set locks to expire immediately
-        saq.CONFIG['global']['lock_timeout'] = '00:00'
+        old_value = saq.LOCK_TIMEOUT_SECONDS
+        saq.LOCK_TIMEOUT_SECONDS = 0
         alert = self.insert_alert()
         self.assertTrue(alert.lock())
         # should expire right away
         self.assertFalse(alert.is_locked())
-        self.assertTrue(alert.has_current_lock())
         # and we are able to lock it again
         self.assertTrue(alert.lock())
-
-    @reset_database
-    def test_database_004_lock_proxy(self):
-        alert = self.insert_alert()
-        pipe_p, pipe_c = Pipe()
-
-        def p1(pipe_c):
-            # get the lock proxy from the queue
-            proxy = pipe_c.recv()
-            # unlock the lock and send the result through the pipe
-            pipe_c.send(proxy.unlock())
-            pipe_c.close()
-        
-        p = Process(target=p1, args=(pipe_c,))
-        p.start()
-
-        try:
-            self.assertTrue(alert.lock())
-            proxy = alert.create_lock_proxy()
-            alert.transfer_locks_to(proxy)
-            pipe_p.send(proxy)
-            self.assertTrue(pipe_p.recv())
-            pipe_p.close()
-            p.join()
-            p = None
-
-            self.assertFalse(alert.is_locked())
-
-        finally:
-            if p:
-                p.terminate()
-                p.join()
-
-        # do it again but this time don't transfer the locks
-        # it should fail to unlock
-
-        alert = self.insert_alert()
-        pipe_p, pipe_c = Pipe()
-
-        p = Process(target=p1, args=(pipe_c,))
-        p.start()
-
-        try:
-            self.assertTrue(alert.lock())
-            proxy = alert.create_lock_proxy()
-            #alert.transfer_locks_to(proxy)
-            pipe_p.send(proxy)
-            self.assertFalse(pipe_p.recv())
-            pipe_p.close()
-            p.join()
-            p = None
-
-            self.assertTrue(alert.is_locked())
-
-        finally:
-            if p:
-                p.terminate()
-                p.join()
+        saq.LOCK_TIMEOUT_SECONDS = old_value
 
     def test_database_005_caching(self):
         from saq.database import _cached_db_connections_enabled

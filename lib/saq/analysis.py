@@ -23,7 +23,6 @@ import requests
 import saq
 from saq.constants import *
 from saq.error import report_exception
-from saq.lock import LocalLockableObject
 from saq.util import parse_event_time
 
 ##############################################################################
@@ -1997,7 +1996,7 @@ class AnalysisDependency(object):
 # The hiearchy of relationships goes Analysis --> Alert --> saq.database.Alert
 #
 
-class RootAnalysis(LocalLockableObject, Analysis):
+class RootAnalysis(Analysis):
     """Root of analysis. Also see saq.database.Alert."""
 
     def __init__(self, 
@@ -3139,8 +3138,8 @@ class RootAnalysis(LocalLockableObject, Analysis):
         assert self.storage_dir
 
         # we must be locked for this to work
-        if not self.is_locked():
-            raise RuntimeError("tried to move unlocked analysis {}".format(self))
+        #if not self.is_locked():
+            #raise RuntimeError("tried to move unlocked analysis {}".format(self))
 
         if os.path.exists(dest_dir):
             raise RuntimeError("destination directory {} already exists".format(dest_dir))

@@ -14,7 +14,6 @@ __all__ = [
     'ACEEngineTestCase',
     'ACEModuleTestCase',
     'modify_logging_level',
-    'reset_config',
     'reset_alerts',
     'log_count',
     'wait_for_log_count',
@@ -60,13 +59,6 @@ test_dir = None
 
 # decorators
 #
-def reset_config(target_function):
-    def wrapper(*args, **kwargs):
-        try:
-            return target_function(*args, **kwargs)
-        finally:
-            saq.load_configuration()
-    return wrapper
 
 def modify_logging_level(level):
     def modify_logging_level_decorator(target_function):
@@ -489,9 +481,12 @@ class ACEBasicTestCase(TestCase):
         #saq.DUMP_TRACEBACKS = True
         logging.info("TEST: {}".format(self.id()))
         initialize_test_environment()
-        saq.load_configuration()
+        self.reset_config()
         open_test_comms()
         memory_log_handler.clear()
+
+        self.reset_workload()
+        self.reset_correlation()
 
     def tearDown(self):
         close_test_comms()
@@ -519,6 +514,10 @@ class ACEBasicTestCase(TestCase):
                 raise WaitTimedOutError()
 
             time.sleep(delay)
+
+    def reset_config(self):
+        """Resets saq.CONFIG."""
+        saq.load_configuration()
 
     def reset_brocess(self):
         # clear the brocess db
@@ -680,8 +679,5 @@ class CloudphishServer(EngineProcess):
         super().__init__(['python3', 'saq', '-L', 'etc/console_debug_logging.ini', '--start', 'cloudphish'])
 
 class ACEModuleTestCase(ACEEngineTestCase):
-    def setUp(self, *args, **kwargs):
-        super().setUp(*args, **kwargs)
-        self.reset_correlation()
-        self.reset_workload()
+    pass
 

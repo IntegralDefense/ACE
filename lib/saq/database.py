@@ -13,7 +13,6 @@ import saq.constants
 
 from saq.analysis import RootAnalysis
 from saq.error import report_exception
-from saq.lock import LockableObject, lock_expired
 from saq.performance import track_execution_time
 
 import businesstime
@@ -275,219 +274,6 @@ class User(UserMixin, Base):
     def verify_password(self, value):
         return check_password_hash(self.password_hash, value)
 
-class ACEAlertLock(LockableObject):
-    """An implementation of locking for Alerts."""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.acquired_lock_id = None
-
-    @property
-    def lock_identifier(self):
-        """Returns what is the unique id for this lock."""
-        return self.acquired_lock_id
-
-    def lock(self):
-        assert hasattr(self, 'id')
-
-        if not self.id:
-            logging.error("called lock() on {} when id was None".format(self))
-            return False
-
-        # are we already locked?
-        if self.acquired_lock_id:
-            # has this lock expired?
-            if self.is_locked():
-                logging.warning("called lock() on already locked {}".format(self))
-                return False
-
-            # if the lock has expired then we forget about our acquired lock id
-            self.acquired_lock_id = None
-
-        # what we do here is UPDATE table SET lock_owner = us, lock_id = lock_id, lock-time = NOW() WHERE lock_owner IS NONE
-        # we use a generated "lock id" so we know how actually ended up getting the lock
-        # we are relying on the ATOMicity of the database to ensure only one request actually obtains the lock
-        # we do that by using a WHERE clause on the fields we are updating
-        acquired_lock_id = str(uuid.uuid4())
-        logging.debug("using lock_id {} for {}".format(acquired_lock_id, self))
-
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""
-                      UPDATE alerts 
-                      SET lock_owner = %s, lock_id = %s, lock_time = NOW() 
-                      WHERE id = %s AND lock_owner IS NULL""", (
-                      saq.SAQ_NODE,
-                      acquired_lock_id,
-                      self.id))
-
-            db.commit()
-
-            # did we get the lock?
-            c.execute("""SELECT lock_id, lock_time FROM alerts WHERE id = %s""", ( self.id, ))
-            try:
-                row = c.fetchone()
-            except Exception as e:
-                logging.warning("unable to get alert row {} for locking: {}".format(self.id))
-                return False
-
-            current_lock_id, current_lock_time = row
-            if current_lock_id == acquired_lock_id:
-                logging.debug("acquired lock on {}".format(self))
-                self.acquired_lock_id = acquired_lock_id
-                return True
-
-            # we were not able to acquire the lock AND there is no existing lock
-            if current_lock_time is None:
-                logging.warning("unable to acquire lock on {} and lock_time is not set".format(self.id))
-                return False
-
-            # unable to acquire the lock but has the existing lock expired?
-            if lock_expired(current_lock_time):
-                logging.warning("detected expired lock on {}".format(self))
-
-                c.execute("""
-                          UPDATE alerts 
-                          SET lock_owner = %s, lock_id = %s, lock_time = NOW() 
-                          WHERE id = %s AND lock_id = %s""", (
-                          saq.SAQ_NODE,
-                          acquired_lock_id,
-                          self.id,
-                          current_lock_id))
-
-                db.commit()
-
-                # did we get the lock?
-                c.execute("""SELECT lock_id, lock_time FROM alerts WHERE id = %s""", ( self.id, ))
-                try:
-                    row = c.fetchone()
-                except Exception as e:
-                    logging.warning("unable to get alert row {} for locking: {}".format(self.id))
-                    return False
-
-                current_lock_id, current_lock_time = row
-                if current_lock_id == acquired_lock_id:
-                    logging.debug("acquired lock on {}".format(self))
-                    self.acquired_lock_id = acquired_lock_id
-                    return True
-
-                logging.warning("unable to acquire expired lock {} (another process grabbed it?)".format(self))
-                return False
-            
-            logging.debug("{} is already locked".format(self))
-            return False
-
-    def unlock(self):
-        assert hasattr(self, 'id')
-
-        if not self.id:
-            logging.error("called unlock() on {} when id was None".format(self))
-            return False
-
-        # are we not locked?
-        if not self.acquired_lock_id:
-            logging.warning("called unlock() on already unlocked {}".format(self))
-            self.acquired_lock_id = None
-            return False
-
-        # go ahead and try to unlock using our own ID in the where clause
-        # this will ensure we do not unlock if we do not own it
-
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""
-                      UPDATE alerts 
-                      SET lock_owner = NULL, lock_id = NULL, lock_time = NULL
-                      WHERE id = %s AND lock_id = %s""", (
-                      self.id,
-                      self.acquired_lock_id))
-
-            if c.rowcount == 0:
-                logging.warning("unable to unlock {} (expired?)".format(self))
-                self.acquired_lock_id = None
-                return False
-
-            db.commit()
-            logging.debug("unlocked lock {} on {}".format(self.acquired_lock_id, self))
-            self.acquired_lock_id = None
-            return True
-
-    def has_current_lock(self):
-        """Returns True if the lock is currently held, False otherwise."""
-        return self.acquired_lock_id is not None
-
-    def is_locked(self):
-        assert hasattr(self, 'id')
-
-        if not self.id:
-            logging.error("called lock() on {} when id was None".format(self))
-            return False
-
-        #if self.acquired_lock_id:
-            #logging.warning("called lock() on already locked {}".format(self))
-            #return True
-
-        with get_db_connection() as db:
-            c = db.cursor()
-            # is this alert locked?
-            c.execute("""SELECT lock_id, lock_time FROM alerts WHERE id = %s""", ( self.id, ))
-            try:
-                row = c.fetchone()
-            except Exception as e:
-                logging.warning("unable to get alert row {} for locking: {}".format(self.id))
-                return False
-
-        current_lock_id, current_lock_time = row
-        if current_lock_id:
-            # has the existing lock expired?
-            if lock_expired(current_lock_time):
-                logging.warning("detected expired lock on {}".format(self))
-                return False
-            return True
-        return False
-
-    def refresh_lock(self):
-        assert hasattr(self, 'id')
-
-        if not self.id:
-            logging.error("called refresh_lock() on {} when id was None".format(self))
-            return False
-
-        if not self.acquired_lock_id:
-            logging.warning("called refresh_lock() on unlocked {}".format(self))
-            return False
-
-        with get_db_connection() as db:
-            transaction_id = str(uuid.uuid4())
-            logging.debug("refreshing lock {} for alert {} with transaction_id {}".format(
-                          self.acquired_lock_id, self.id, transaction_id))
-            c = db.cursor()
-            c.execute("""
-                      UPDATE alerts 
-                      SET lock_time = NOW(),
-                      lock_transaction_id = %s
-                      WHERE id = %s AND lock_id = %s""", (
-                      transaction_id,
-                      self.id,
-                      self.acquired_lock_id))
-
-            if c.rowcount == 0:
-                logging.warning("unable to refresh {} (expired?)".format(self))
-                self.acquired_lock_id = None
-                return False
-
-            db.commit()
-            return True
-
-    def transfer_locks_to(self, lockable):
-        assert isinstance(lockable, ACEAlertLock)
-        lockable.acquired_lock_id = self.acquired_lock_id
-        logging.debug("transfered lock_id {} to {}".format(self.acquired_lock_id, lockable))
-
-    def create_lock_proxy(self):
-        proxy = ACEAlertLock()
-        proxy.id = self.id
-        return proxy
-
 class Campaign(Base):
     __tablename__ = 'campaign'
     id = Column(Integer, nullable=False, primary_key=True)
@@ -703,7 +489,7 @@ class SiteHolidays(Holidays):
 
 _bt = businesstime.BusinessTime(business_hours=(datetime.time(6), datetime.time(18)), holidays=SiteHolidays())
 
-class Alert(ACEAlertLock, RootAnalysis, Base):
+class Alert(RootAnalysis, Base):
 
     def _initialize(self):
         # keep track of what Tag and Observable objects we add as we analyze
@@ -714,8 +500,8 @@ class Alert(ACEAlertLock, RootAnalysis, Base):
         self.add_event_listener(saq.constants.EVENT_GLOBAL_TAG_ADDED, self._handle_tag_added)
         self.add_event_listener(saq.constants.EVENT_GLOBAL_OBSERVABLE_ADDED, self._handle_observable_added)
 
-        # the ID we're using to lock this alert
-        self.acquired_lock_id = None
+        # when we lock the Alert this is the UUID we used to lock it with
+        self.lock_uuid = str(uuid.uuid4())
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -928,21 +714,21 @@ class Alert(ACEAlertLock, RootAnalysis, Base):
         TIMESTAMP,
         nullable=True)
 
-    lock_owner = Column(
-        String(256), 
-        nullable=True)
+    #lock_owner = Column(
+        #String(256), 
+        #nullable=True)
 
-    lock_id = Column(
-        String(36),
-        nullable=True)
+    #lock_id = Column(
+        #String(36),
+        #nullable=True)
 
-    lock_transaction_id = Column(
-        String(36),
-        nullable=True)
+    #lock_transaction_id = Column(
+        #String(36),
+        #nullable=True)
 
-    lock_time = Column(
-        TIMESTAMP, 
-        nullable=True)
+    #lock_time = Column(
+        #TIMESTAMP, 
+        #nullable=True)
 
     detection_count = Column(
         Integer,
@@ -955,8 +741,8 @@ class Alert(ACEAlertLock, RootAnalysis, Base):
         if self.workload_item is None:
             if self.lock_id:
                 status = 'Analyzing'
-                if self.lock_time and lock_expired(self.lock_time):
-                    status += ' (expired)'
+                #if self.lock_time and lock_expired(self.lock_time):
+                    #status += ' (expired)'
             else:
                 if self.delayed:
                     status = 'Delayed'
@@ -1054,21 +840,21 @@ class Alert(ACEAlertLock, RootAnalysis, Base):
             if Alert.KEY_REMOVAL_TIME in value:
                 self.removal_time = value[Alert.KEY_REMOVAL_TIME]
 
-    def track_delayed_analysis_start(self, observable, analysis_module):
-        super().track_delayed_analysis_start(observable, analysis_module)
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""INSERT INTO delayed_analysis ( alert_id, observable_id, analysis_module ) VALUES ( %s, %s, %s )""",
-                     (self.id, observable.id, analysis_module.config_section))
-            db.commit()
+    #def track_delayed_analysis_start(self, observable, analysis_module):
+        #super().track_delayed_analysis_start(observable, analysis_module)
+        ##with get_db_connection() as db:
+            #c = db.cursor()
+            #c.execute("""INSERT INTO delayed_analysis ( alert_id, observable_id, analysis_module ) VALUES ( %s, %s, %s )""",
+                     #(self.id, observable.id, analysis_module.config_section))
+            #db.commit()
 
-    def track_delayed_analysis_stop(self, observable, analysis_module):
-        super().track_delayed_analysis_stop(observable, analysis_module)
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""DELETE FROM delayed_analysis where alert_id = %s AND observable_id = %s AND analysis_module = %s""",
-                     (self.id, observable.id, analysis_module.config_section))
-            db.commit()
+    #def track_delayed_analysis_stop(self, observable, analysis_module):
+        #super().track_delayed_analysis_stop(observable, analysis_module)
+        #with get_db_connection() as db:
+            #c = db.cursor()
+            #c.execute("""DELETE FROM delayed_analysis where alert_id = %s AND observable_id = %s AND analysis_module = %s""",
+                     #(self.id, observable.id, analysis_module.config_section))
+            #db.commit()
 
     def _handle_tag_added(self, source, event_type, *args, **kwargs):
         assert args
@@ -1276,8 +1062,27 @@ WHERE
         self.save() # save this alert now that it has the id
 
         # we want to unlock it here since the corelation is going to want to pick it up as soon as it gets added
-        if self.is_locked():
-            self.unlock()
+        #if self.is_locked():
+            #self.unlock()
+
+        return True
+
+    def lock(self):
+        """Acquire a lock on the analysis. Returns True if a lock was obtained, False otherwise."""
+        return acquire_lock(self.uuid, self.lock_uuid, lock_owner="Alert ({})".format(os.getpid()))
+
+    def unlock(self):
+        """Releases a lock on the analysis."""
+        return release_lock(self.uuid, self.lock_uuid)
+
+    @use_db
+    def is_locked(self, db, c):
+        """Returns True if this Alert has already been locked."""
+        c.execute("""SELECT uuid FROM locks WHERE uuid = %s AND TIMESTAMPDIFF(SECOND, lock_time, NOW()) < %s""", 
+                 (self.uuid, saq.LOCK_TIMEOUT_SECONDS))
+        row = c.fetchone()
+        if row is None:
+            return False
 
         return True
 
@@ -1818,9 +1623,12 @@ def release_lock(uuid, lock_uuid, db, c):
     try:
         execute_with_retry(db, c, "DELETE FROM locks WHERE uuid = %s AND lock_uuid = %s", (uuid, lock_uuid,))
         db.commit()
+        return c.rowcount == 1
     except Exception as e:
         logging.error("unable to release lock {}: {}".format(uuid, e))
         report_exception()
+
+    return False
 
 class DelayedAnalysis(Base):
 

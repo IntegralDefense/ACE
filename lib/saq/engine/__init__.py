@@ -34,7 +34,6 @@ from saq.database import Alert, use_db, release_cached_db_connection, enable_cac
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
                          add_delayed_analysis_request
 from saq.error import report_exception
-from saq.lock import LockableObject, LocalLockableObject, initialize_locking
 from saq.modules import AnalysisModule, PostAnalysisModule
 from saq.performance import record_metric
 from saq.util import human_readable_size, storage_dir_from_uuid
