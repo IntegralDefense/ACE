@@ -15,52 +15,25 @@ from saq.analysis import Analysis, Observable
 from saq.constants import *
 from saq.database import get_db_connection, use_db
 from saq.error import report_exception
-from saq.modules import AnalysisModule
+from saq.modules import AnalysisModule, PostAnalysisModule
 
-class ACEDetectionAnalysis(Analysis):
-    """Does this analysis contain a detection?"""
-    def initialize_details(self):
-        self.details = None
-
-    def generate_summary(self):
-        return None
-
-class ACEDetectionAnalyzer(AnalysisModule):
+class ACEDetectionAnalyzer(PostAnalysisModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target_mode = self.config['target_mode']
 
-    def verify_environment(self):
-        # make sure the target_mode is valid
-        if 'analysis_mode_{}'.format(self.config['target_mode']) not in saq.CONFIG:
-            raise ValueError("target_mode {} invalid".format(self.config['target_mode']))
+    def execute_post_analysis(self):
+        # do not alert on a root that has been whitelisted
+        if self.root.whitelisted:
+            logging.debug("{} has been whitelisted".format(self.root))
+            return
 
-    @property
-    def generated_analysis_type(self):
-        return ACEDetectionAnalysis
-
-    @property
-    def valid_observable_types(self):
-        return None
-
-    def execute_analysis(self, observable):
         if self.root.has_detections():
             logging.info("{} has {} detection points - changing mode to {}".format(
                          self.root, len(self.root.all_detection_points), self.target_mode))
             self.root.analysis_mode = self.target_mode
-            return True
 
-        return None
-
-class ACEAlertDatabaseAnalysis(Analysis):
-    """Is this alert in the alert database?"""
-    def initialize_details(self):
-        self.details = None
-
-    def generate_summary(self):
-        return None
-
-class ACEAlertDatabaseAnalyzer(AnalysisModule):
+class ACEAlertDatabaseAnalyzer(PostAnalysisModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target_mode = self.config['target_mode']
@@ -69,31 +42,21 @@ class ACEAlertDatabaseAnalyzer(AnalysisModule):
         # make sure the target_mode is valid
         if 'analysis_mode_{}'.format(self.config['target_mode']) not in saq.CONFIG:
             raise ValueError("target_mode {} invalid".format(self.config['target_mode']))
-        
-    @property
-    def generated_analysis_type(self):
-        return ACEAlertDatabaseAnalysis
-
-    @property
-    def valid_observable_types(self):
-        return None
 
     @use_db
-    def execute_analysis(self, observable, db, c):
+    def execute_post_analysis(self, db, c):
         # are we in the right analysis mode?
         if self.root.analysis_mode != self.target_mode:
-            return False
-
-        analysis = self.create_analysis(observable)
+            return
 
         # is this alert already in the database?
         c.execute("SELECT id FROM alerts WHERE uuid = %s", (self.root.uuid,))
         row = c.fetchone()
         if row:
-            logging.warning("uuid {} already exists in alerts table with id {}".format(self.root.uuid, row[0]))
-            return True
+            return 
 
         # otherwise insert the alert
+        logging.info("inserting {} in analysis mode {} into database".format(self.root, self.root.analysis_mode))
         alert = saq.database.Alert()
         alert.storage_dir = self.root.storage_dir
         alert.load()

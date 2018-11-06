@@ -356,6 +356,7 @@ class Engine(object):
                 continue
 
             try:
+                logging.info("loading module {}".format(section))
                 analysis_module = module_class(section)
             except Exception as e:
                 logging.error("unable to load analysis module {}: {}".format(section, e))
@@ -372,14 +373,16 @@ class Engine(object):
 
             # make sure the module generates analysis
             # this would be a programming mistake by a module author
-            if analysis_module.generated_analysis_type is None:
-                logging.critical("analysis module {} returns None for generated_analysis_type".format(analysis_module))
-                continue
+            # XXX PostAnalysisModule based classes do this
+            #if analysis_module.generated_analysis_type is None:
+                #logging.critical("analysis module {} returns None for generated_analysis_type".format(analysis_module))
+                #continue
 
             # make sure the generated analysis can initialize itself
             try:
-                check_analysis = analysis_module.generated_analysis_type()
-                check_analysis.initialize_details()
+                if analysis_module.generated_analysis_type:
+                    check_analysis = analysis_module.generated_analysis_type()
+                    check_analysis.initialize_details()
             except NotImplementedError:
                 if check_analysis.details is None:
                     logging.critical("analysis module {} generated analysis {} fails to initialize -- did you forget "
@@ -1585,7 +1588,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             # check for global observable exclusions
             if work_item.observable:
                 # has this thing been whitelisted?
-                if work_item.observable.has_tag('whitelisted'):
+                if work_item.observable.whitelisted:
                     logging.debug("{} was whitelisted -- not analyzing".format(work_item.observable))
                     if work_item.dependency:
                         work_item.dependency.set_status_failed('whitelisted')
@@ -1818,7 +1821,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 # when analyze() executes it populates the work_stack_buffer with things that need to be analyzed
                 # if the thing that was just analyzed turned out to be whitelisted (tagged with 'whitelisted')
                 # then we don't analyze anything that was just added
-                if work_item.observable and work_item.observable.has_tag('whitelisted'):
+                if work_item.observable and work_item.observable.whitelisted:
                     logging.debug("{} was whitelisted - ignoring {} items on work stack buffer".format(
                                   work_item, len(work_stack_buffer)))
                     work_stack_buffer.clear()

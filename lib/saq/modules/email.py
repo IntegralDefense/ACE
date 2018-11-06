@@ -75,6 +75,57 @@ RE_EMAIL_HEADER = re.compile(r'^[^:]+:\s.*$')
 # regex to match an email header continuation line
 RE_EMAIL_HEADER_CONTINUE = re.compile(r'^\s.*$')
 
+MAILBOX_ALERT_PREFIX = 'ACE Mailbox Scanner Detection -'
+class MailboxEmailAnalysis(Analysis):
+    def initialize_details(self):
+        self.details = None
+
+    def generate_summary(self):
+        return None
+
+class MailboxEmailAnalyzer(AnalysisModule):
+
+    @property
+    def generated_analysis_type(self):
+        return MailboxEmailAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return F_FILE
+
+    @property
+    def required_directives(self):
+        return [ DIRECTIVE_ORIGINAL_EMAIL ]
+
+    def execute_analysis(self, _file):
+        # this is ONLY for analysis of type "mailbox"
+        if self.root.alert_type != 'mailbox':
+            return False
+
+        # did we end up whitelisting the email?
+        # this actually shouldn't even fire because if the email is whitelisted then the work queue is ignored
+        # for this analysis
+        if self.root.whitelisted:
+            return False
+
+        # TODO can we wait for analysis in post analysis function?
+        analysis = self.create_analysis(_file)
+
+        email_analysis = self.wait_for_analysis(_file, EmailAnalysis)
+        if email_analysis is None:
+            self.root.description = '{} unparsable email'.format(MAILBOX_ALERT_PREFIX)
+        else:
+            if email_analysis.decoded_subject:
+                self.root.description = '{} {}'.format(MAILBOX_ALERT_PREFIX, email_analysis.decoded_subject)
+            elif email_analysis.subject:
+                self.root.description = '{} {}'.format(MAILBOX_ALERT_PREFIX, email_analysis.subject)
+            else:
+                self.root.description = '{} (no subject)'.format(MAILBOX_ALERT_PREFIX)
+
+            # merge the email analysis into the details of the root analysis
+            # XXX remove this
+            self.root.details.update(email_analysis.details)
+
 class EncryptedArchiveAnalysis(Analysis):
     def initialize_details(self):
         self.details = None
@@ -1582,7 +1633,7 @@ class EmailArchiveAction(PostAnalysisModule):
             return False
 
         # has this been whitelisted?
-        if _file.is_whitelisted:
+        if _file.whitelisted:
             logging.debug("{} has been whitelisted - not archiving".format(_file.value))
             return False
 

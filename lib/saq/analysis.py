@@ -25,6 +25,8 @@ from saq.constants import *
 from saq.error import report_exception
 from saq.util import parse_event_time
 
+STATE_KEY_WHITELISTED = 'whitelisted'
+
 ##############################################################################
 #
 # I/O tracking
@@ -513,13 +515,16 @@ class TaggableObject(EventSource):
         """Returns True if this object has this tag."""
         return tag_value in [x.name for x in self.tags]
 
+    @property
+    def whitelisted(self):
+        """Returns True if this observable has been whitelisted."""
+        return self.has_tag('whitelisted') or self.has_directive(DIRECTIVE_WHITELISTED)
+
     def mark_as_whitelisted(self):
         """Utility function to mark this Observable as whietlisted by adding the tag 'whitelisted'."""
         self.add_tag('whitelisted')
-
-    @property
-    def is_whitelisted(self):
-        return self.has_tag('whitelisted')
+        self.add_directive(DIRECTIVE_WHITELISTED)
+        self.root.whitelisted = True
 
 class Analysis(TaggableObject, DetectableObject, ProfileObject):
     """Represents an output of analysis work."""
@@ -2460,6 +2465,20 @@ class RootAnalysis(Analysis):
         self.set_modified()
 
     @property
+    def whitelisted(self):
+        """A boolean value (stored as a state field) that indicates the entire analysis has been whitelisted.
+           Analysis that is whitelisted does not become an alert."""
+        if STATE_KEY_WHITELISTED not in self.state:
+            return False
+
+        return self.state[STATE_KEY_WHITELISTED]
+
+    @whitelisted.setter
+    def whitelisted(self, value):
+        assert isinstance(value, bool)
+        self.state[STATE_KEY_WHITELISTED] = value
+
+    @property
     def company_name(self):
         """The organzaition this analysis belongs to."""
         return self._company_name
@@ -3191,6 +3210,18 @@ class RootAnalysis(Analysis):
     def get_observables_by_type(self, o_type):
         """Returns the list of Observables that match the given type."""
         return [o for o in self.all_observables if o.type == o_type]
+
+    def find_observable(self, func):
+        """Returns the first observable where func(observable) returns True, or None if none are found."""
+        for observable in self.all_observables:
+            if func(observable):
+                return observable
+
+        return None
+
+    def find_observables(self, func):
+        """Returns all observables where func(observable) returns True."""
+        return [o for o in self.all_observables if func(o)]
 
     @property
     def all(self):

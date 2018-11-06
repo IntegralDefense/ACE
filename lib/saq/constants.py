@@ -82,6 +82,7 @@ __all__ = [
     'DIRECTIVE_NO_SCAN',
     'DIRECTIVE_DELAY',
     'DIRECTIVE_EXCLUDE_ALL',
+    'DIRECTIVE_WHITELISTED',
     'VALID_DIRECTIVES',
     'is_valid_directive',
     'TAG_LEVEL_FALSE_POSITIVE',
@@ -129,6 +130,9 @@ __all__ = [
     'VALID_TARGETS',
     'ANALYSIS_MODE_CORRELATION',
     'ANALYSIS_MODE_ANALYSIS',
+    'ANALYSIS_MODE_EMAIL',
+    'ANALYSIS_MODE_HTTP',
+    'ANALYSIS_MODE_FILE',
 ]
 
 # 
@@ -417,6 +421,8 @@ DIRECTIVE_NO_SCAN = 'no_scan'
 DIRECTIVE_DELAY = 'delay'
 # instructs ACE to NOT analyze this observable at all
 DIRECTIVE_EXCLUDE_ALL = 'exclude_all'
+# indicates this observable was whitelisted, causing the entire analysis to also become whitelisted
+DIRECTIVE_WHITELISTED = 'whitelisted'
 
 VALID_DIRECTIVES = [
     DIRECTIVE_COLLECT_FILE,
@@ -428,6 +434,7 @@ VALID_DIRECTIVES = [
     DIRECTIVE_DELAY,
     DIRECTIVE_EXCLUDE_ALL,
     DIRECTIVE_NO_SCAN,
+    DIRECTIVE_WHITELISTED,
 ]
 
 def is_valid_directive(directive):
@@ -532,3 +539,6 @@ KEY_DETAILS = 'details'
 # analysis modes (more can be added)
 ANALYSIS_MODE_CORRELATION = 'correlation'
 ANALYSIS_MODE_ANALYSIS = 'analysis'
+ANALYSIS_MODE_EMAIL = 'email'
+ANALYSIS_MODE_HTTP = 'http'
+ANALYSIS_MODE_FILE = 'file'

@@ -56,6 +56,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_6(test)
         elif test.value == 'test_7':
             return self.execute_analysis_7(test)
+        elif test.value == 'test_8':
+            return self.execute_analysis_8(test)
         else:
             return False
 
@@ -87,6 +89,12 @@ class BasicTestAnalyzer(AnalysisModule):
     def execute_analysis_7(self, test):
         analysis = self.create_analysis(test)
         analysis.add_detection_point('test detection')
+        return True
+
+    def execute_analysis_8(self, test):
+        analysis = self.create_analysis(test)
+        analysis.add_detection_point('test detection')
+        self.root.whitelisted = True
         return True
 
 class MergeTestAnalysis(TestAnalysis):
