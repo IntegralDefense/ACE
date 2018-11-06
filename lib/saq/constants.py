@@ -79,6 +79,7 @@ __all__ = [
     'DIRECTIVE_EXTRACT_URLS',
     'DIRECTIVE_SANDBOX',
     'DIRECTIVE_ORIGINAL_EMAIL',
+    'DIRECTIVE_ORIGINAL_SMTP',
     'DIRECTIVE_NO_SCAN',
     'DIRECTIVE_DELAY',
     'DIRECTIVE_EXCLUDE_ALL',
@@ -133,6 +134,8 @@ __all__ = [
     'ANALYSIS_MODE_EMAIL',
     'ANALYSIS_MODE_HTTP',
     'ANALYSIS_MODE_FILE',
+    'ANALYSIS_TYPE_MAILBOX',
+    'ANALYSIS_TYPE_BRO_SMTP',
 ]
 
 # 
@@ -414,6 +417,8 @@ DIRECTIVE_EXTRACT_URLS = 'extract_urls'
 DIRECTIVE_SANDBOX = 'sandbox'
 # treat this file as the original email file
 DIRECTIVE_ORIGINAL_EMAIL = 'original_email'
+# treat this file as the original smtp stream
+DIRECTIVE_ORIGINAL_SMTP = 'original_smtp'
 # do not scan this file with yara
 DIRECTIVE_NO_SCAN = 'no_scan'
 # instructs various analysis modules that supprt this directive
@@ -429,6 +434,7 @@ VALID_DIRECTIVES = [
     DIRECTIVE_CRAWL,
     DIRECTIVE_EXTRACT_URLS,
     DIRECTIVE_ORIGINAL_EMAIL,
+    DIRECTIVE_ORIGINAL_SMTP,
     DIRECTIVE_SANDBOX,
     DIRECTIVE_FORCE_DOWNLOAD,
     DIRECTIVE_DELAY,
@@ -542,3 +548,6 @@ ANALYSIS_MODE_ANALYSIS = 'analysis'
 ANALYSIS_MODE_EMAIL = 'email'
 ANALYSIS_MODE_HTTP = 'http'
 ANALYSIS_MODE_FILE = 'file'
+
+ANALYSIS_TYPE_MAILBOX = 'mailbox'
+ANALYSIS_TYPE_BRO_SMTP = 'bro_smtp'
