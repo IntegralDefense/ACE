@@ -587,6 +587,10 @@ configuration."""
 
 class PostAnalysisModule(AnalysisModule):
     """An AnalysisModule that is only expected to execute the execute_post_analysis function."""
+
+    @property
+    def generated_analysis_type(self):
+        return None
     
     @property
     def valid_observable_types(self):

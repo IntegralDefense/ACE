@@ -456,6 +456,12 @@ class ACEBasicTestCase(TestCase):
         self.reset_workload()
         self.reset_correlation()
 
+        from api import create_app
+        self.app = create_app(testing=True)
+        self.app_context = self.app.test_request_context()                      
+        self.app_context.push()                           
+        self.client = self.app.test_client()
+
     def tearDown(self):
         close_test_comms()
 
@@ -575,7 +581,6 @@ class ACEEngineTestCase(ACEBasicTestCase):
 
         # if we create an engine using self.create_engine() then we track it here
         self.tracked_engine = None
-
         self.server_processes = {} # key = name, value ServerProcess
 
     def start_gui_server(self):
@@ -596,6 +601,10 @@ class ACEEngineTestCase(ACEBasicTestCase):
                 report_exception()
             finally:
                 self.tracked_engine = None
+
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+        self.disable_all_modules()
 
     def tearDown(self):
         ACEBasicTestCase.tearDown(self)

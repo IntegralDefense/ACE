@@ -40,24 +40,6 @@ class TestEngine(Engine):
 
 class EngineTestCase(ACEEngineTestCase):
 
-    def setUp(self, *args, **kwargs):
-        super().setUp(*args, **kwargs)
-        
-        #with get_db_connection() as db:
-            #c = db.cursor()
-            #c.execute("DELETE FROM workload")
-            #c.execute("DELETE FROM locks")
-            #c.execute("DELETE FROM delayed_analysis")
-            #db.commit()
-
-        self.reset_workload()
-        self.disable_all_modules()
-
-    def tearDown(self, *args, **kwargs):
-        super().tearDown()
-        # reload the configuration
-        saq.load_configuration()
-
     def test_engine_000_controlled_stop(self):
 
         engine = Engine()
