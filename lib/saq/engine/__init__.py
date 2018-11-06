@@ -1632,7 +1632,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
             # select the analysis modules we want to use
             # first we limit ourselves to whatever analysis modules are available for the current analysis mode
-            logging.info("analyzing {} in mode {}".format(self.root, self.root.analysis_mode))
+            #logging.debug("analyzing {} in mode {}".format(self.root, self.root.analysis_mode))
             # if we didn't specify an analysis mode then we just use the default
             if self.root.analysis_mode is None:
                 analysis_modules = self.analysis_mode_mapping[self.default_analysis_mode]

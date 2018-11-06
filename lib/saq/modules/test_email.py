@@ -109,7 +109,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # and we should be whitelisted at this point
         self.assertTrue(root.whitelisted)
 
-    def test_email_submission(self):
+    def test_email_mailbox_submission(self):
         from flask import url_for
         from saq.analysis import _JSONEncoder
         from saq.modules.email import EmailAnalysis
@@ -162,6 +162,103 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # these should be the same
         self.assertEquals(analysis.details, root.details)
 
+    def test_bro_smtp_stream_analysis(self):
+        import saq
+        import saq.modules.email
+
+        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
+        
+        root = create_root_analysis(alert_type=ANALYSIS_TYPE_BRO_SMTP, analysis_mode=ANALYSIS_MODE_EMAIL)
+        root.initialize_storage()
+        root.details = { }
+        shutil.copy(os.path.join('test_data', 'smtp_streams', 'CBmtfvapmTMqCEUw6'), 
+                    os.path.join(root.storage_dir, 'CBmtfvapmTMqCEUw6'))
+        file_observable = root.add_observable(F_FILE, 'CBmtfvapmTMqCEUw6')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_SMTP)
+        file_observable.add_directive(DIRECTIVE_NO_SCAN)
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.set_analysis_pool_size(1)
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_bro_smtp_analyzer')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        analysis = file_observable.get_analysis(saq.modules.email.BroSMTPStreamAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertEquals(len(analysis.get_observables_by_type(F_FILE)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_ADDRESS)), 2)
+        self.assertEquals(len(analysis.get_observables_by_type(F_IPV4)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_CONVERSATION)), 1)
+        self.assertTrue(saq.modules.email.KEY_CONNECTION_ID in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_IPV4 in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_PORT in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_MAIL_FROM in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_RCPT_TO in analysis.details)
+        email_file = analysis.find_observable(lambda o: o.type == F_FILE)
+        self.assertIsNotNone(email_file)
+        self.assertEquals(email_file.value, 'email.rfc822')
+        email_analysis = email_file.get_analysis(saq.modules.email.EmailAnalysis)
+        self.assertIsNotNone(email_analysis)
+
+    def test_bro_smtp_stream_submission(self):
+        from flask import url_for
+        from saq.analysis import _JSONEncoder
+        from saq.modules.email import EmailAnalysis, BroSMTPStreamAnalysis
+
+        t = saq.LOCAL_TIMEZONE.localize(datetime.datetime.now()).astimezone(pytz.UTC).strftime(event_time_format_json_tz)
+        with open(os.path.join('test_data', 'smtp_streams', 'CBmtfvapmTMqCEUw6'), 'rb') as fp:
+            result = self.client.post(url_for('analysis.submit'), data={
+                'analysis': json.dumps({
+                    'analysis_mode': ANALYSIS_MODE_EMAIL,
+                    'tool': 'unittest',
+                    'tool_instance': 'unittest_instance',
+                    'type': ANALYSIS_TYPE_BRO_SMTP,
+                    'description': 'BRO SMTP Scanner Detection - ',
+                    'event_time': t,
+                    'details': { },
+                    'observables': [
+                        { 'type': F_FILE, 'value': 'CBmtfvapmTMqCEUw6', 'time': t, 'tags': [], 'directives': [ DIRECTIVE_ORIGINAL_SMTP ], 'limited_analysis': [] },
+                    ],
+                    'tags': [ ],
+                }, cls=_JSONEncoder),
+                'file': (fp, 'CBmtfvapmTMqCEUw6'),
+            }, content_type='multipart/form-data')
+
+        result = result.get_json()
+        self.assertIsNotNone(result)
+
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        # make sure we don't clean up the anaysis so we can check it
+        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type')
+        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_bro_smtp_analyzer')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+        observable = root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_SMTP))
+        self.assertIsNotNone(observable)
+        analysis = observable.get_analysis(BroSMTPStreamAnalysis)
+        self.assertIsNotNone(analysis)
+
     def test_email_splunk_logging(self):
 
         # clear splunk logging directory
@@ -180,6 +277,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
+        engine.set_analysis_pool_size(1)
         engine.enable_module('analysis_module_file_type')
         engine.enable_module('analysis_module_email_analyzer')
         engine.enable_module('analysis_module_email_logger')

@@ -909,6 +909,18 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
 
         return result[0]
 
+    def find_observable(self, func):
+        """Returns the first observable where func(observable) returns True, or None if none are found."""
+        for observable in self.observables:
+            if func(observable):
+                return observable
+
+        return None
+
+    def find_observables(self, func):
+        """Returns all observables where func(observable) returns True."""
+        return [o for o in self.observables if func(o)]
+
     @property
     def files(self):
         """Returns the list of observables of type F_FILE that actually exists with the Alert."""
