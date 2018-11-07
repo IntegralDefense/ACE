@@ -15,9 +15,9 @@ from saq.analysis import Analysis, Observable
 from saq.constants import *
 from saq.database import get_db_connection, use_db
 from saq.error import report_exception
-from saq.modules import AnalysisModule, PostAnalysisModule
+from saq.modules import AnalysisModule
 
-class ACEDetectionAnalyzer(PostAnalysisModule):
+class ACEDetectionAnalyzer(AnalysisModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target_mode = self.config['target_mode']
@@ -33,7 +33,7 @@ class ACEDetectionAnalyzer(PostAnalysisModule):
                          self.root, len(self.root.all_detection_points), self.target_mode))
             self.root.analysis_mode = self.target_mode
 
-class ACEAlertDatabaseAnalyzer(PostAnalysisModule):
+class ACEAlertDatabaseAnalyzer(AnalysisModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.target_mode = self.config['target_mode']

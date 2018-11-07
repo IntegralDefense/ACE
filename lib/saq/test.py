@@ -28,6 +28,7 @@ __all__ = [
     'GUIServer',
     'search_log',
     'search_log_regex',
+    'TestEngine',
 ]
 
 import atexit
@@ -46,6 +47,7 @@ from subprocess import Popen, PIPE
 import saq
 from saq.analysis import RootAnalysis, _enable_io_tracker, _disable_io_tracker
 from saq.database import initialize_database, get_db_connection, use_db
+from saq.engine import Engine
 from saq.error import report_exception
 from saq.util import storage_dir_from_uuid
 
@@ -666,3 +668,14 @@ class CloudphishServer(EngineProcess):
 class ACEModuleTestCase(ACEEngineTestCase):
     pass
 
+class TestEngine(Engine):
+    def __init__(self, *args, **kwargs):
+        super().__init__(name='unittest', *args, **kwargs)
+
+    def enable_module(self, module_name):
+        """Adds a module to be enabled."""
+        saq.CONFIG[module_name]['enabled'] = 'yes'
+        saq.CONFIG['analysis_mode_test_empty'][module_name] = 'yes'
+
+    def set_analysis_pool_size(self, count):
+        saq.CONFIG['engine']['analysis_pool_size_any'] = str(count)

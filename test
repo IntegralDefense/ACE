@@ -59,6 +59,7 @@ then
         saq.modules.test_url \
         saq.modules.test_file_analysis \
         saq.modules.test_email \
+        saq.modules.test_http \
         api.analysis.test \
 
         # TODO reintroduce these next two somehow

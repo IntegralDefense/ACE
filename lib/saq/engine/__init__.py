@@ -34,7 +34,7 @@ from saq.database import Alert, use_db, release_cached_db_connection, enable_cac
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
                          add_delayed_analysis_request
 from saq.error import report_exception
-from saq.modules import AnalysisModule, PostAnalysisModule
+from saq.modules import AnalysisModule
 from saq.performance import record_metric
 from saq.util import human_readable_size, storage_dir_from_uuid
 
@@ -48,6 +48,9 @@ DB_CONFIG = 'workload'
 # global pointer to the engine that is currently running
 # only one engine runs per process
 CURRENT_ENGINE = None
+
+# state flag that indicates pre-analysis has been executed on a RootAnalysis
+STATE_PRE_ANALYSIS_EXECUTED = 'pre_analysis_executed'
 
 class AnalysisTimeoutError(RuntimeError):
     pass
@@ -371,16 +374,9 @@ class Engine(object):
                 report_exception()
                 continue
 
-            # make sure the module generates analysis
-            # this would be a programming mistake by a module author
-            # XXX PostAnalysisModule based classes do this
-            #if analysis_module.generated_analysis_type is None:
-                #logging.critical("analysis module {} returns None for generated_analysis_type".format(analysis_module))
-                #continue
-
-            # make sure the generated analysis can initialize itself
+            # if this module genereated analysis then make sure the generated analysis can initialize itself
             try:
-                if analysis_module.generated_analysis_type:
+                if analysis_module.generated_analysis_type is not None:
                     check_analysis = analysis_module.generated_analysis_type()
                     check_analysis.initialize_details()
             except NotImplementedError:
@@ -1144,6 +1140,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         else:
             # is this analysis_mode one that we want to clean up?
             if self.root.analysis_mode is not None \
+            and 'analysis_mode_{}'.format(self.root.analysis_mode) in saq.CONFIG \
             and saq.CONFIG['analysis_mode_{}'.format(self.root.analysis_mode)].getboolean('cleanup'):
                 # OK then is there any outstanding work assigned to this uuid?
                 try:
@@ -1214,6 +1211,11 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         for analysis_module in self.analysis_modules:
             analysis_module.root = self.root
 
+        # track module pre-analysis execution
+        if STATE_PRE_ANALYSIS_EXECUTED not in self.root.state:
+            self.root.state[STATE_PRE_ANALYSIS_EXECUTED] = {} # key = analysis_module.config_section
+                                                              # value = boolean result of function call
+
         # when something goes wrong it helps to have the logs specific to this analysis
         logging_handler = logging.FileHandler(os.path.join(self.root.storage_dir, 'saq.log'))
         logging_handler.setLevel(logging.getLogger().level)
@@ -1222,15 +1224,12 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         elapsed_time = None
         error_report_path = None
-
         try:
             start_time = time.time()
+            
             # don't even start if we're already cancelled
             if not self.cancel_analysis_flag:
                 self.execute_module_analysis()
-
-            elapsed_time = time.time() - start_time
-            logging.info("completed analysis {} in {:.2f} seconds".format(target, elapsed_time))
 
             # do we NOT have any outstanding delayed analysis requests?
             if not self.root.delayed:
@@ -1242,6 +1241,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                     except Exception as e:
                         logging.error("post analysis module {} failed".format(analysis_module))
                         report_exception()
+
+            elapsed_time = time.time() - start_time
+            logging.info("completed analysis {} in {:.2f} seconds".format(target, elapsed_time))
 
             # save all the changes we've made
             self.root.save() 
@@ -1336,6 +1338,26 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
     def execute_module_analysis(self):
         """Implements the recursive analysis logic of ACE."""
+
+        # first we execute any pre-analysis routines that are loaded for the current analysis mode
+        # this may end up introducing more observables so we do this before we initialize our work stack
+        if self.delayed_analysis_request is None: # don't need to bother if we're working on a delayed analysis req
+            target_analysis_mode = self.root.analysis_mode 
+            if target_analysis_mode is None or target_analysis_mode not in self.analysis_mode_mapping:
+                target_analysis_mode = self.default_analysis_mode
+
+            state = self.root.state[STATE_PRE_ANALYSIS_EXECUTED]
+            for analysis_module in self.analysis_mode_mapping[target_analysis_mode]:
+                if analysis_module.config_section not in state:
+                    try:
+                        state[analysis_module.config_section] = bool(analysis_module.execute_pre_analysis())
+                    except Exception as e:
+                        logging.error("pre analysis module {} failed".format(analysis_module))
+                        report_exception()
+                        state[analysis_module.config_section] = False
+
+                if self.cancel_analysis_flag:
+                    return
 
         class WorkTarget(object):
             """Utility class the defines what exactly we're working on at the moment."""
@@ -1670,8 +1692,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 if self.cancel_analysis_flag:
                     break
 
-                # is this module only supposed to execute in post analysis?
-                if isinstance(analysis_module, PostAnalysisModule):
+                # if this module does not generate analysis then we skip this part
+                # (it may execute pre and post analysis though)
+                if analysis_module.generated_analysis_type is None:
                     continue
 
                 if work_item.observable:
@@ -1686,10 +1709,11 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                     # XXX previous logic should have filtered these out
                     # are we NOT working on a delayed analysis request?
                     # have we delayed analysis here?
-                    target_analysis = work_item.observable.get_analysis(analysis_module.generated_analysis_type)
-                    if target_analysis and target_analysis.delayed:
-                        logging.debug("analysis for {} by {} has been delayed".format(work_item, analysis_module))
-                        continue
+                    if analysis_module.generated_analysis_type is not None:
+                        target_analysis = work_item.observable.get_analysis(analysis_module.generated_analysis_type)
+                        if target_analysis and target_analysis.delayed:
+                            logging.debug("analysis for {} by {} has been delayed".format(work_item, analysis_module))
+                            continue
 
                 #logging.debug("analyzing {} with {}".format(work_item, analysis_module))
                 last_work_stack_size = len(work_stack)

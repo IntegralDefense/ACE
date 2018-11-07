@@ -15,7 +15,7 @@ from saq.analysis import Analysis, Observable, recurse_down, TaggableObject
 from saq.database import Alert
 from saq.constants import *
 from saq.error import report_exception
-from saq.modules import AnalysisModule, TagAnalysisModule, PostAnalysisModule
+from saq.modules import AnalysisModule, TagAnalysisModule
 from saq.util import is_subdomain
 
 class TagAnalysis(Analysis):
@@ -293,11 +293,7 @@ class CorrelatedTagDefinition(object):
 
         return len(result) > 0
 
-class CorrelatedTagAnalysis(Analysis):
-    def initialize_details(self):
-        self.details = None
-
-class CorrelatedTagAnalyzer(PostAnalysisModule):
+class CorrelatedTagAnalyzer(AnalysisModule):
     """Does this combination of tagging exist on objects with a common ancestry?"""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -316,45 +312,32 @@ class CorrelatedTagAnalyzer(PostAnalysisModule):
                                          [x.strip() for x in self.config[config_rule].split(',')]))
                 logging.info("loaded definition for {}".format(config_rule))
 
-    @property
-    def generated_analysis_type(self):
-        return CorrelatedTagAnalysis
-
-    @property
-    def valid_analysis_target_type(self):
-        return None # any
-
-    @property
-    def valid_observable_types(self):
-        return None # any
-
-    def execute_analysis(self, target):
-        pass
-
-    def execute_final_analysis(self, target):
-
-        for _def in self.definitions:
-            _def.reset()
-
-        # does this target have a tag we're looking for?
-        if not _def.match(target):
-            return
-
-        for _def in self.definitions:
-            _def.reset()
-        
-        for obj in self.root.all:
+    def execute_post_analysis(self):
+        for target in root.all:
             for _def in self.definitions:
-                _def.match(obj)
+                _def.reset()
 
-        for _def in self.definitions:
-            if _def.matches():
-                already_detected = False
-                message = "Correlated Tag Match: {}".format(_def.text)
-                for detection_point in target.detections:
-                    if detection_point.description == message:
-                        already_detected = True
-                        break
+            # does this target have a tag we're looking for?
+            if not _def.match(target):
+                return False
 
-                if not already_detected:
-                    target.add_detection_point("Correlated Tag Match: {}".format(_def.text))
+            for _def in self.definitions:
+                _def.reset()
+            
+            for obj in self.root.all:
+                for _def in self.definitions:
+                    _def.match(obj)
+
+            for _def in self.definitions:
+                if _def.matches():
+                    already_detected = False
+                    message = "Correlated Tag Match: {}".format(_def.text)
+                    for detection_point in target.detections:
+                        if detection_point.description == message:
+                            already_detected = True
+                            break
+
+                    if not already_detected:
+                        target.add_detection_point("Correlated Tag Match: {}".format(_def.text))
+
+            return True

@@ -26,7 +26,7 @@ from saq.crypto import encrypt, decrypt
 from saq.database import get_db_connection, execute_with_retry, Alert, use_db
 from saq.email import normalize_email_address, search_archive, get_email_archive_sections
 from saq.error import report_exception
-from saq.modules import AnalysisModule, SplunkAnalysisModule, AnalysisModule, PostAnalysisModule
+from saq.modules import AnalysisModule, SplunkAnalysisModule, AnalysisModule
 from saq.modules.util import get_email
 from saq.process_server import Popen, PIPE
 from saq.whitelist import BrotexWhitelist, WHITELIST_TYPE_SMTP_FROM, WHITELIST_TYPE_SMTP_TO
@@ -1768,7 +1768,7 @@ class EmailArchiveResults(Analysis):
 
         return "Archive Path - {}".format(self.details)
 
-class EmailArchiveAction(PostAnalysisModule):
+class EmailArchiveAction(AnalysisModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     
@@ -1782,46 +1782,37 @@ class EmailArchiveAction(PostAnalysisModule):
         self.verify_path_exists(self.config['archive_dir'])
 
     @property
+    def valid_observable_types(self):
+        return [ F_FILE ]
+
+    @property
+    def required_directives(self):
+        return [ DIRECTIVE_ARCHIVE, DIRECTIVE_ORIGINAL_EMAIL ]
+
+    @property
     def generated_analysis_type(self):
         return EmailArchiveResults
 
-    def execute_post_analysis(self):
-        from saq.modules.file_analysis import FileHashAnalysis
-
-        # this is only valid for mailbox and brotex - smtp type analysis
-        if self.root.alert_type != 'mailbox' and self.root.alert_type != 'brotex - smtp - v2':
-            return False
-
-        # find the root email for this analysis
-        _file = None
-        for observable in self.root.all_observables:
-            if observable.has_directive(DIRECTIVE_ORIGINAL_EMAIL):
-                _file = observable
-                break
-
-        if not _file:
-            logging.debug("cannot find original email in {}".format(self.root))
-            return False
-
-        # it also needs the directive to archive
-        if not _file.has_directive(DIRECTIVE_ARCHIVE):
-            logging.debug("{} does not have directive {}".format(_file, DIRECTIVE_ARCHIVE))
-            return False
-
+    def execute_analysis(self, _file):
         # has this been whitelisted?
         if _file.whitelisted:
             logging.debug("{} has been whitelisted - not archiving".format(_file.value))
-            return False
-
-        email_analysis = _file.get_analysis(EmailAnalysis)
-        if not email_analysis:
-            logging.warning("cannot find EmailAnalysis for {}".format(_file))
             return False
 
         # if this file has been decrypted from the archives then we obviously don't need to process any further
         if _file.has_tag('decrypted_email'):
             # this should not happen now
             logging.warning("detected decrypted email {} as original email".format(_file))
+            return False
+
+        # we'll wait until the end of analysis
+        return True
+
+    def execute_final_analysis(self, _file):
+        from saq.modules.file_analysis import FileHashAnalysis
+        email_analysis = _file.get_analysis(EmailAnalysis)
+        if not email_analysis:
+            logging.warning("cannot find EmailAnalysis for {}".format(_file))
             return False
 
         _file.compute_hashes()
@@ -1898,14 +1889,17 @@ class EmailArchiveAction(PostAnalysisModule):
                     logging.debug("got server_id {} for {}".format(self.server_id, self.hostname))
                 except:
                     # create the server_id if it does not exist yet
-                    c.execute("INSERT IGNORE INTO archive_server ( hostname ) VALUES ( %s )", (self.hostname,))
+                    execute_with_retry(db, c, "INSERT IGNORE INTO archive_server ( hostname ) VALUES ( %s )", 
+                                      (self.hostname,))
                     db.commit()
+
                     c.execute("SELECT server_id FROM archive_server WHERE hostname = %s", (self.hostname,))
                     row = c.fetchone() 
                     self.server_id = row[0]
                     logging.debug("created server_id {} for {}".format(self.server_id, self.hostname))
 
-            c.execute("INSERT INTO archive ( server_id, md5 ) VALUES ( %s, UNHEX(%s) )", (self.server_id, email_md5))
+            execute_with_retry(db, c, "INSERT INTO archive ( server_id, md5 ) VALUES ( %s, UNHEX(%s) )", 
+                              (self.server_id, email_md5))
             archive_id = c.lastrowid
 
             if not archive_id:
@@ -1957,10 +1951,12 @@ class EmailArchiveAction(PostAnalysisModule):
                 hasher.update(email_property.encode('ascii', errors='ignore'))
                 property_md5 = hasher.hexdigest()
 
-                c.execute("INSERT IGNORE INTO archive_index ( field, hash, archive_id ) VALUES ( %s, UNHEX(%s), %s )",
-                          (field, property_md5, archive_id))
-                c.execute("INSERT IGNORE INTO archive_search ( field, value, archive_id ) VALUES ( %s, %s, %s )", 
-                          (field, email_property[:2083], archive_id))
+                execute_with_retry(db, c, 
+                    "INSERT IGNORE INTO archive_index ( field, hash, archive_id ) VALUES ( %s, UNHEX(%s), %s )",
+                    (field, property_md5, archive_id))
+                execute_with_retry(db, c, 
+                    "INSERT IGNORE INTO archive_search ( field, value, archive_id ) VALUES ( %s, %s, %s )", 
+                    (field, email_property[:2083], archive_id))
 
             db.commit()
 

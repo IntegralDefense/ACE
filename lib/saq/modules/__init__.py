@@ -323,13 +323,17 @@ class AnalysisModule(object):
     @property
     def generated_analysis_type(self):
         """Returns the type of the Analysis-based class this AnalysisModule generates.  
-           You must override this function in your subclass."""
-        raise NotImplementedError()
+           Returns None if this AnalysisModule does not generate an Analysis object."""
+        return None
 
     def create_analysis(self, observable):
         """Initializes and adds the generated Analysis for this module to the given Observable. 
            Returns the generated Analysis."""
         # have we already created analysis for this observable?
+        if self.generated_analysis_type is None:
+            logging.critical("called create_analysis on {} which does not actually create Analysis".format(self))
+            return None
+
         analysis = observable.get_analysis(self.generated_analysis_type)
         if analysis:
             logging.debug("returning existing analysis {} in call to create analysis from {} for {}".format(
@@ -342,6 +346,7 @@ class AnalysisModule(object):
         observable.add_analysis(analysis)
         return analysis
 
+    # XXX this is not supported at all
     @property
     def valid_analysis_target_type(self):
         """Returns a valid analysis target type for this module.  
@@ -364,6 +369,11 @@ class AnalysisModule(object):
 
         # we still call execution on the module in cooldown mode
         # there may be things it can (or should) do while on cooldown
+
+        # if this analysis module does not generate analysis then we can skip this
+        # these are typically analysis modules that only do pre or post analysis work
+        if self.generated_analysis_type is None:
+            return False
 
         if self.valid_analysis_target_type is not None:
             if not isinstance(obj, self.valid_analysis_target_type):
@@ -561,8 +571,12 @@ class AnalysisModule(object):
         """Called to analyze Analysis or Observable objects after all other analysis has completed."""
         return False
 
+    def execute_pre_analysis(self):
+        """This is called once at the very beginning of analysis."""
+        pass
+
     def execute_post_analysis(self):
-        """Called to perform post processing work. Override this in your subclass."""
+        """This is called once after all analysis work has been performed and no outstanding work is left."""
         pass
 
     def auto_reload(self):
@@ -584,24 +598,6 @@ configuration."""
     def maintenance_frequency(self):
         """Returns how often to execute the maintenance function, in seconds, or None to disable (the default.)"""
         return None
-
-class PostAnalysisModule(AnalysisModule):
-    """An AnalysisModule that is only expected to execute the execute_post_analysis function."""
-
-    @property
-    def generated_analysis_type(self):
-        return None
-    
-    @property
-    def valid_observable_types(self):
-        return None
-
-    @property
-    def required_directives(self):
-        return [ ]
-
-    def execute_analysis(self, target):
-        return False
 
 class TagAnalysisModule(AnalysisModule):
     """These types of modules ignore any exclusion rules."""

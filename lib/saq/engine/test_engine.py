@@ -26,18 +26,6 @@ from saq.observables import create_observable
 from saq.test import *
 from saq.util import storage_dir_from_uuid
 
-class TestEngine(Engine):
-    def __init__(self, *args, **kwargs):
-        super().__init__(name='unittest', *args, **kwargs)
-
-    def enable_module(self, module_name):
-        """Adds a module to be enabled."""
-        saq.CONFIG[module_name]['enabled'] = 'yes'
-        saq.CONFIG['analysis_mode_test_empty'][module_name] = 'yes'
-
-    def set_analysis_pool_size(self, count):
-        saq.CONFIG['engine']['analysis_pool_size_any'] = str(count)
-
 class EngineTestCase(ACEEngineTestCase):
 
     def test_engine_000_controlled_stop(self):

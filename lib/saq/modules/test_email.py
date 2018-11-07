@@ -486,6 +486,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
             c = db.cursor()
             c.execute("SELECT archive_id FROM archive")
             row = c.fetchone()
+            self.assertIsNotNone(row)
             archive_id = row[0]
 
             # check the index and make sure all the expected values are there
