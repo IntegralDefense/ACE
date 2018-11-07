@@ -1301,3 +1301,121 @@ class EngineTestCase(ACEEngineTestCase):
 
         self.assertFalse(os.path.isdir(root.storage_dir))
         self.assertEquals(log_count('not cleaning up RootAnalysis({}) (found outstanding work)'.format(root.uuid)), 1)
+
+    def test_local_analysis_mode_single(self):
+
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+    def test_local_analysis_mode_missing_default(self):
+
+        # we specify test_single as the supported local analysis mode, but the default is test_empty
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_single'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+        # both test_empty and test_single should be in this list
+        self.assertEquals(len(engine.local_analysis_modes), 2)
+        self.assertTrue('test_single' in engine.local_analysis_modes)
+        self.assertTrue('test_empty' in engine.local_analysis_modes)
+
+    def test_local_analysis_mode_missing_pool(self):
+
+        # we specify test_single as the default and the local mode
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_single'
+        saq.CONFIG['engine']['default_analysis_mode'] = 'test_single'
+
+        # we also specify an analysis pool for test_empty
+        saq.CONFIG['engine']['analysis_pool_size_test_empty'] = '1'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+        # both test_empty and test_single should be in this list
+        self.assertEquals(len(engine.local_analysis_modes), 2)
+        self.assertTrue('test_single' in engine.local_analysis_modes)
+        self.assertTrue('test_empty' in engine.local_analysis_modes)
+
+    def test_local_analysis_mode_not_local(self):
+
+        # we say we only support test_empty analysis modes
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        # but we target test_single for this analysis
+        root.analysis_mode = 'test_single'
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+
+        # we should see this message over and over again
+        wait_for_log_count('queue sizes workload 1 delayed 0', 5)
+        engine.stop()
+        engine.wait()
