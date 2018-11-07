@@ -646,15 +646,16 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         # this gets stored in the main json data structure
         self._summary = self.generate_summary()
 
+        # this is a thing now -- analysis modules are over-writing the details of the root analysis since we got rid of the "engines" 
         # try to catch a case where we set the data but forgot to load first
-        overwrite_warning = False
-        if self._details is not None and not self.external_details_loaded and self.external_details_path is not None:
-            full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
-            if os.path.exists(full_path):
-                logging.warning("saving new data over existing data without loading existing data in {} from {}".format(self, self.external_details_path))
-                logging.warning("previous file size was {} bytes".format(os.path.getsize(full_path)))
-                logging.warning("new details is type {} value {}".format(type(self._details), self._details))
-                overwrite_warning = True
+        #overwrite_warning = False
+        #if self._details is not None and not self.external_details_loaded and self.external_details_path is not None:
+            #full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
+            #if os.path.exists(full_path):
+                #logging.warning("saving new data over existing data without loading existing data in {} from {}".format(self, self.external_details_path))
+                #logging.warning("previous file size was {} bytes".format(os.path.getsize(full_path)))
+                #logging.warning("new details is type {} value {}".format(type(self._details), self._details))
+                #overwrite_warning = True
 
         # have we figured out where we are saving the data to?
         if self.external_details_path is None:
@@ -674,9 +675,9 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
             json.dump(self._details, fp, cls=_JSONEncoder)
             _track_writes()
 
-        if overwrite_warning:
-            full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
-            logging.warning("new file size is {} bytes".format(os.path.getsize(full_path)))
+        #if overwrite_warning:
+            #full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
+            #logging.warning("new file size is {} bytes".format(os.path.getsize(full_path)))
 
         # at this point we consider the data "loaded"
         self.external_details_loaded = True
