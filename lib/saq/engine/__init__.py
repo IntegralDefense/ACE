@@ -128,12 +128,23 @@ class Engine(object):
         # a mapping of analysis module configuration section headers to the load analysis modules
         self.analysis_module_mapping = {} # key = analysis_module_blah, value = AnalysisModule
 
+        # the list of analysis modes this engine will work on
+        # if this list is empty then it will work on any analysis mode
+        self.local_analysis_modes = [_.strip() for _ in self.config['local_analysis_modes'].split(',') if _]
+
         # the default analysis mode for RootAnalysis objects assigned to invalid analysis modes
         self.default_analysis_mode = self.config['default_analysis_mode']
         # make sure this analysis mode is valid
         if 'analysis_mode_{}'.format(self.default_analysis_mode) not in saq.CONFIG:
             logging.critical("engine.default_analysis_mode value {} invalid (no such analysis mode defined)".format(
                               self.default_analysis_mode))
+
+        # and make sure we actually support this analysis mode locally
+        # if we don't when we issue a warning and support it
+        if self.local_analysis_modes and self.default_analysis_mode not in self.local_analysis_modes:
+            logging.warning("engine.default_analysis_mode is {} but is not listed in engine.local_analysis_modes".format(
+                            self.default_analysis_mode))
+            self.local_analysis_modes.append(self.default_analysis_mode)
 
         # things we do *not* want to analyze
         self.observable_exclusions = {} # key = o_type, value = [] of values
@@ -831,7 +842,15 @@ class Engine(object):
 
         for key in self.config.keys():
             if key.startswith('analysis_pool_size_'):
+                logging.info("MARKER: {}".format(key))
                 mode = key[len('analysis_pool_size_'):]
+
+                # make sure we support this mode locally
+                if self.local_analysis_modes and mode not in self.local_analysis_modes:
+                    logging.warning("engine.{} specified but {} not in engine.local_analysis_modes".format(
+                                    key, mode))
+                    self.local_analysis_modes.append(mode)
+
                 for i in range(self.config.getint(key)):
                     event = Event()
                     p = Process(target=self.worker_loop, 
@@ -879,7 +898,7 @@ class Engine(object):
         self.start_workers()
 
     def worker_loop(self, analysis_mode_priority, started_event):
-        logging.info("started worker loop on process {}".format(os.getpid()))
+        logging.info("started worker loop on process {} with priority {}".format(os.getpid(), analysis_mode_priority))
         enable_cached_db_connections()
 
         # this determines what kind of work we look for first
@@ -1010,7 +1029,13 @@ ORDER BY
             where_clause.append('workload.node = %s')
             params.append(saq.SAQ_NODE)
 
+        if self.local_analysis_modes:
+            # limit our scope to locally support analysis modes
+            where_clause.append('workload.analysis_mode IN ( {} )'.format(','.join(['%s' for _ in self.local_analysis_modes])))
+            params.extend(self.local_analysis_modes)
+
         where_clause = ' AND '.join(['({})'.format(clause) for clause in where_clause])
+
 
         logging.debug("looking for work with {} ({})".format(where_clause, ','.join(params)))
 
