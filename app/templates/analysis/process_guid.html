@@ -1,70 +1,10 @@
-<table class="table table-bordered table-condensed">
-
 <p><b>Process Details</b></p>
-    <tr>
-        <td class="col-md-2">Process Name</td>
-        <td class="col-md-10">{{analysis.details['process_name']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Hostname</td>
-        <td class="col-md-10">{{analysis.details['hostname']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Username</td>
-        <td class="col-md-10">{{analysis.details['username']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Start Time</td>
-        <td class="col-md-10">{{analysis.details['start']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Command line</td>
-        <td class="col-md-10">{{analysis.details['cmdline']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Process MD5 Hash</td>
-        <td class="col-md-10">{{analysis.details['process_md5']}}</td>
-    </tr>
-</Table>
-<table class="table table-bordered table-condensed">
-<p><b>Binary Details</b></p>
-    <tr>
-        <td class="col-md-2">Description</td>
-        <td class="col-md-10">{{analysis.details['binary_file_desc']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Legal Copyright</td>
-        <td class="col-md-10">{{analysis.details['binary_legal_copyright']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Original Filename</td>
-        <td class="col-md-10">{{analysis.details['binary_original_filename']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Signature Status</td>
-        <td class="col-md-10">{{analysis.details['binary_sig_status']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Signature Publisher</td>
-        <td class="col-md-10">{{analysis.details['binary_sig_publisher']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Signature Issuer</td>
-        <td class="col-md-10">{{analysis.details['binary_sig_issuer']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">Signature Subject</td>
-        <td class="col-md-10">{{analysis.details['binary_sig_subject']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">VirusTotal Score</td>
-        <td class="col-md-10">{{analysis.details['binary_vt_score']}}</td>
-    </tr>
-    <tr>
-        <td class="col-md-2">VirusTotal Link</td>
-        <td class="col-md-10">{{analysis.details['binary_vt_link']}}</td>
-    </tr>
-</Table>
+<div class="row">
+    <div class="col-md-12">
+        <!-- by default we just pretty-print the json -->
+        {% block alert_details %} <pre>{{ analysis.details['process_info_str'] }}</pre> {% endblock %}
+    </div>
+</div>
 
 <div id="accordion" role="tablist" aria-multiselectable="true">
 
@@ -110,6 +50,11 @@
             <td class="col-md-10">{{analysis.details['parent']['id']}}</td>
           </tr>
         </table>
+	<div class="row">
+          <div class="col-md-12">
+            {% block alert_proc_ancestry %} <pre>{{ analysis.details['process_ancestry'] }}</pre> {% endblock %}
+	  </div>
+	</div>
       </div>
     </div>
   </div>
@@ -123,7 +68,7 @@
       </h5>
     </div>
     <div id="collapseProcessTree" class="collapse" role="tabpanel" aria-labelledby="headingOne">
-      <div class="card-block">
+      <!--div class="card-block">
         <ul>
           {% for depth, proc in analysis.details['process_tree'] %}
             {% for n in range(depth) %}
@@ -135,7 +80,12 @@
             {% endfor %}
           {% endfor %}
         </ul>
-      </div>
+      </div-->
+      <div class="row">
+          <div class="col-md-12">
+            {% block alert_proc_tree %} <pre>{{ analysis.details['process_tree_str'] }}</pre> {% endblock %}
+          </div>
+        </div>
     </div>
   </div>
 
@@ -260,7 +210,7 @@
       </h5>
     </div> 
     <div id="collapseCrossProcs" class="collapse" role="tabpanel">
-      <div class="card-block">
+      <!--div class="card-block">
         {% if analysis.details['crossproc_count'] > 0 %}
           <table class="table table-bordered table-condensed">
             {% for cp in analysis.details['crossprocs'] %}
@@ -275,6 +225,26 @@
         {% else %}
           This process performed zero crossprocs.
         {% endif %}
+      </div-->
+      <div class="row">
+          <div class="col-md-12">
+            {% block alert_cproc %}
+	    {% for cp in analysis.details['crossprocs'] %}
+	      <pre>
+	        Timestamp: {{cp['timestamp']}}
+		Type: {{cp['type']}}
+		Source Path: {{cp['source_path']}} (md5: {{cp['source_md5']}})
+		Target Path: {{cp['target_path']}} (md5: {{cp['target_md5']}})
+                Source Process GUID: {{cp['source_proc_guid']}}
+		Target Process GUID: {{cp['target_proc_guid']}}
+		Source Web Link: {{cp['source_web_link']}}
+		Target Web Link: {{cp['target_web_link']}}
+		Privileges: {{cp['privileges']}}
+	      </pre>
+	    {% endfor %}
+	    {% endblock %}
+          </div>
+        </div>
       </div>
     </div>
   </div>
