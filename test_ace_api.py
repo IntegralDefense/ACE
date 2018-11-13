@@ -14,7 +14,7 @@ import saq
 from saq.analysis import RootAnalysis
 from saq.database import acquire_lock, use_db
 from saq.test import *
-from saq.util import storage_dir_from_uuid
+from saq.util import storage_dir_from_uuid, parse_event_time
 
 import pytz
 import tzlocal
@@ -104,7 +104,8 @@ class APIWrapperTestCase(ACEEngineTestCase):
         finally:
             os.remove(temp_path)
 
-    def test_submit(self):
+    @use_db
+    def test_submit(self, db, c):
         result = self._submit()
         self.assertIsNotNone(result)
 
@@ -123,8 +124,7 @@ class APIWrapperTestCase(ACEEngineTestCase):
         self.assertEquals(root.alert_type, 'unittest_type')
         self.assertEquals(root.description, 'testing')
         self.assertEquals(root.details, {'hello': 'world'})
-        # this fails because the timezone objects are different even thought they both represent utc
-        #self.assertEquals(root.event_time, self._get_localized_submit_time())
+        self.assertEquals(root.event_time, self._get_localized_submit_time())
         self.assertEquals(root.tags[0].name, 'alert_tag_1')
         self.assertEquals(root.tags[1].name, 'alert_tag_2')
         # NOTE that this is 4 instead of 2 since adding a file adds a F_FILE observable type
@@ -147,47 +147,6 @@ class APIWrapperTestCase(ACEEngineTestCase):
         self.assertIsNotNone(o)
         self.assertEquals(os.path.getsize(os.path.join(root.storage_dir, o.value)), 1024)
 
-    def blah(self):
-
-        result = self.client.get(url_for('analysis.get_analysis', uuid=uuid))
-        result = result.get_json()
-        self.assertIsNotNone(result)
-        self.assertTrue('result' in result)
-        result = result['result']
-
-        self.assertEquals(result['analysis_mode'], 'analysis')
-        self.assertEquals(result['tool'], 'unittest')
-        self.assertEquals(result['tool_instance'], 'unittest_instance')
-        self.assertEquals(result['type'], 'unittest')
-        self.assertEquals(result['description'], 'testing')
-        self.assertEquals(result['event_time'], '2017-11-11T07:36:01.000001+0000')
-        self.assertEquals(result['tags'][0], 'alert_tag_1')
-        self.assertEquals(result['tags'][1], 'alert_tag_2')
-        self.assertEquals(len(result['observable_store']), 3)
-
-        file_uuid = None
-
-        for o_uuid in result['observable_store']:
-            o = result['observable_store'][o_uuid]
-            if o['type'] == F_IPV4:
-                self.assertEquals(o['type'], F_IPV4)
-                self.assertEquals(o['value'], '1.2.3.4')
-                self.assertEquals(o['time'], '2017-11-11T07:36:01.000001+0000')
-                self.assertEquals(o['tags'][0], 'tag_1')
-                self.assertEquals(o['tags'][1], 'tag_2')
-                self.assertEquals(o['directives'][0], DIRECTIVE_NO_SCAN)
-                self.assertEquals(o['limited_analysis'][0], 'basic_test')
-            elif o['type'] == F_USER:
-                self.assertEquals(o['type'], F_USER)
-                self.assertEquals(o['value'], 'test_user')
-                self.assertEquals(o['time'], '2017-11-11T07:36:01.000001+0000')
-            elif o['type'] == F_FILE:
-                self.assertEquals(o['type'], F_FILE)
-                self.assertEquals(o['value'], 'sample.dat')
-                self.assertIsNone(o['time'])
-                self.assertIsNotNone(o['id'])
-                file_uuid = o['id']
-
         # we should see a single workload entry
         c.execute("SELECT id, uuid, node, analysis_mode FROM workload WHERE uuid = %s", (uuid,))
         row = c.fetchone()
@@ -195,22 +154,106 @@ class APIWrapperTestCase(ACEEngineTestCase):
         self.assertIsNotNone(row[0])
         self.assertEquals(row[1], uuid)
         self.assertEquals(row[2], saq.SAQ_NODE)
-        self.assertEquals(row[3], 'analysis')
+        self.assertEquals(row[3], 'test_empty')
 
-        result = self.client.get(url_for('analysis.get_details', uuid=uuid, name=result['details']['file_path']))
-        result = result.get_json()
+    def test_get_analysis(self):
+
+        result = self._submit()
         self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
         result = result['result']
-        self.assertTrue('hello' in result)
-        self.assertEquals(result['hello'], 'world')
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
 
-        result = self.client.get(url_for('analysis.get_file', uuid=uuid, file_uuid=file_uuid))
-        self.assertEquals(result.status_code, 200)
-        self.assertEquals(result.data, b'Hello, world!')
+        result = ace_api.get_analysis(uuid)
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        result = result['result']
 
-        result = self.client.get(url_for('analysis.get_status', uuid=uuid))
-        self.assertEquals(result.status_code, 200)
-        result = result.get_json()
+        self.assertEquals(result['analysis_mode'], 'test_empty')
+        self.assertEquals(result['tool'], 'unittest_tool')
+        self.assertEquals(result['tool_instance'], 'unittest_tool_instance')
+        self.assertEquals(result['type'], 'unittest_type')
+        self.assertEquals(result['description'], 'testing')
+        self.assertEquals(result['event_time'], '2017-11-11T07:36:01.000001+0000')
+        self.assertEquals(result['tags'][0], 'alert_tag_1')
+        self.assertEquals(result['tags'][1], 'alert_tag_2')
+        self.assertEquals(len(result['observable_store']), 4)
+
+        # the details should be a file_path reference
+        self.assertTrue(isinstance(result['details'], dict))
+        self.assertTrue('file_path' in result['details'])
+        self.assertTrue(result['details']['file_path'].startswith('RootAnalysis_'))
+
+    def test_get_analysis_details(self):
+        
+        result = self._submit()
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        result = ace_api.get_analysis(uuid)
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        result = result['result']
+
+        details_result = ace_api.get_analysis_details(uuid, result['details']['file_path'])
+        details_result = details_result.get_json()
+        self.assertIsNotNone(details_result)
+        details_result = details_result['result']
+        self.assertTrue('hello' in details_result)
+        self.assertEquals(details_result['hello'], 'world')
+
+    def test_get_analysis_file(self):
+
+        result = self._submit()
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        result = ace_api.get_analysis(uuid)
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        result = result['result']
+
+        # first test getting a file by uuid
+        file_uuid = None
+        for o_uuid in result['observables']:
+            o = result['observable_store'][o_uuid]
+            if o['type'] == 'file' and o['value'] == 'sample.dat':
+                file_uuid = o_uuid
+                break
+
+        self.assertIsNotNone(file_uuid)
+
+        output_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'get_file_test.dat')
+        self.assertTrue(ace_api.get_analysis_file(uuid, file_uuid, output_file=output_path))
+        with open(output_path, 'rb') as fp:
+            self.assertEquals(fp.read(), b'Hello, world!')
+
+        # same thing but with passing a file pointer
+        with open(output_path, 'wb') as fp:
+            self.assertTrue(ace_api.get_analysis_file(uuid, file_uuid, output_fp=fp))
+
+        # now test by using the file name
+        self.assertTrue(ace_api.get_analysis_file(uuid, 'sample.dat', output_file=output_path))
+        with open(output_path, 'rb') as fp:
+            self.assertEquals(fp.read(), b'Hello, world!')
+
+    def test_get_analysis_status(self):
+
+        result = self._submit()
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        result = ace_api.get_analysis_status(uuid)
         self.assertIsNotNone(result)
         result = result['result']
         self.assertTrue('workload' in result)
@@ -221,9 +264,8 @@ class APIWrapperTestCase(ACEEngineTestCase):
         self.assertTrue(isinstance(result['workload']['id'], int))
         self.assertEquals(result['workload']['uuid'], uuid)
         self.assertEquals(result['workload']['node'], saq.SAQ_NODE)
-        self.assertEquals(result['workload']['analysis_mode'], 'analysis')
+        self.assertEquals(result['workload']['analysis_mode'], 'test_empty')
         self.assertTrue(isinstance(parse_event_time(result['workload']['insert_date']), datetime.datetime))
-        
 
     def test_transfer(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()))

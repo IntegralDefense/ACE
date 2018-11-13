@@ -320,14 +320,23 @@ def get_details(uuid, name):
 
     abort(Response("invalid uuid or invalid details name", 400))
 
-@analysis_bp.route('/file/<uuid>/<file_uuid>', methods=['GET'])
-def get_file(uuid, file_uuid):
+@analysis_bp.route('/file/<uuid>/<file_uuid_or_name>', methods=['GET'])
+def get_file(uuid, file_uuid_or_name):
     root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
     root.load()
 
-    file_observable = root.get_observable(file_uuid)
-    if file_observable is None:
-        abort(Response("invalid file_uuid {}".format(file_uuid), 400))
+    # is this a UUID?
+    try:
+        validate_uuid(file_uuid_or_name)
+        file_observable = root.get_observable(file_uuid_or_name)
+        if file_observable is None:
+            abort(Response("invalid file_uuid {}".format(file_uuid_or_name), 400))
+
+    except ValueError:
+        file_observable = root.find_observable(lambda o: o.type == F_FILE and o.value == file_uuid_or_name)
+        if file_observable is None:
+            abort(Response("invalid file name {}".format(file_uuid_or_name), 400))
+        
 
     # NOTE we use an absolute path here because if we don't then
     # send_from_directory makes it relavive from the app root path

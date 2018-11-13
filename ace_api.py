@@ -66,6 +66,9 @@ default_ssl_verification = None
 # the local timezone
 LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
 
+# the datetime string format we use for this api
+DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
+
 def api_command(func):
     global commands
     commands[func.__name__] = func
@@ -127,7 +130,7 @@ def submit(
         event_time = datetime.datetime.now()
 
     # convert to UTC and then to the correct datetime format string for ACE
-    formatted_event_time = LOCAL_TIMEZONE.localize(event_time).astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %z')
+    formatted_event_time = LOCAL_TIMEZONE.localize(event_time).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
 
     # make sure the observables are in the correct format
     for o in observables:
@@ -139,7 +142,7 @@ def submit(
 
         # make sure any times are formatted
         if isinstance(o['time'], datetime.datetime):
-            o['time'] = LOCAL_TIMEZONE.localize(o['time']).astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %z')
+            o['time'] = LOCAL_TIMEZONE.localize(o['time']).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
 
     # make sure the tags are strings
     for t in tags:
@@ -171,6 +174,38 @@ def submit(
             'tags': tags, 
         }),
     }, files=files_params).json()
+
+@api_command
+def get_analysis(uuid, *args, **kwargs):
+    return _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
+
+@api_command
+def get_analysis_details(uuid, name, *args, **kwargs):
+    return _execute_api_call('analysis/details/{}/{}'.format(uuid, name), *args, **kwargs).json()
+
+@api_command
+def get_analysis_file(uuid, name, output_file=None, output_fp=None, *args, **kwargs):
+    if output_file is None and output_fp is None:
+        output_fp = sys.stdout.buffer
+    elif output_fp is None:
+        output_fp = open(output_file, 'wb')
+
+    r = _execute_api_call('analysis/file/{}/{}'.format(uuid, name), stream=True, *args, **kwargs)
+    
+    size = 0
+    for chunk in r.iter_content(io.DEFAULT_BUFFER_SIZE):
+        if chunk:
+            output_fp.write(chunk)
+            size += len(chunk)
+
+    if output_file is not None:
+        output_fp.close()
+
+    return True
+
+@api_command
+def get_analysis_status(uuid, *args, **kwargs):
+    return _execute_api_call('analysis/status/{}'.format(uuid), *args, **kwargs).json()
 
 @api_command
 def transfer(uuid, target_dir, *args, **kwargs):
