@@ -10,9 +10,24 @@ except ImportError:
     print("You need to install the python Requests library (see http://docs.python-requests.org/en/master/)")
     sys.exit(1)
 
+try:
+    import pytz
+except ImportError:
+    print("You need to install the pytz library (see https://pypi.org/project/pytz/)")
+    sys.exit(1)
+
+try:
+    import tzlocal
+except ImportError:
+    print("You need to install the tzlocal library (see https://pypi.org/project/tzlocal/)")
+    sys.exit(1)
+
+import datetime
 import io
 import json
+import logging
 import os
+import socket
 import sys
 import tarfile
 import tempfile
@@ -48,25 +63,114 @@ commands = { }
 default_node = 'localhost'
 default_ssl_verification = None
 
+# the local timezone
+LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
+
 def api_command(func):
     global commands
     commands[func.__name__] = func
     return func
 
-def _execute_api_call(command, node=None, ssl_verification=None, stream=False):
+def _execute_api_call(command, node=None, ssl_verification=None, stream=False, data=None, files=None):
     if node is None:
         node = default_node
 
     if ssl_verification is None:
         ssl_verification = default_ssl_verification
 
-    r = requests.get('https://{}/api/{}'.format(node, command), verify=ssl_verification, stream=stream)
+    if data is None:
+        # if we're not passing data then it's a GET
+        r = requests.get('https://{}/api/{}'.format(node, command), verify=ssl_verification, stream=stream)
+    else:
+        # otherwise it's a POST
+        r = requests.post('https://{}/api/{}'.format(node, command), verify=ssl_verification, stream=stream,
+                          data=data, files=files)
+
     r.raise_for_status()
     return r
 
 @api_command
+def get_supported_api_version(*args, **kwargs):
+    return _execute_api_call('common/get_supported_api_version', *args, **kwargs).json()
+
+@api_command
+def get_valid_companies(*args, **kwargs):
+    return _execute_api_call('common/get_valid_companies', *args, **kwargs).json()
+
+@api_command
+def get_valid_observables(*args, **kwargs):
+    return _execute_api_call('common/get_valid_observables', *args, **kwargs).json()
+
+@api_command
 def ping(*args, **kwargs):
     return _execute_api_call('common/ping', *args, **kwargs).json()
+
+@api_command
+def submit(
+    description, 
+    analysis_mode='analysis',
+    tool='ace_api',
+    tool_instance='ace_api:{}'.format(socket.getfqdn()),
+    type='generic',
+    event_time=None,
+    details={},
+    observables=[],
+    tags=[],
+    files=[],
+    *args, **kwargs):
+
+    # make sure you passed in *something* for the description
+    assert(description)
+
+    # default event time is now
+    if event_time is None:
+        event_time = datetime.datetime.now()
+
+    # convert to UTC and then to the correct datetime format string for ACE
+    formatted_event_time = LOCAL_TIMEZONE.localize(event_time).astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %z')
+
+    # make sure the observables are in the correct format
+    for o in observables:
+        assert isinstance(o, dict)
+        assert 'type' in o, "missing type in observable {}".format(o)
+        assert 'value' in o, "missing value in observable {}".format(o)
+        for key in o.keys():
+            assert key in [ 'type', 'value', 'time', 'tags', 'directives', 'limited_analysis' ], "unknown observable property {} in {}".format(key, o)
+
+        # make sure any times are formatted
+        if isinstance(o['time'], datetime.datetime):
+            o['time'] = LOCAL_TIMEZONE.localize(o['time']).astimezone(pytz.UTC).strftime('%Y-%m-%d %H:%M:%S %z')
+
+    # make sure the tags are strings
+    for t in tags:
+        assert isinstance(t, str), "tag {} is not a string".format(t)
+
+    # make sure each file is a tuple of (something, str)
+    _error_message = "file parameter {} invalid: each element of the file parameter must be a tuple of " \
+                     "(file_name, file_descriptor)"
+
+    files_params = []
+    for index, f in enumerate(files):
+        assert isinstance(f, tuple), _error_message.format(index)
+        assert len(f) == 2, _error_message.format(index)
+        assert f[1], _error_message.format(index)
+        assert isinstance(f[0], str), _error_message.format(index)
+        files_params.append(('file', (f[0], f[1])))
+
+    # OK everything seems legit
+    return _execute_api_call('analysis/submit', data={
+        'analysis': json.dumps({
+            'analysis_mode': analysis_mode,
+            'tool': tool,
+            'tool_instance': tool_instance,
+            'type': type,
+            'description': description,
+            'event_time': formatted_event_time,
+            'details': details,
+            'observables': observables,
+            'tags': tags, 
+        }),
+    }, files=files_params).json()
 
 @api_command
 def transfer(uuid, target_dir, *args, **kwargs):

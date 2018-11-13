@@ -16,6 +16,7 @@ import saq
 from saq import LOCAL_TIMEZONE
 from saq.analysis import RootAnalysis, _JSONEncoder
 from saq.database import get_db_connection
+from saq.error import report_exception
 from saq.constants import *
 from saq.util import parse_event_time, storage_dir_from_uuid, validate_uuid
 
@@ -194,6 +195,9 @@ def submit():
         return json_result({'result': {'uuid': root.uuid}})
     
     except Exception as e:
+        logging.error("error processing submit: {}".format(e))
+        report_exception()
+
         try:
             if os.path.isdir(root.storage_dir):
                 logging.info("removing failed submit dir {}".format(root.storage_dir))
