@@ -4,4 +4,6 @@ from saq.test import *
 from saq.database import get_db_connection
 
 class APIBasicTestCase(ACEBasicTestCase):
-    pass
+    def test_external_api_server(self):
+        self.start_api_server()
+        self.stop_api_server()

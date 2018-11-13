@@ -61,6 +61,7 @@ then
         saq.modules.test_email \
         saq.modules.test_http \
         api.analysis.test \
+        test_ace_api \
 
         # TODO reintroduce these next two somehow
         #saq.engine.test_cloudphish \

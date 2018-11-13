@@ -96,7 +96,7 @@ def _get_cached_db_connection(name='ace'):
     try:
         db_identifier = _get_cached_db_identifier(name)
         with _global_db_cache_lock:
-            logging.debug("aquiring existing cached database connection {}".format(db_identifier))
+            #logging.debug("aquiring existing cached database connection {}".format(db_identifier))
             db = _global_db_cache[db_identifier]
 
         try:
@@ -1569,6 +1569,7 @@ def acquire_lock(uuid, lock_uuid, db, c, lock_owner=None):
     try:
         execute_with_retry(db, c , "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
                           ( uuid, lock_uuid, lock_owner ))
+        logging.debug("locked {} with {}".format(uuid, lock_uuid))
         db.commit()
         return True
 
@@ -1595,6 +1596,7 @@ WHERE
             if row:
                 current_lock_uuid, current_lock_owner = row
                 if current_lock_uuid == lock_uuid:
+                    logging.debug("locked {} with {}".format(uuid, lock_uuid))
                     return True
 
                 # lock was acquired by someone else
@@ -1623,6 +1625,11 @@ def release_lock(uuid, lock_uuid, db, c):
     try:
         execute_with_retry(db, c, "DELETE FROM locks WHERE uuid = %s AND lock_uuid = %s", (uuid, lock_uuid,))
         db.commit()
+        if c.rowcount == 1:
+            logging.debug("released lock on {}".format(uuid))
+        else:
+            logging.warning("failed to release lock on {} with lock uuid {}".format(uuid, lock_uuid))
+
         return c.rowcount == 1
     except Exception as e:
         logging.error("unable to release lock {}: {}".format(uuid, e))

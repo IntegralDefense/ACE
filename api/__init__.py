@@ -83,6 +83,9 @@ def create_app(testing=False):
     from .analysis import analysis_bp as analysis_blueprint
     app.register_blueprint(analysis_blueprint)
 
+    from .engine import engine_bp as engine_blueprint
+    app.register_blueprint(engine_blueprint)
+
     return app
 
 def json_request():

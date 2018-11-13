@@ -18,7 +18,7 @@ from saq.util import parse_event_time
 import pytz
 from flask import url_for
 
-class APIAlertTestCase(APIBasicTestCase):
+class APIAnalysisTestCase(APIBasicTestCase):
     @use_db
     def test_api_analysis_submit(self, db, c):
         t = saq.LOCAL_TIMEZONE.localize(datetime.datetime(2017, 11, 11, hour=7, minute=36, second=1, microsecond=1)).astimezone(pytz.UTC).strftime(event_time_format_json_tz)

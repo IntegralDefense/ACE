@@ -15,6 +15,8 @@ import socket
 import ssl
 import stat
 import sys
+import tarfile
+import tempfile
 import threading
 import time
 import uuid
@@ -40,6 +42,7 @@ from saq.util import human_readable_size, storage_dir_from_uuid
 
 import iptools
 import psutil
+import requests
 
 # the workload database configuration section name
 # corresponds to the database_workload config in etc/saq.ini
@@ -205,6 +208,12 @@ class Engine(object):
         self.maintenance_threads = []
         # an event to control the management threads
         self.maintenance_control = None # threading.Event()
+
+        # how often do we update the nodes database table for this engine (in seconds)
+        self.node_status_update_frequency = self.config.getint('node_status_update_frequency')
+        # and then when will be the next time we make this update?
+        self.next_status_update_time = None
+        
 
     def __str__(self):
         return "Engine ({})".format(saq.SAQ_NODE)
@@ -728,6 +737,29 @@ class Engine(object):
     # ANALYSIS ENGINE
     # ------------------------------------------------------------------------
 
+    @use_db
+    def update_node_status(self, db, c):
+        """Updates the nodes database table with the api prefix (location) and the company ID of this node.
+           This is called automatically at startup and periodically in the main engine loop."""
+        try:
+            execute_with_retry(db, c, """INSERT INTO nodes ( node, location, company_id, last_update )
+                                         VALUES ( %s, %s, %s, NOW() )
+                                         ON DUPLICATE KEY UPDATE
+                                         location = %s, company_id = %s, last_update = NOW()""",
+                               (saq.SAQ_NODE,
+                               saq.API_PREFIX,
+                               saq.COMPANY_ID,
+                               saq.API_PREFIX,
+                               saq.COMPANY_ID))
+
+            db.commit()
+
+            logging.info("updated node {} location {} company_id {}".format(saq.SAQ_NODE, saq.API_PREFIX, saq.COMPANY_ID))
+
+        except Exception as e:
+            logging.error("unable to update node {} status: {}".format(saq.SAQ_NODE, e))
+            report_exception()
+
     def start_engine(self):
 
         self.engine_process = Process(target=self.engine_loop, name='ACE Engine')
@@ -748,6 +780,9 @@ class Engine(object):
     def engine_loop(self):
         logging.info("started engine on process {}".format(os.getpid()))
 
+        # go ahead and register our node before we start the workers
+        self.update_node_status()
+
         self.start_workers()
         if self.auto_refresh_frequency:
             self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
@@ -763,6 +798,16 @@ class Engine(object):
                     logging.warning("recevied SIGTERM -- shutting down")
                     self.stop()
                     break
+
+                # is it time to update our node status?
+                if self.next_status_update_time is None or \
+                datetime.datetime.now() > self.next_status_update_time:
+
+                    self.update_node_status()
+
+                    # when will we do this again?
+                    self.next_status_update_time = datetime.datetime.now() + \
+                    datetime.timedelta(seconds=self.node_status_update_frequency)
 
                 if self.auto_refresh_frequency and datetime.datetime.now() > self.next_auto_refresh_time:
                     logging.info("auto refresh frequency {} triggered reload of worker modules".format(
@@ -842,7 +887,6 @@ class Engine(object):
 
         for key in self.config.keys():
             if key.startswith('analysis_pool_size_'):
-                logging.info("MARKER: {}".format(key))
                 mode = key[len('analysis_pool_size_'):]
 
                 # make sure we support this mode locally
@@ -933,7 +977,7 @@ class Engine(object):
                 # if the control event is set then it means we're looking to exit when everything is done
                 if self.control_event.is_set():
                     if self.delayed_analysis_queue_is_empty and self.workload_queue_is_empty:
-                        self.stop() # XXX not sure we actually need this
+                        #self.stop() # XXX not sure we actually need this
                         return
 
                     logging.debug("queue sizes workload {} delayed {}".format(
@@ -966,14 +1010,75 @@ class Engine(object):
     @use_db
     def transfer_work_target(self, uuid, node, db, c):
         """Moves the given work target from the given remote node to the local node."""
-        logging.info("moving work target {} from {}".format(uuid, node))
+        import ace_api
+        logging.info("transferring work target {} from {}".format(uuid, node))
 
-        # get the main data.json
-        # get all the analysis objects
-        # get all the files
-        
-        # change the node entry
-        return True
+        # get a lock on the target we want to transfer
+        if not acquire_lock(uuid, self.lock_uuid):
+            logging.info("unable to acquire lock on {} for transfer".format(uuid))
+            return False
+
+        target_dir = storage_dir_from_uuid(uuid)
+        if os.path.isdir(target_dir):
+            logging.warning("target_dir {} for transfer exists! deleting".format(target_dir))
+
+            try:
+                shutil.rmtree(target_dir)
+            except Exception as e:
+                logging.error("unable to delete {}: {}".format(target_dir, e))
+                report_exception()
+                return False
+
+        try:
+            logging.debug("creating transfer target_dir {}".format(target_dir))
+            os.makedirs(target_dir)
+        except Exception as e:
+            logging.error("unable to create transfer target_dir {}: {}".format(target_dir, e))
+            report_exception()
+            return False
+
+        tar_path = None
+
+        try:
+            # now make the transfer
+            # look up the url for this target node
+            c.execute("SELECT location FROM nodes WHERE node = %s", (node,))
+            row = c.fetchone()
+            if row is None:
+                logging.error("cannot find node {} in nodes table".format(node))
+                return False
+
+            remote_node = row[0]
+            ace_api.transfer(uuid, target_dir, node=remote_node)
+
+            # update the node (location) of this workitem to the local node
+            execute_with_retry(db, c, "UPDATE workload SET node = %s WHERE uuid = %s", (saq.SAQ_NODE, uuid))
+            execute_with_retry(db, c, "UPDATE delayed_analysis SET node = %s WHERE uuid = %s", (saq.SAQ_NODE, uuid))
+            db.commit()
+
+            # then finally tell the remote system to clear this work item
+            # we use our lock uuid as kind of password for clearing the work item
+            ace_api.clear(uuid, self.lock_uuid, node=remote_node)
+
+            return True
+            
+        except Exception as e:
+            logging.error("unable to transfer {}: {}".format(uuid, e))
+            try:
+                shutil.rmtree(target_dir)
+            except Exception as e:
+                logging.error("unable to clear transfer target_dir {}: {}".format(target_dir, e))
+                report_exception()
+            
+            return False
+
+        finally:
+            try:
+                if tar_path:
+                    os.remove(tar_path)
+            except Exception as e:
+                logging.error("unable to delete temporary tar file {}: {}".format(tar_path, e))
+                report_exception()
 
     @use_db
     def get_delayed_analysis_work_target(self, db, c):
@@ -1036,8 +1141,7 @@ ORDER BY
 
         where_clause = ' AND '.join(['({})'.format(clause) for clause in where_clause])
 
-
-        logging.debug("looking for work with {} ({})".format(where_clause, ','.join(params)))
+        #logging.debug("looking for work with {} ({})".format(where_clause, ','.join(params)))
 
         c.execute("""
 SELECT
@@ -1060,6 +1164,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
             # is this work item on a different node?
             if node != saq.SAQ_NODE:
+                # go grab it
                 if not self.transfer_work_target(uuid, node):
                     return None
 

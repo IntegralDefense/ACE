@@ -12,11 +12,15 @@ from saq.database import Company
 from flask import Blueprint
 common = Blueprint('common', __name__, url_prefix='/common')
 
-@common.route('/get_supported_api_version')
+@common.route('/ping', methods=['GET'])
+def ping():
+    return json_result({'result': 'pong'})
+
+@common.route('/get_supported_api_version', methods=['GET'])
 def get_supported_api_version():
     return json_result({'result': 1})
 
-@common.route('/get_valid_companies')
+@common.route('/get_valid_companies', methods=['GET'])
 def get_valid_companies():
     result = []
     for company in db.session.query(Company):
@@ -24,7 +28,7 @@ def get_valid_companies():
 
     return json_result({'result': result})
     
-@common.route('/get_valid_observables')
+@common.route('/get_valid_observables', methods=['GET'])
 def get_valid_observables():
     result = []
     for o_type in VALID_OBSERVABLE_TYPES:
