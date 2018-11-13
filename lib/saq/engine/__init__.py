@@ -1133,6 +1133,12 @@ ORDER BY
         if local:
             where_clause.append('workload.node = %s')
             params.append(saq.SAQ_NODE)
+        else:
+            # if we're looking remotely then we need to make sure we only select work for whatever company
+            # this node belongs to
+            # this is true for instances where you're sharing an ACE resource between multiple companies
+            where_clause.append('workload.company_id = %s')
+            params.append(saq.COMPANY_ID)
 
         if self.local_analysis_modes:
             # limit our scope to locally support analysis modes
@@ -1141,7 +1147,7 @@ ORDER BY
 
         where_clause = ' AND '.join(['({})'.format(clause) for clause in where_clause])
 
-        #logging.debug("looking for work with {} ({})".format(where_clause, ','.join(params)))
+        logging.debug("looking for work with {} ({})".format(where_clause, ','.join([str(_) for _ in params])))
 
         c.execute("""
 SELECT

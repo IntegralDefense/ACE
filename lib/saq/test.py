@@ -454,13 +454,9 @@ class ACEBasicTestCase(TestCase):
         #saq.DUMP_TRACEBACKS = True
         logging.info("TEST: {}".format(self.id()))
         initialize_test_environment()
-        self.reset_config()
+        self.reset()
         open_test_comms()
-
         memory_log_handler.clear()
-        self.reset_nodes()
-        self.reset_workload()
-        self.reset_correlation()
 
         from api import create_app
         self.app = create_app(testing=True)
@@ -505,6 +501,14 @@ class ACEBasicTestCase(TestCase):
 
             time.sleep(delay)
 
+    def reset(self):
+        """Resets everything back to the default state."""
+        self.reset_config()
+        self.reset_brocess()
+        self.reset_cloudphish()
+        self.reset_correlation()
+        self.reset_email_archive()
+
     def reset_config(self):
         """Resets saq.CONFIG."""
         saq.load_configuration()
@@ -538,7 +542,8 @@ class ACEBasicTestCase(TestCase):
                 shutil.rmtree(cache_dir)
                 os.makedirs(cache_dir)
 
-    def reset_correlation(self):
+    @use_db
+    def reset_correlation(self, db, c):
         data_subdir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE)
         if os.path.isdir(data_subdir):
             try:
@@ -547,25 +552,15 @@ class ACEBasicTestCase(TestCase):
             except Exception as e:
                 logging.error("unable to clear {}: {}".format(data_subdir, e))
 
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("DELETE FROM alerts")
-            c.execute("DELETE FROM workload")
-            c.execute("DELETE FROM observables")
-            c.execute("DELETE FROM tags")
-            c.execute("DELETE FROM profile_points")
-            c.execute("DELETE FROM events")
-            c.execute("DELETE FROM remediation")
-            db.commit()
-
-    @use_db
-    def reset_nodes(self, db, c):
-        c.execute("DELETE FROM nodes")
-        db.commit()
-
-    @use_db
-    def reset_workload(self, db, c):
+        c.execute("DELETE FROM alerts")
         c.execute("DELETE FROM workload")
+        c.execute("DELETE FROM observables")
+        c.execute("DELETE FROM tags")
+        c.execute("DELETE FROM profile_points")
+        c.execute("DELETE FROM events")
+        c.execute("DELETE FROM remediation")
+        c.execute("DELETE FROM company WHERE name != 'default'")
+        c.execute("DELETE FROM nodes")
         c.execute("DELETE FROM locks")
         c.execute("DELETE FROM delayed_analysis")
         db.commit()
