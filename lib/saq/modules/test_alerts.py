@@ -17,8 +17,6 @@ class AlertModuleTestCase(ACEModuleTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
         self.disable_all_modules()
-        self.reset_workload()
-        self.reset_correlation()
 
     @use_db
     def test_engine_detection(self, db, c):

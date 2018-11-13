@@ -196,7 +196,7 @@ def submit():
     
     except Exception as e:
         logging.error("error processing submit: {}".format(e))
-        report_exception()
+        #report_exception()
 
         try:
             if os.path.isdir(root.storage_dir):

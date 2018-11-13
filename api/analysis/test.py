@@ -106,7 +106,11 @@ class APIAnalysisTestCase(APIBasicTestCase):
         self.assertTrue('hello' in result)
         self.assertEquals(result['hello'], 'world')
 
-        result = self.client.get(url_for('analysis.get_file', uuid=uuid, file_uuid=file_uuid))
+        result = self.client.get(url_for('analysis.get_file', uuid=uuid, file_uuid_or_name=file_uuid))
+        self.assertEquals(result.status_code, 200)
+        self.assertEquals(result.data, b'Hello, world!')
+
+        result = self.client.get(url_for('analysis.get_file', uuid=uuid, file_uuid_or_name='sample.dat'))
         self.assertEquals(result.status_code, 200)
         self.assertEquals(result.data, b'Hello, world!')
 

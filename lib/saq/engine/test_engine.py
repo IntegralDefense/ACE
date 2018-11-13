@@ -1492,6 +1492,78 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertIsNotNone(analysis)
 
     @use_db
+    def test_local_analysis_mode_remote_pickup_invalid_company_id(self, db, c):
+
+        # TestCase - we've got nothing to do locally but there is work
+        # on a remote server, but that work is assigned to a different company
+        # we do NOT grab that work
+
+        # first we add a new company
+        c.execute("INSERT INTO company ( name ) VALUES ( 'unittest' )")
+        db.commit()
+
+        # get the new company_id
+        c.execute("SELECT id FROM company WHERE name = 'unittest'")
+        row = c.fetchone()
+        self.assertIsNotNone(row)
+        other_company_id = row[0]
+
+        # we say we only support test_empty analysis modes
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
+        saq.CONFIG['engine']['analysis_pool_size_test_empty'] = '1'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        # but we target test_single for this analysis
+        root.analysis_mode = 'test_single'
+        root.company_id = other_company_id
+        root.save()
+        root.schedule()
+
+        # remember the old storage dir
+        old_storage_dir = root.storage_dir
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+
+        # we should see this message over and over again
+        wait_for_log_count('queue sizes workload 1 delayed 0', 5)
+        engine.stop()
+        engine.wait()
+
+        # make sure our stuff is still there
+        self.assertTrue(os.path.exists(old_storage_dir))
+
+        # start an api server for this node
+        self.start_api_server()
+        self.reset_config()
+
+        # now start another engine on a different "node"
+        saq.CONFIG['global']['node'] = 'second_host'
+        saq.SAQ_NODE = 'second_host'
+        saq.CONFIG['analysis_mode_test_single']['cleanup'] = 'no'
+
+        # and this node handles the test_single mode
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_single'
+        saq.CONFIG['engine']['analysis_pool_size_test_single'] = '1'
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.start()
+
+        # we should see the same thing happen since the remote work is assigned to the other company
+        wait_for_log_count('queue sizes workload 1 delayed 0', 5)
+        engine.stop()
+        engine.wait()
+
+        # make sure our stuff is still there
+        self.assertTrue(os.path.exists(old_storage_dir))
+
+    @use_db
     def test_status_update(self, db, c):
         
         # start an empty engine and wait for the node update

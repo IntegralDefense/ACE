@@ -200,7 +200,6 @@ class APIWrapperTestCase(ACEEngineTestCase):
         result = result['result']
 
         details_result = ace_api.get_analysis_details(uuid, result['details']['file_path'])
-        details_result = details_result.get_json()
         self.assertIsNotNone(details_result)
         details_result = details_result['result']
         self.assertTrue('hello' in details_result)

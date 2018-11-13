@@ -1526,6 +1526,13 @@ class Workload(Base):
         index=True,
         server_default=text('CURRENT_TIMESTAMP'))
 
+    company_id = Column(
+        Integer,
+        ForeignKey('company.id'),
+        nullable=True)
+
+    company = relationship('saq.database.Company', foreign_keys=[company_id])
+
 @use_db
 def add_workload(uuid, analysis_mode, db, c):
     """Adds the given work item to the workload queue."""
@@ -1533,8 +1540,9 @@ def add_workload(uuid, analysis_mode, db, c):
 INSERT INTO workload (
     uuid,
     node,
-    analysis_mode )
-VALUES ( %s, %s, %s )""", (uuid, saq.SAQ_NODE, analysis_mode))
+    analysis_mode,
+    company_id )
+VALUES ( %s, %s, %s, %s )""", (uuid, saq.SAQ_NODE, analysis_mode, saq.COMPANY_ID))
     db.commit()
     logging.info("added {} to workload with analysis mode {}".format(uuid, analysis_mode))
 
