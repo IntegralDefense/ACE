@@ -15,6 +15,7 @@ import traceback
 from configparser import ConfigParser
 from getpass import getpass
 
+import ace_api
 from saq.constants import *
 from saq.network_semaphore import initialize_fallback_semaphores
 from saq.sla import SLA
@@ -28,6 +29,7 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 
 SAQ_HOME = None
 SAQ_NODE = None
+API_PREFIX = None
 SAQ_RELATIVE_DIR = None
 CONFIG = None
 CONFIG_PATHS = []
@@ -82,6 +84,10 @@ DUMP_TRACEBACKS = False
 
 # the amount of time (in seconds) that a lock in the locks table is valid
 LOCK_TIMEOUT_SECONDS = None
+
+# the company/custom this node belongs to
+COMPANY_NAME = None
+COMPANY_ID = None
 
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
@@ -195,6 +201,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     global SAQ_HOME
     global SAQ_NODE
+    global API_PREFIX
     global SAQ_RELATIVE_DIR
     global CONFIG
     global CONFIG_PATHS
@@ -215,6 +222,8 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     global YSS_SOCKET_DIR
     global DATA_DIR
     global LOCK_TIMEOUT_SECONDS
+    global COMPANY_NAME
+    global COMPANY_ID
 
     # go ahead and try to figure out what text encoding we're using
     DEFAULT_ENCODING = locale.getpreferredencoding()
@@ -288,6 +297,8 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         sys.exit(1)
 
     DATA_DIR = CONFIG['global']['data_dir']
+    COMPANY_NAME = CONFIG['global']['company_name']
+    COMPANY_ID = CONFIG['global'].getint('company_id')
 
     minutes, seconds = map(int, CONFIG['global']['lock_timeout'].split(':'))
     LOCK_TIMEOUT_SECONDS = (minutes * 60) + seconds
@@ -345,7 +356,19 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     # what node is this?
     try:
         SAQ_NODE = CONFIG['global']['node']
-        logging.debug("node {}".format(SAQ_NODE))
+        if SAQ_NODE == 'AUTO':
+            SAQ_NODE = socket.getfqdn()
+        logging.info("node {}".format(SAQ_NODE))
+    except Exception as e:
+        sys.stderr.write("unable to get hostname: {}\n".format(e))
+        sys.exit(1)
+
+    # what prefix do other systems use to communicate to the API server for this node?
+    try:
+        API_PREFIX = CONFIG['api']['prefix']
+        if API_PREFIX == 'AUTO':
+            API_PREFIX = socket.getfqdn()
+        logging.debug("node {} has api prefix {}".format(SAQ_NODE, API_PREFIX))
     except Exception as e:
         sys.stderr.write("unable to get hostname: {}\n".format(e))
         sys.exit(1)
@@ -381,6 +404,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     # make sure we've got the ca chain for SSL certs
     CA_CHAIN_PATH = os.path.join(SAQ_HOME, CONFIG['SSL']['ca_chain_path'])
+    ace_api.set_default_ssl_ca_path(CA_CHAIN_PATH)
 
     # set the location we'll be running yss out of
     YSS_BASE_DIR = os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'])

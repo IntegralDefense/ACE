@@ -1391,10 +1391,12 @@ class EngineTestCase(ACEEngineTestCase):
         analysis = observable.get_analysis(BasicTestAnalysis)
         self.assertIsNotNone(analysis)
 
-        # both test_empty and test_single should be in this list
-        self.assertEquals(len(engine.local_analysis_modes), 2)
-        self.assertTrue('test_single' in engine.local_analysis_modes)
-        self.assertTrue('test_empty' in engine.local_analysis_modes)
+        # XXX - do we really need the engine process?
+        # the engine.local_analysis_modes doesn't get modified until it's running on a new process
+        wait_for_log_count('engine.analysis_pool_size_test_empty specified but test_empty not in engine.local_analysis_modes', 1, 5)
+        #self.assertEquals(len(engine.local_analysis_modes), 2)
+        #self.assertTrue('test_single' in engine.local_analysis_modes)
+        #self.assertTrue('test_empty' in engine.local_analysis_modes)
 
     def test_local_analysis_mode_not_local(self):
 
@@ -1416,6 +1418,95 @@ class EngineTestCase(ACEEngineTestCase):
         engine.start()
 
         # we should see this message over and over again
+        wait_for_log_count('queue sizes workload 1 delayed 0', 5, 10)
+        engine.stop()
+        engine.wait()
+
+    def test_local_analysis_mode_remote_pickup(self):
+
+        # we say we only support test_empty analysis modes
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
+        saq.CONFIG['engine']['analysis_pool_size_test_empty'] = '1'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        # but we target test_single for this analysis
+        root.analysis_mode = 'test_single'
+        root.save()
+        root.schedule()
+
+        # remember the old storage dir
+        old_storage_dir = root.storage_dir
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+
+        # we should see this message over and over again
         wait_for_log_count('queue sizes workload 1 delayed 0', 5)
+        engine.stop()
+        engine.wait()
+
+        # make sure our stuff is still there
+        self.assertTrue(os.path.exists(old_storage_dir))
+
+        # start an api server for this node
+        self.start_api_server()
+        self.reset_config()
+
+        # now start another engine on a different "node"
+        saq.CONFIG['global']['node'] = 'second_host'
+        saq.SAQ_NODE = 'second_host'
+        saq.CONFIG['analysis_mode_test_single']['cleanup'] = 'no'
+
+        # and this node handles the test_single mode
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_single'
+        saq.CONFIG['engine']['analysis_pool_size_test_single'] = '1'
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.start()
+
+        # since this is remote we can't use the technique where we call controlled_stop and
+        # wait for the queues to empty because only the local queue is checked (which is currently empty)
+
+        # look for the log to move the work target
+        wait_for_log_count('transferring work target {} from '.format(root.uuid), 1, 5)
+        wait_for_log_count('completed analysis RootAnalysis({})'.format(root.uuid), 1, 5)
+        engine.controlled_stop()
+        engine.wait()
+
+        # now the old storage directory should be gone
+        self.assertFalse(os.path.exists(old_storage_dir))
+
+        # but there should be a new one in the new "node"
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
+        root.load()
+        observable = root.get_observable(observable.id)
+        self.assertIsNotNone(observable)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = observable.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+    @use_db
+    def test_status_update(self, db, c):
+        
+        # start an empty engine and wait for the node update
+        engine = TestEngine()
+        engine.start()
+
+        wait_for_log_count('updated node', 1, 5)
+        
+        # do we have an entry in the nodes database table?
+        c.execute("SELECT node, location, company_id, last_update FROM nodes WHERE node = %s", (saq.SAQ_NODE,))
+        row = c.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEquals(row[0], saq.SAQ_NODE)
+        self.assertEquals(row[1], saq.API_PREFIX)
+        self.assertEquals(row[2], saq.COMPANY_ID)
+
         engine.stop()
         engine.wait()
