@@ -1242,7 +1242,10 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     @property
     def display_value(self):
         if isinstance(self.value, str):
-            return self.value.encode('utf-8', errors='ignore').decode()
+            try:
+                return self.value.encode('utf-8', errors='ignore').decode()
+            except Exception as e:
+                logging.warning("unable to decode value: {}".format(e))
         else:
             return self.value
 
