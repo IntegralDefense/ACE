@@ -19,7 +19,7 @@ import saq, saq.test
 from saq.anp import *
 from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, Observable
 from saq.constants import *
-from saq.database import get_db_connection, use_db
+from saq.database import get_db_connection, use_db, acquire_lock, clear_expired_locks
 from saq.engine import Engine, DelayedAnalysisRequest, add_workload
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
@@ -268,29 +268,6 @@ class EngineTestCase(ACEEngineTestCase):
             analysis = observable.get_analysis(BasicTestAnalysis)
             self.assertIsNotNone(analysis)
 
-    def test_engine_locks(self):
-        from saq.database import acquire_lock, release_lock
-        first_lock_uuid = str(uuid.uuid4())
-        second_lock_uuid = str(uuid.uuid4())
-        target_lock = str(uuid.uuid4())
-        self.assertTrue(acquire_lock(target_lock, first_lock_uuid))
-        self.assertFalse(acquire_lock(target_lock, second_lock_uuid))
-        self.assertTrue(acquire_lock(target_lock, first_lock_uuid))
-        release_lock(target_lock, first_lock_uuid)
-        self.assertTrue(acquire_lock(target_lock, second_lock_uuid))
-        self.assertFalse(acquire_lock(target_lock, first_lock_uuid))
-        release_lock(target_lock, second_lock_uuid)
-
-    def test_engine_lock_timeout(self):
-        from saq.database import acquire_lock, release_lock
-        OLD_TIMEOUT = saq.LOCK_TIMEOUT_SECONDS
-        saq.LOCK_TIMEOUT_SECONDS = 0
-        first_lock_uuid = str(uuid.uuid4())
-        second_lock_uuid = str(uuid.uuid4())
-        target_lock = str(uuid.uuid4())
-        self.assertTrue(acquire_lock(target_lock, first_lock_uuid))
-        self.assertTrue(acquire_lock(target_lock, second_lock_uuid))
-        saq.LOCK_TIMEOUT_SECONDS = OLD_TIMEOUT
 
     def test_engine_no_analysis(self):
 
@@ -1582,3 +1559,88 @@ class EngineTestCase(ACEEngineTestCase):
 
         engine.stop()
         engine.wait()
+
+    @use_db
+    def test_primary_node(self, db, c):
+        # test having a node become the primary node
+        engine = TestEngine()
+        engine.start()
+        
+        wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
+
+        c.execute("SELECT node FROM nodes WHERE node = %s AND is_primary = 1", (saq.SAQ_NODE,))
+        self.assertIsNotNone(c.fetchone())
+
+        engine.stop()
+        engine.wait()
+
+    @use_db
+    def test_primary_node_contest(self, db, c):
+        # test having a node become the primary node
+        # and then another node NOT becoming a primary node because there already is one
+        engine = TestEngine()
+        engine.start()
+        
+        wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
+
+        c.execute("SELECT node FROM nodes WHERE node = %s AND is_primary = 1", (saq.SAQ_NODE,))
+        self.assertIsNotNone(c.fetchone())
+
+        engine.stop()
+        engine.wait()
+
+        saq.SAQ_NODE = 'another_node'
+        engine = TestEngine()
+        engine.start()
+
+        wait_for_log_count('node {} is not primary'.format(saq.SAQ_NODE), 1, 5)
+        engine.stop()
+        engine.wait()
+
+    @use_db
+    def test_primary_node_contest_winning(self, db, c):
+        # test having a node become the primary node
+        # after another node times out
+        engine = TestEngine()
+        engine.start()
+        
+        wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
+
+        c.execute("SELECT node FROM nodes WHERE node = %s AND is_primary = 1", (saq.SAQ_NODE,))
+        self.assertIsNotNone(c.fetchone())
+
+        engine.stop()
+        engine.wait()
+
+        # update the node to make it look like it last updated a while ago
+        c.execute("UPDATE nodes SET last_update = ADDTIME(last_update, '-1:00:00') WHERE node = %s", (saq.SAQ_NODE,))
+        db.commit()
+
+        saq.SAQ_NODE = 'another_node'
+        engine = TestEngine()
+        engine.start()
+
+        wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
+        engine.stop()
+        engine.wait()
+
+    @use_db
+    def test_primary_node_clear_locks(self, db, c):
+        target = str(uuid.uuid4())
+        lock_uuid = str(uuid.uuid4())
+        self.assertTrue(acquire_lock(target, lock_uuid))
+        saq.LOCK_TIMEOUT_SECONDS = 0
+        # test having a node become the primary node
+        # and then clearing out an expired lock
+        engine = TestEngine()
+        engine.start()
+        
+        wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
+        wait_for_log_count('removed 1 expired locks', 1, 5)
+
+        engine.stop()
+        engine.wait()
+
+        # make sure the lock is gone
+        c.execute("SELECT uuid FROM locks WHERE uuid = %s", (target,))
+        self.assertIsNone(c.fetchone())

@@ -53,7 +53,6 @@ from saq.util import storage_dir_from_uuid
 
 from splunklib import SplunkQueryObject
 
-initialized = False
 test_dir = None
 
 # decorators
@@ -270,11 +269,7 @@ def splunk_query(search_string, *args, **kwargs):
     return q, result
 
 def initialize_test_environment():
-    global initialized
     global test_dir
-
-    if initialized:
-        return
 
     # there is no reason to run anything as root
     if os.geteuid() == 0:

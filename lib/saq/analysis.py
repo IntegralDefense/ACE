@@ -2119,6 +2119,7 @@ class RootAnalysis(Analysis):
             self._company_name = company_name
 
         try:
+            # we take the default company ownership from the config file (if specified)
             self._company_id = saq.CONFIG['global'].getint('company_id')
         except KeyError:
             pass
@@ -2702,7 +2703,7 @@ class RootAnalysis(Analysis):
     def schedule(self):
         """Schedules analysis of this RootAnalysis object by ACE."""
         from saq.database import add_workload
-        add_workload(self.uuid, self.analysis_mode)
+        add_workload(self.uuid, self.analysis_mode, self.company_id)
 
     def submit(self, target_company=None):
         """Submit this RootAnalysis as an Alert to the ACE system."""

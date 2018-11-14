@@ -53,6 +53,7 @@ then
         saq.test_database \
         saq.test_anp \
         saq.test_util \
+        saq.test_locks \
         saq.engine.test_engine \
         saq.modules.test_alerts \
         saq.modules.test_asset \
