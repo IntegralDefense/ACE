@@ -1,0 +1,7 @@
+<p><b>Results</b></p>
+<div class="row">
+    <div class="col-md-12">
+        <!-- by default we just pretty-print the json -->
+        {% block alert_details %} <pre>{{ analysis.details | pprint }}</pre> {% endblock %}
+    </div>
+</div>
