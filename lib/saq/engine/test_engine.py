@@ -16,7 +16,6 @@ from multiprocessing import Queue, cpu_count, Event
 from queue import Empty
 
 import saq, saq.test
-from saq.anp import *
 from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, Observable
 from saq.constants import *
 from saq.database import get_db_connection, use_db, acquire_lock, clear_expired_locks
