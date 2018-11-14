@@ -5,6 +5,11 @@
 # instead of being "installed" into some other directory
 #
 
+# make sure the correct locale is set for supporting unicode characters
+sudo update-locale LANG=en_US.utf8
+# uncomment the following for apache2 to use the system locale 
+sudo sed -i '/^#. \/etc\/default\/locale/s/^#//' /etc/apache2/envvars 
+
 # make sure we've already set the SAQ_HOME environment variable
 if [ -z "${SAQ_HOME}" ]
 then
