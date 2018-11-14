@@ -9,46 +9,33 @@ from saq.modules import AnalysisModule
 import ntpath
 import os
 
+from cbapi.response import *
+
 class CollectFileAnalysis(Analysis):
 
     def initialize_details(self):
         self.details = { }
 
     @property
-    def task_id(self):
-        if self.details is None:
-            self.details = { 'task_id' : None }
-        return self.details['task_id']
-
-    @task_id.setter
-    def task_id(self, value):
-        if self.details is None:
-            self.details = { 'task_id' : None }
-        self.details['task_id'] = value
+    def jinja_template_path(self):
+        return "analysis/collect_file.html"
 
     def generate_summary(self):
-        return None
+        return "Collect File Analysis - {}".format(self.details['result'])
 
 class CollectFileAnalyzer(AnalysisModule):
 
     def verify_environment(self):
-        self.verify_config_exists('frequency')
+        if not 'carbon_black' in saq.CONFIG:
+            raise ValueError("missing config section carbon_black")
+
+        key = 'credential_file'
+        if not key in saq.CONFIG['carbon_black']:
+                raise ValueError("missing config item {} in section carbon_black".format(key))
 
     @property
-    def frequency(self):
-        return self.config.getint('frequency')
-
-    @property
-    def chronos_host(self):
-        return saq.CONFIG['chronos']['host']
-
-    @property
-    def chronos_port(self):
-        return saq.CONFIG['chronos'].getint('port')
-
-    @property
-    def chronos_path(self):
-        return saq.CONFIG['chronos']['path']
+    def delay(self):
+        return self.config.getint('delay')
 
     @property
     def generated_analysis_type(self):
@@ -58,61 +45,108 @@ class CollectFileAnalyzer(AnalysisModule):
     def valid_observable_types(self):
         return F_FILE_LOCATION
 
-    @property
-    def required_directives(self):
-        return [ DIRECTIVE_COLLECT_FILE ]
+    #@property
+    #def required_directives(self):
+    #    return [ DIRECTIVE_COLLECT_FILE ]
+
+    def _get_sensor(self, hostname):
+        # Get the right sensor
+
+        cb = CbResponseAPI(credential_file=saq.CONFIG['carbon_black']['credential_file'])
+
+        sensor = None
+        try:
+            logging.debug("Getting the sensor object from carbonblack")
+            return cb.select(Sensor).where("hostname:{}".format(hostname)).one()
+        except TypeError as e:
+            # Appears to be bug in cbapi library here -> site-packages/cbapi/query.py", line 34, in one
+            # Raise MoreThanOneResultError(message="0 results for query {0:s}".format(self._query))
+            # That raises a TypeError
+            if 'non-empty format string passed to object' in str(e):
+                try: # accounting for what appears to be an error in cbapi error handling
+                    result = cb.select(Sensor).where("hostname:{}".format(hostname))
+                    if isinstance(result[0], models.Sensor):
+                        print()
+                        warning_string = "MoreThanOneResult Error searching for {0:s} : Sensor IDs = ".format(hostname)
+                        sensor_ids = []
+                        for s in result:
+                            sensor_ids.append(int(s.id))
+                            warning_string += "{} ".format(s.id)
+                            if int(s.id) == max(sensor_ids):
+                                sensor = s
+                        default_sid = max(sensor_ids)
+                        warning_string += "- Using {}.".format(default_sid)
+                        logging.warning(warning_string)
+                        return sensor
+                    else:
+                        logging.error("Unknown CarbonBlack Sensor result: Type={} Value={}".format(type(result), result))
+                except Exception as e:
+                    logging.error("Error getting CarbonBlack Sensor: {}".format(str(e)))
+                    return None
+        except Exception as e:
+            logging.error("Error selecting CarbonBlack Sensor: {}".format(str(e)))
+            return None
 
     def execute_analysis(self, file_location):
-        from chronosapi import Chronos
 
-        # create analysis object if it does not already exist
-        analysis = file_location.get_analysis(CollectFileAnalysis)
-        if analysis is None:
-            analysis = self.create_analysis(file_location)
-            analysis = CollectFileAnalysis()
-            file_location.add_analysis(analysis)
+        analysis = self.create_analysis(file_location)
 
-        # create new chronos instance
-        chronos = Chronos("{}:{}/{}".format(self.chronos_host, self.chronos_port, self.chronos_path))
+        hostname = file_location.hostname
+        location = file_location.full_path
 
-        # tell chronos to collect file from a machine if we haven't already
-        if analysis.task_id is None:
-            hostname = file_location.hostname
-            location = file_location.full_path
-            analysis.task_id = chronos.collect_file(hostname, location)
+        sensor = self._get_sensor(hostname)
 
-        # wait until task is done
-        status = chronos.task_status(analysis.task_id)
-        if (status == 'queued' or status == 'running'):
-            return self.delay_analysis(file_location, analysis, seconds=self.frequency)
+        # delay if the host is offline
+        if sensor.status != 'Online':
+            return self.delay_analysis(file_location, analysis, seconds=self.delay)
 
-        # if task was successful then get result
-        elif status == 'complete':
-            result = chronos.task_result(analysis.task_id)
+        lr_session = None
+        try:
+            lr_session = sensor.lr_session()
+        except Exception as e:
+            message = "Error starting LR session with CarbonBlack on {} : {}".format(hostname, e)
+            logging.error(message)
+            analysis.details['result'] = "Failed"
+            analysis.details['message'] = message
+            return False
 
-            # get file md5
-            md5_hasher = md5()
-            md5_hasher.update(result)
-            file_md5 = md5_hasher.hexdigest().upper()
+        result = None
+        try:
+            result = lr_session.get_file(location)
+        except Exception as e:
+            message = "Error: '{}' when attempting to get file '{}' from '{}' with Cb".format(e, location, hostname)
+            logging.error(message)
+            analysis.details['result'] = "Failed"
+            analysis.details['message'] = message
+            return False
 
-            # get file name
-            file_name = os.path.basename(file_location.full_path)
-            if '\\' in file_location.full_path:
-                file_name = ntpath.basename(file_location.full_path)
+        # default message for the GUI
+        analysis.details['result'] = "Succeeded"
+        analysis.details['message'] = "'{}' was sucessfully collected from {} via CarbonBlack".format(location, hostname)
 
-            # create file path
-            path = os.path.join(self.root.storage_dir, "collect_file")
-            if not os.path.isdir(path):
-                os.mkdir(path)
-            path = os.path.join(path, file_md5)
-            if not os.path.isdir(path):
-                os.mkdir(path)
-            path = os.path.join(path, file_name)
+        # get file md5
+        md5_hasher = md5()
+        md5_hasher.update(result)
+        file_md5 = md5_hasher.hexdigest().upper()
 
-            # write result to file and add observable
-            with open(path, "wb") as fh:
-                fh.write(result)
+        # get file name
+        file_name = os.path.basename(file_location.full_path)
+        if '\\' in file_location.full_path:
+            file_name = ntpath.basename(file_location.full_path)
 
-            analysis.add_observable(F_FILE, os.path.relpath(path, start=self.root.storage_dir))
+        # create file path
+        path = os.path.join(self.root.storage_dir, "collect_file")
+        if not os.path.isdir(path):
+            os.mkdir(path)
+        path = os.path.join(path, file_md5)
+        if not os.path.isdir(path):
+            os.mkdir(path)
+        path = os.path.join(path, file_name)
+
+        # write result to file and add observable
+        with open(path, "wb") as fh:
+            fh.write(result)
+
+        analysis.add_observable(F_FILE, os.path.relpath(path, start=self.root.storage_dir))
 
         return True
