@@ -34,7 +34,7 @@ from saq.anp import *
 from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
-                         add_delayed_analysis_request
+                         add_delayed_analysis_request, clear_expired_locks
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 from saq.performance import record_metric
@@ -760,6 +760,43 @@ class Engine(object):
             logging.error("unable to update node {} status: {}".format(saq.SAQ_NODE, e))
             report_exception()
 
+    @use_db
+    def execute_primary_node_routines(self, db, c):
+        """Executes primary node routines and may become the primary node if no other node has done so."""
+        try:
+            # is there a primary node that has updated node status in the past N seconds
+            # where N is 30 + node update status frequency
+            c.execute("""
+                SELECT node FROM nodes 
+                WHERE 
+                    is_primary = 1 
+                    AND TIMESTAMPDIFF(SECOND, last_update, NOW()) < %s
+                """, (self.node_status_update_frequency + 30,))
+
+            primary_node = c.fetchone()
+
+            # is there no primary node at this point?
+            if primary_node is None:
+                execute_with_retry(db, c, "UPDATE nodes SET is_primary = 0", ())
+                execute_with_retry(db, c, "UPDATE nodes SET is_primary = 1, last_update = NOW() WHERE node = %s", 
+                                  (saq.SAQ_NODE,))
+                db.commit()
+                primary_node = saq.SAQ_NODE
+                logging.info("this node {} has become the primary node".format(saq.SAQ_NODE))
+
+            # are we the primary node?
+            if primary_node != saq.SAQ_NODE:
+                logging.debug("node {} is not primary - skipping primary node routines".format(saq.SAQ_NODE))
+                return
+
+            # do primary node stuff
+            # clear any outstanding locks
+            clear_expired_locks()
+
+        except Exception as e:
+            logging.error("error executing primary node routines: {}".format(e))
+            report_exception()
+
     def start_engine(self):
 
         self.engine_process = Process(target=self.engine_loop, name='ACE Engine')
@@ -801,9 +838,10 @@ class Engine(object):
 
                 # is it time to update our node status?
                 if self.next_status_update_time is None or \
-                datetime.datetime.now() > self.next_status_update_time:
+                datetime.datetime.now() >= self.next_status_update_time:
 
                     self.update_node_status()
+                    self.execute_primary_node_routines()
 
                     # when will we do this again?
                     self.next_status_update_time = datetime.datetime.now() + \

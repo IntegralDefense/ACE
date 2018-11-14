@@ -1534,17 +1534,27 @@ class Workload(Base):
     company = relationship('saq.database.Company', foreign_keys=[company_id])
 
 @use_db
-def add_workload(uuid, analysis_mode, db, c):
+def add_workload(uuid, analysis_mode, company_id=None, db=None, c=None):
     """Adds the given work item to the workload queue."""
+    # if we don't specify an analysis mode then we default to whatever the engine default is
+    # NOTE you should always specify an analysis mode
+    if analysis_mode is None:
+        logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(uuid))
+        analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
+
+    # the company_id simply defaults to the current company_id
+    if company_id is None:
+        company_id = saq.COMPANY_ID
+        
     execute_with_retry(db, c, """
 INSERT INTO workload (
     uuid,
     node,
     analysis_mode,
     company_id )
-VALUES ( %s, %s, %s, %s )""", (uuid, saq.SAQ_NODE, analysis_mode, saq.COMPANY_ID))
+VALUES ( %s, %s, %s, %s )""", (uuid, saq.SAQ_NODE, analysis_mode, company_id))
     db.commit()
-    logging.info("added {} to workload with analysis mode {}".format(uuid, analysis_mode))
+    logging.info("added {} to workload with analysis mode {} company_id {}".format(uuid, analysis_mode, company_id))
 
 class Lock(Base):
     
@@ -1644,6 +1654,15 @@ def release_lock(uuid, lock_uuid, db, c):
         report_exception()
 
     return False
+
+@use_db
+def clear_expired_locks(db, c):
+    """Clear any locks that have exceeded saq.LOCK_TIMEOUT_SECONDS."""
+    execute_with_retry(db, c, "DELETE FROM locks WHERE TIMESTAMPDIFF(SECOND, lock_time, NOW()) >= %s",
+                              saq.LOCK_TIMEOUT_SECONDS)
+    db.commit()
+    if c.rowcount:
+        logging.debug("removed {} expired locks".format(c.rowcount))
 
 class DelayedAnalysis(Base):
 
