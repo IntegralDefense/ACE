@@ -21,7 +21,9 @@ class CollectFileAnalysis(Analysis):
         return "analysis/collect_file.html"
 
     def generate_summary(self):
-        return "Collect File Analysis - {}".format(self.details['result'])
+        if 'result' in self.details:
+            return "Collect File Analysis - {}".format(self.details['result'])
+        return None
 
 class CollectFileAnalyzer(AnalysisModule):
 
@@ -36,6 +38,10 @@ class CollectFileAnalyzer(AnalysisModule):
     @property
     def delay(self):
         return self.config.getint('delay')
+
+    @property
+    def timeout_hours(self):
+        return self.config.getint('timeout_hours')
 
     @property
     def generated_analysis_type(self):
@@ -89,7 +95,10 @@ class CollectFileAnalyzer(AnalysisModule):
 
     def execute_analysis(self, file_location):
 
-        analysis = self.create_analysis(file_location)
+
+        analysis = file_location.get_analysis(CollectFileAnalysis)
+        if analysis is None:
+            analysis = self.create_analysis(file_location)
 
         hostname = file_location.hostname
         location = file_location.full_path
@@ -98,7 +107,7 @@ class CollectFileAnalyzer(AnalysisModule):
 
         # delay if the host is offline
         if sensor.status != 'Online':
-            return self.delay_analysis(file_location, analysis, seconds=self.delay)
+            return self.delay_analysis(file_location, analysis, seconds=self.delay, timeout_hours=self.timeout_hours)
 
         lr_session = None
         try:
