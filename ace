@@ -200,8 +200,20 @@ def daemonize(daemon_name):
 
     daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
     if os.path.exists(daemon_pid_path):
-        logging.error("deamon PID file {} exists: run command with -k to kill existing daemon and/or delete the pid file".format(daemon_pid_path))
-        sys.exit(1)
+        pid = None
+        with open(daemon_pid_path, 'r') as fp:
+            pid = int(fp.read())
+        
+        if pid > 0:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                logging.warning("deamon PID file {} exists, but the process is not running. Proceeding to start engine.")
+            else:
+                import psutil
+                process = psutil.Process(pid)
+                logging.error("deamon PID file {} exists and '{}' is running with the contained PID={}: use command with -k to kill existing daemon".format(daemon_pid_path, process.name(), pid))
+                sys.exit(1)
 
     pid = None
 
