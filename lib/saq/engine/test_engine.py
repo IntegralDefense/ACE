@@ -27,7 +27,7 @@ from saq.util import storage_dir_from_uuid
 
 class EngineTestCase(ACEEngineTestCase):
 
-    def test_engine_000_controlled_stop(self):
+    def test_engine_controlled_stop(self):
 
         engine = Engine()
 
@@ -76,21 +76,11 @@ class EngineTestCase(ACEEngineTestCase):
         """Test starting and stopping in single-process mode."""
 
         engine = Engine()
-        started_event = threading.Event()
-        
-        def _terminate():
-            started_event.wait()
-            engine.stop()
-
-        t = threading.Thread(target=_terminate)
-        t.start()
 
         try:
-            engine.single_threaded_start(started_event=started_event)
+            engine.single_threaded_start()
         except KeyboardInterrupt:
             pass
-
-        t.join()
 
     def test_engine_default_pools(self):
         """Test starting with no analysis pools defined."""
@@ -148,8 +138,8 @@ class EngineTestCase(ACEEngineTestCase):
 
         engine = TestEngine()
         engine.enable_module('analysis_module_basic_test')
-        engine.controlled_stop()
-        engine.single_threaded_start(analysis_mode_priority='test_single')
+        #engine.controlled_stop() # redundant
+        engine.single_threaded_start(mode='test_single')
 
         root.load()
         observable = root.get_observable(observable.id)
@@ -235,7 +225,7 @@ class EngineTestCase(ACEEngineTestCase):
         from saq.modules.test import BasicTestAnalysis
         analysis = observable.get_analysis(BasicTestAnalysis)
         self.assertIsNotNone(analysis)
-        self.assertTrue(log_count('specifies invalid analysis mode') > 0)
+        self.assertTrue(log_count('invalid analysis mode') > 0)
 
     def test_engine_multi_process_multi_analysis(self):
 
@@ -423,11 +413,10 @@ class EngineTestCase(ACEEngineTestCase):
         # tell ACE to reload the configuration and then reload all the workers
         os.kill(engine.engine_process.pid, signal.SIGHUP)
 
-        self.assertTrue(wait_for_log_entry(lambda event: 'reloading engine configuration' in event.getMessage(), timeout=5))
-        wait_for_log_count('starting workers', 2)
+        wait_for_log_count('reloading engine configuration', 1, 5)
+        wait_for_log_count('got command to restart workers', 1, 5)
+        wait_for_log_count('started worker loop', 2)
         engine.controlled_stop()
-        # we rely on the logs to tell us that something happened that we expect
-        self.assertEquals(log_count('reloading engine configuration'), 1)
         engine.wait()
 
     @track_io
@@ -1643,3 +1632,66 @@ class EngineTestCase(ACEEngineTestCase):
         # make sure the lock is gone
         c.execute("SELECT uuid FROM locks WHERE uuid = %s", (target,))
         self.assertIsNone(c.fetchone())
+
+    def test_threaded_analysis_module(self):
+        
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_threaded_test')
+        engine.set_analysis_pool_size(1)
+        engine.controlled_stop()
+        engine.start()
+        # we should see this execute at least once
+        wait_for_log_count('threaded execution called', 1, 5)
+        engine.wait()
+
+    def test_threaded_analysis_module_broken(self):
+        
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_1')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+
+        # have this fail after 1 second of waiting
+        saq.EXECUTION_THREAD_LONG_TIMEOUT = 1
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_threaded_test_broken')
+        engine.set_analysis_pool_size(1)
+        engine.start()
+        wait_for_log_count('is not stopping', 1, 6)
+        wait_for_log_count('failing to stop - process dying', 1, 10)
+        engine.stop()
+        engine.wait()
+
+    def test_engine_worker_recovery(self):
+        
+        # make sure the engine detects dead workers and replaces them
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_worker_death')
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
+        engine.start()
+        # we should see it die
+        wait_for_log_count('detected death of', 1, 5)
+        # and then we should have seen two workers start
+        wait_for_log_count('started worker loop', 2, 5)
+        engine.stop()
+        engine.wait()

@@ -85,6 +85,9 @@ DUMP_TRACEBACKS = False
 # the amount of time (in seconds) that a lock in the locks table is valid
 LOCK_TIMEOUT_SECONDS = None
 
+# amount of time (in seconds) before a process blows up because a threaded module won't stop
+EXECUTION_THREAD_LONG_TIMEOUT = None
+
 # the company/custom this node belongs to
 COMPANY_NAME = None
 COMPANY_ID = None
@@ -224,6 +227,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     global LOCK_TIMEOUT_SECONDS
     global COMPANY_NAME
     global COMPANY_ID
+    global EXECUTION_THREAD_LONG_TIMEOUT
 
     # go ahead and try to figure out what text encoding we're using
     DEFAULT_ENCODING = locale.getpreferredencoding()
@@ -302,6 +306,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     minutes, seconds = map(int, CONFIG['global']['lock_timeout'].split(':'))
     LOCK_TIMEOUT_SECONDS = (minutes * 60) + seconds
+    EXECUTION_THREAD_LONG_TIMEOUT = CONFIG['global'].getint('execution_thread_long_timeout')
 
     # user specified log level
     LOG_LEVEL = logging.INFO

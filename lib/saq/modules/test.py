@@ -58,6 +58,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_7(test)
         elif test.value == 'test_8':
             return self.execute_analysis_8(test)
+        elif test.value == 'test_worker_death':
+            return self.execute_analysis_worker_death(test)
         else:
             return False
 
@@ -96,6 +98,10 @@ class BasicTestAnalyzer(AnalysisModule):
         analysis.add_detection_point('test detection')
         self.root.whitelisted = True
         return True
+
+    def execute_analysis_worker_death(self, test):
+        logging.info("execute_worker_death")
+        os._exit(1)
 
 class MergeTestAnalysis(TestAnalysis):
     def initialize_details(self):
@@ -485,3 +491,13 @@ class WaitAnalyzerModule_C(AnalysisModule):
     def execute_analysis_test_engine_032a(self, test):
         self.create_analysis(test)
         return True
+
+class ThreadedModuleTest(AnalysisModule):
+    def execute_threaded(self):
+        # this gets called on a side thread
+        logging.debug("threaded execution called")
+
+class BrokenThreadedModuleTest(AnalysisModule):
+    def execute_threaded(self):
+        # just hangs for too long
+        time.sleep(30)

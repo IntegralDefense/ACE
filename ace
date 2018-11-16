@@ -1748,7 +1748,7 @@ def import_alerts(args):
         alert.sync()
 
         # request analysis
-        alert.request_correlation()
+        alert.schedule()
 
         logging.info("imported alert {}".format(alert))
 

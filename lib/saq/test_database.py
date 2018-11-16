@@ -14,7 +14,8 @@ import saq.test
 
 from saq.constants import *
 from saq.database import get_db_connection, Alert, \
-                         enable_cached_db_connections, disable_cached_db_connections
+                         enable_cached_db_connections, disable_cached_db_connections, \
+                         acquire_lock, release_lock
 from saq.test import *
 
 class DatabaseTestCase(ACEBasicTestCase):
@@ -43,22 +44,20 @@ class DatabaseTestCase(ACEBasicTestCase):
     def test_database_002_lock(self):
         alert = self.insert_alert()
 
-        self.assertTrue(alert.lock())
+        lock_uuid = acquire_lock(alert.uuid)
+        self.assertTrue(lock_uuid)
         # something that was locked is locked
         self.assertTrue(alert.is_locked())
         # and can be locked again
-        self.assertTrue(alert.lock())
-        # but not by another Alert object
-        another_alert = Alert(uuid=alert.uuid)
-        self.assertFalse(another_alert.lock())
+        self.assertEquals(lock_uuid, acquire_lock(alert.uuid, lock_uuid))
         # can be unlocked
-        self.assertTrue(alert.unlock())
+        self.assertTrue(release_lock(alert.uuid, lock_uuid))
         # truely is unlocked
         self.assertFalse(alert.is_locked())
         # cannot be unlocked again  
-        self.assertFalse(alert.unlock())
+        self.assertFalse(release_lock(alert.uuid, lock_uuid))
         # and can be locked again
-        self.assertTrue(alert.lock())
+        self.assertTrue(acquire_lock(alert.uuid))
         self.assertTrue(alert.is_locked())
 
     #@unittest.skip("...")
@@ -71,12 +70,12 @@ class DatabaseTestCase(ACEBasicTestCase):
         def p1(alert_id):
             session = saq.database.DatabaseSession()
             alert = session.query(Alert).filter(Alert.id == alert_id).one()
-            alert.lock()
+            lock_uuid = acquire_lock(alert.uuid)
             # tell parent to get the lock
             sync0.set()
             # wait for parent to signal
             sync1.wait()
-            alert.unlock()
+            release_lock(alert.uuid, lock_uuid)
             sync2.set()
 
         p = Process(target=p1, args=(alert.id,))
@@ -88,19 +87,17 @@ class DatabaseTestCase(ACEBasicTestCase):
             # lock should already be locked
             self.assertTrue(alert.is_locked())
             # should not be able to lock the lock
-            self.assertFalse(alert.lock())
-            # and should not be able to unlock the lock
-            self.assertFalse(alert.unlock())
-            self.assertTrue(alert.is_locked())
+            self.assertFalse(acquire_lock(alert.uuid))
 
             sync1.set()
             sync2.wait()
             # lock should be unlocked
             self.assertFalse(alert.is_locked())
             # and we should be able to lock it
-            self.assertTrue(alert.lock())
+            lock_uuid = acquire_lock(alert.uuid)
+            self.assertTrue(uuid)
             self.assertTrue(alert.is_locked())
-            self.assertTrue(alert.unlock())
+            self.assertTrue(release_lock(alert.uuid, lock_uuid))
             self.assertFalse(alert.is_locked())
             
             p.join()
@@ -112,15 +109,15 @@ class DatabaseTestCase(ACEBasicTestCase):
 
     def test_database_003_expired(self):
         # set locks to expire immediately
-        old_value = saq.LOCK_TIMEOUT_SECONDS
         saq.LOCK_TIMEOUT_SECONDS = 0
         alert = self.insert_alert()
-        self.assertTrue(alert.lock())
+        lock_uuid = acquire_lock(alert.uuid)
+        self.assertTrue(lock_uuid)
         # should expire right away
         self.assertFalse(alert.is_locked())
         # and we are able to lock it again
-        self.assertTrue(alert.lock())
-        saq.LOCK_TIMEOUT_SECONDS = old_value
+        lock_uuid = acquire_lock(alert.uuid)
+        self.assertTrue(lock_uuid)
 
     def test_database_005_caching(self):
         from saq.database import _cached_db_connections_enabled

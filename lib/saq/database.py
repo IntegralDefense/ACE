@@ -736,29 +736,20 @@ class Alert(RootAnalysis, Base):
 
     @property
     def status(self):
-        status = ''
+        if self.lock is not None:
+            return 'Analyzing ({})'.format(self.lock.lock_owner)
 
-        if self.workload_item is None:
-            if self.lock_id:
-                status = 'Analyzing'
-                #if self.lock_time and lock_expired(self.lock_time):
-                    #status += ' (expired)'
-            else:
-                if self.delayed:
-                    status = 'Delayed'
-                else:
-                    status = 'Completed'
+        if self.delayed_analysis is not None:
+            return 'Delayed ({})'.format(self.delayed_analysis.analysis_module)
+    
+        if self.workload is not None:
+            return 'New'
 
-        elif self.workload_item.node is None:
-            status = 'New'
-
-        else:
-            status = 'Assigned'
-
+        # XXX this kind of sucks -- find a different way to do this
         if self.removal_time is not None:
-            status = '{} (Removed)'.format(status)
+            return 'Completed (Removed)'.format(status)
 
-        return status
+        return 'Completed'
 
     # relationships
     disposition_user = relationship('saq.database.User', foreign_keys=[disposition_user_id])
@@ -1067,13 +1058,13 @@ WHERE
 
         return True
 
-    def lock(self):
-        """Acquire a lock on the analysis. Returns True if a lock was obtained, False otherwise."""
-        return acquire_lock(self.uuid, self.lock_uuid, lock_owner="Alert ({})".format(os.getpid()))
+    #def lock(self):
+        #"""Acquire a lock on the analysis. Returns True if a lock was obtained, False otherwise."""
+        #return acquire_lock(self.uuid, self.lock_uuid, lock_owner="Alert ({})".format(os.getpid()))
 
-    def unlock(self):
-        """Releases a lock on the analysis."""
-        return release_lock(self.uuid, self.lock_uuid)
+    #def unlock(self):
+        #"""Releases a lock on the analysis."""
+        #return release_lock(self.uuid, self.lock_uuid)
 
     @use_db
     def is_locked(self, db, c):
@@ -1105,22 +1096,6 @@ WHERE
 
         finally:
             # if we opened a new Sesion then we need to make sure we close it when we're done
-            if new_session:
-                session.close()
-
-    def request_correlation(self):
-        """Inserts this alert into the workload of the automated analysis engine."""
-        new_session = False
-        session = Session.object_session(self)
-        if session is None:
-            session = DatabaseSession()
-            new_session = True
-
-        try:
-            logging.info("requesting correlation of {}".format(self))
-            session.add(EngineWorkload(alert_id=self.id))
-            session.commit()
-        finally:
             if new_session:
                 session.close()
 
@@ -1236,6 +1211,16 @@ WHERE
     #@delayed.setter
     #def delayed(self, value):
         #pass
+
+    # NOTE there is no database relationship between these tables
+    workload = relationship('saq.database.Workload', foreign_keys=[uuid],
+                            primaryjoin='saq.database.Workload.uuid == Alert.uuid')
+
+    delayed_analysis = relationship('saq.database.DelayedAnalysis', foreign_keys=[uuid],
+                                    primaryjoin='saq.database.DelayedAnalysis.uuid == Alert.uuid')
+
+    lock = relationship('saq.database.Lock', foreign_keys=[uuid],
+                        primaryjoin='saq.database.Lock.uuid == Alert.uuid')
 
 class Similarity:
     def __init__(self, uuid, disposition, percent):
@@ -1581,15 +1566,21 @@ class Lock(Base):
         nullable=True)
 
 @use_db
-def acquire_lock(uuid, lock_uuid, db, c, lock_owner=None):
+def acquire_lock(_uuid, lock_uuid=None, lock_owner=None, db=None, c=None):
     """Attempts to acquire a lock on a workitem by inserting the uuid into the locks database table.
-       Returns False if a lock already exists or True if the lock was acquired."""
+       Returns False if a lock already exists or True if the lock was acquired.
+       If a lock_uuid is not given, then a random one is generated and used and returned on success."""
+
     try:
+        if lock_uuid is None:
+            lock_uuid = str(uuid.uuid4())
+
         execute_with_retry(db, c , "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
-                          ( uuid, lock_uuid, lock_owner ))
-        logging.debug("locked {} with {}".format(uuid, lock_uuid))
+                          ( _uuid, lock_uuid, lock_owner ))
+
+        logging.debug("locked {} with {}".format(_uuid, lock_uuid))
         db.commit()
-        return True
+        return lock_uuid
 
     except pymysql.err.IntegrityError as e:
         # if a lock already exists -- make sure it's owned by someone else
@@ -1606,24 +1597,24 @@ SET
 WHERE 
     uuid = %s 
     AND ( lock_uuid = %s OR TIMESTAMPDIFF(SECOND, lock_time, NOW()) >= %s )
-""", (lock_uuid, lock_owner, uuid, lock_uuid, saq.LOCK_TIMEOUT_SECONDS))
+""", (lock_uuid, lock_owner, _uuid, lock_uuid, saq.LOCK_TIMEOUT_SECONDS))
             db.commit()
 
-            c.execute("SELECT lock_uuid, lock_owner FROM locks WHERE uuid = %s", (uuid,))
+            c.execute("SELECT lock_uuid, lock_owner FROM locks WHERE uuid = %s", (_uuid,))
             row = c.fetchone()
             if row:
                 current_lock_uuid, current_lock_owner = row
                 if current_lock_uuid == lock_uuid:
-                    logging.debug("locked {} with {}".format(uuid, lock_uuid))
-                    return True
+                    logging.debug("locked {} with {}".format(_uuid, lock_uuid))
+                    return lock_uuid
 
                 # lock was acquired by someone else
                 logging.info("attempt to acquire lock {} failed (already locked by {}: {})".format(
-                             uuid, current_lock_uuid, current_lock_owner))
+                             _uuid, current_lock_uuid, current_lock_owner))
 
             else:
                 # lock was acquired by someone else
-                logging.info("attempt to acquire lock {} failed".format(uuid))
+                logging.info("attempt to acquire lock {} failed".format(_uuid))
 
             return False
 
