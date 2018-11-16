@@ -7,6 +7,8 @@ import os
 import os.path
 import re
 import signal
+import sys
+import threading
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -78,6 +80,54 @@ class AnalysisModule(object):
 
         # a list (set) of files that are currently being watched
         self.watched_files = {} # key = path, value = WatchedFile
+
+        # set to true if this is a threaded module
+        self.is_threaded = False
+        if 'threaded' in self.config:
+            self.is_threaded = self.config.getboolean('threaded')
+
+        # how often self.execute_threaded is called from the self.execute_threaded_loop
+        self.threaded_execution_frequency = 1
+        if 'threaded_execution_frequency' in self.config:
+            self.threaded_execution_frequency = self.config.getint('threaded_execution_frequency')
+
+        # the actual thread performing the work
+        self.threaded_execution_thread = None
+
+        # event to signal the thread can stop
+        self.threaded_execution_stop_event = None
+
+    def start_threaded_execution(self):
+        if not self.is_threaded:
+            return
+
+        self.threaded_execution_stop_event = threading.Event()
+        self.threaded_execution_thread = threading.Thread(target=self.execute_threaded_loop,
+                                                          name="Threaded Module {}".format(self))
+        self.threaded_execution_thread.start()
+        logging.info("started thread {}".format(self.threaded_execution_thread))
+
+    def stop_threaded_execution(self):
+        if not self.is_threaded:
+            return
+
+        self.threaded_execution_stop_event.set()
+        start = datetime.datetime.now()
+        while True:
+            self.threaded_execution_thread.join(5)
+            if not self.threaded_execution_thread.is_alive():
+                break
+
+            logging.error("thread {} is not stopping".format(self.threaded_execution_thread))
+
+            # have we been waiting for a really long time?
+            if (datetime.datetime.now() - start).total_seconds() >= saq.EXECUTION_THREAD_LONG_TIMEOUT:
+                logging.critical("execution thread {} is failing to stop - process dying".format(
+                                  self.threaded_execution_thread))
+                # suicide
+                os._exit(1)
+
+        logging.debug("threaded execution module {} has stopped ({})".format(self, self.threaded_execution_thread))
 
     def reset(self):
         """Resets the module to initialized state."""
@@ -443,7 +493,6 @@ class AnalysisModule(object):
 
     def cancel_analysis(self):
         """Try to cancel the analysis loop."""
-        #logging.debug("called stop() on {0}".format(self))
         self.cancel_analysis_flag = True
         
         # also try to cancel a semaphore acquire request, if there is one
@@ -578,6 +627,36 @@ class AnalysisModule(object):
     def execute_post_analysis(self):
         """This is called once after all analysis work has been performed and no outstanding work is left."""
         pass
+
+    def execute_threaded(self):
+        """This is called on a thread if the module is configured as threaded."""
+        pass
+
+    def execute_threaded_loop(self):
+        # continue to execute until analysis has completed
+        while True:
+            try:
+                self.execute_threaded()
+            except Exception as e:
+                logging.error("{} failed threaded execution on {}: {}".format(self, self.root, e))
+                report_exception()
+                return
+
+            # wait for self.threaded_execution_frequency seconds before we execute again
+            # make sure we exit when we're asked to
+            timeout = self.threaded_execution_frequency
+            while not self.engine.cancel_analysis_flag and \
+                  not self.threaded_execution_stop_event.is_set() and \
+                  timeout > 0:
+
+                time.sleep(1)
+                timeout -= 1
+
+            if self.engine.cancel_analysis_flag:
+                return
+
+            if self.threaded_execution_stop_event.is_set():
+                return
 
     def auto_reload(self):
         """Called every N seconds (see auto_reload_frequency in abstract

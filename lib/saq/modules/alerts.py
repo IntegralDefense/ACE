@@ -17,6 +17,32 @@ from saq.database import get_db_connection, use_db
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 
+class ACEAlertDispositionAnalyzer(AnalysisModule):
+    """Cancels any further analysis if the disposition has been set by the analyst."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_mode = self.config['target_mode']
+
+    def execute_pre_analysis(self):
+        self.check_disposition()
+
+    def execute_threaded(self):
+        self.check_disposition()
+
+    @use_db
+    def check_disposition(self, db, c):
+        c.execute("SELECT disposition FROM alerts WHERE uuid = %s", (self.root.uuid,))
+        row = c.fetchone()
+        # did the alert vanish from the database?
+        if row is None:
+            logging.warning("alert {} seems to have vanished from the database".format(self.root.uuid))
+            self.engine.cancel_analysis()
+
+        disposition = row[0]
+        if disposition is not None:
+            logging.info("alert {} has been dispositioned - canceling analysis".format(self.root.uuid))
+            self.engine.cancel_analysis()
+
 class ACEDetectionAnalyzer(AnalysisModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

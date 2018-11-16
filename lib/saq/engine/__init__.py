@@ -67,6 +67,236 @@ class WaitForAnalysisException(Exception):
         self.observable = observable
         self.analysis = analysis
 
+class Worker(object):
+    def __init__(self, mode=None):
+        self.mode = mode # the primary analysis mode for the worker
+        self.process = None
+
+        # when this is set the worker will exit
+        self.worker_shutdown_event = None
+
+        # set this Event once you're started up and are running
+        self.worker_startup_event = None
+
+    def start(self):
+        self.worker_shutdown_event = Event()
+        self.worker_startup_event = Event()
+        self.process = Process(target=self.worker_loop, name='Worker [{}]'.format(self.mode))
+        self.process.start()
+  
+    def single_threaded_start(self):
+        self.worker_shutdown_event = Event()
+        self.worker_startup_event = Event()
+        self.worker_loop()
+
+    def wait_for_start(self):
+        while not self.worker_startup_event.wait(5):
+            logging.warning("worker for {} not starting".format(self.mode))
+
+    def stop(self):
+        self.worker_shutdown_event.set()
+        self.wait()
+
+    def wait(self):
+        while True:
+            logging.info("waiting for {}...".format(self.process))
+            self.process.join(1)
+            if not self.process.is_alive():
+                return
+
+            # if we are in a controlled shutdown then the wait could take a while
+            if not CURRENT_ENGINE.controlled_shutdown:
+                logging.warning("process {} not stopping".format(self.process))
+
+    def check(self):
+        """Makes sure the process is running and restarts it if it is not."""
+        # if the system is shutting down then we don't need to worry about it
+        if self.worker_shutdown_event is not None and self.worker_shutdown_event.is_set():
+            logging.debug("engine under worker shutdown -- not restarting processes")
+            return
+
+        if CURRENT_ENGINE.shutdown:
+            logging.debug("engine under shutdown -- not restarting processes")
+            return
+
+        if CURRENT_ENGINE.controlled_shutdown:
+            logging.debug("engine under controlled shutdown -- not restarting processes")
+            return
+
+        # is the process running?
+        if self.process is not None and self.process.is_alive():
+            return
+
+        # if not then start it back up
+        logging.warning("detected death of process {} pid {}".format(self.process, self.process.pid))
+        self.start()
+        self.wait_for_start()
+
+    def worker_loop(self):
+        logging.info("started worker loop on process {} with priority {}".format(os.getpid(), self.mode))
+        CURRENT_ENGINE.setup(self.mode)
+
+        # let the main process know we started
+        if self.worker_startup_event is not None:
+            self.worker_startup_event.set()
+        
+        while True:
+            # is the engine shutting down?
+            if CURRENT_ENGINE.shutdown:
+                break
+
+            # have we requested this single worker to shut down?
+            if self.worker_shutdown_event is not None and self.worker_shutdown_event.is_set():
+                break
+
+            try:
+                # if the control event is set then it means we're looking to exit when everything is done
+                if CURRENT_ENGINE.control_event.is_set():
+                    if CURRENT_ENGINE.delayed_analysis_queue_is_empty and CURRENT_ENGINE.workload_queue_is_empty:
+                        break # break out of the main loop
+
+                    # kind of expensive to run this so we check the logging level here
+                    if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+                        logging.debug("queue sizes workload {} delayed {}".format(
+                                       CURRENT_ENGINE.workload_queue_size,
+                                       CURRENT_ENGINE.delayed_analysis_queue_size))
+
+                # if execute returns True it means it discovered and processed a work_item
+                # in that case we assume there is more work to do and we check again immediately
+                if CURRENT_ENGINE.execute():  
+                    continue
+
+                # otherwise we wait a second until we go again
+                if self.worker_shutdown_event is not None:
+                    if self.worker_shutdown_event.wait(1):
+                        break
+                else:
+                    self.sleep(1)
+                    
+            except KeyboardInterrupt:
+                logging.warning("caught user interrupt in worker_loop")
+                if CURRENT_ENGINE.control_event.is_set():
+                    logging.warning("alreadying in controlled shutdown -- stopping now...")
+                    CURRENT_ENGINE.stop()
+                else:
+                    CURRENT_ENGINE.control_event.set()
+            except Exception as e:
+                logging.error("uncaught exception in worker_loop: {}".format(e))
+                report_exception()
+                self.sleep(1)
+
+        logging.debug("worker {} exiting".format(os.getpid()))
+        release_cached_db_connection()
+
+    def __str__(self):
+        return '{}{}'.format(str(self.process), ' (PID {})'.format(self.process.pid) if self.process else '')
+
+class WorkerManager(object):
+    def __init__(self):
+        self.workers = [] # of Worker objects
+        self.process = None
+
+        # set this Event once you've started up and are running
+        self.startup_event = None
+
+        # set this Event when you want to restart all the workers
+        self.restart_workers_event = None
+
+    def add_worker(self, mode=None):
+        """Adds a worker for the given mode. This must be called before calling start()."""
+        self.workers.append(Worker(mode))
+
+    def start(self):
+        self.restart_workers_event = Event()
+        self.startup_event = Event()
+
+        self.process = Process(target=self.manager_loop, name="Worker Manager")
+        self.process.start()
+
+        # wait for the manager to say it has started
+        while not self.startup_event.wait(5):
+            logging.warning("worker manager not starting...")
+
+    # NOTE there's no stop() function for the WorkerManager
+    # instead it relies on the engine to stop
+
+    def wait(self):
+        while True:
+            logging.info("waiting for {}".format(self.process))
+            self.process.join(5)
+            if not self.process.is_alive():
+                break
+            
+            logging.warning("worker manager not stopping")
+
+    def restart_workers(self):
+        self.restart_workers_event.set()
+            
+    def manager_loop(self):
+        logging.info("worker manager started on pid {}".format(os.getpid()))
+
+        # load the workers
+        for key in CURRENT_ENGINE.config.keys():
+            if key.startswith('analysis_pool_size_'):
+                mode = key[len('analysis_pool_size_'):]
+
+                # make sure we support this mode locally
+                if CURRENT_ENGINE.local_analysis_modes and mode not in CURRENT_ENGINE.local_analysis_modes:
+                    logging.warning("engine.{} specified but {} not in engine.local_analysis_modes".format(
+                                    key, mode))
+                    CURRENT_ENGINE.local_analysis_modes.append(mode)
+
+                for i in range(CURRENT_ENGINE.config.getint(key)):
+                    self.add_worker(mode)
+
+        # do we NOT have any defined analysis pools?
+        if len(self.workers) == 0:
+            logging.info("no analysis pools defined -- defaulting to {} workers assigned to any pool".format(
+                         cpu_count()))
+
+            for core in range(cpu_count()):
+                self.add_worker()
+
+        # go ahead and start the workers for the first time
+        for worker in self.workers:
+            worker.start()
+
+        for worker in self.workers:
+            worker.wait_for_start()
+
+        # everything seems to be up and running
+        self.startup_event.set()
+
+        # execute the check every second
+        while not CURRENT_ENGINE.controlled_shutdown \
+                  and not CURRENT_ENGINE.shutdown:
+
+            # start any workers that need to be started
+            for worker in self.workers:
+                worker.check()
+
+            # do we need to restart the workers?
+            if self.restart_workers_event.is_set():
+                logging.info("got command to restart workers")
+                self.restart_workers_event.clear()
+                for worker in self.workers:
+                    worker.stop()
+
+                # make sure we're up to date on the config
+                saq.load_configuration()
+
+                for worker in self.workers:
+                    worker.start()
+
+                for worker in self.workers:
+                    worker.wait_for_start()
+
+        # make sure all the processes exit with you
+        for worker in self.workers:
+            worker.wait()
+
+        logging.info("worker manager on pid {} exiting".format(os.getpid()))
+
 class Engine(object):
     """Analysis Correlation Engine"""
 
@@ -115,8 +345,9 @@ class Engine(object):
         # an event that gets set when the engine has started
         self.engine_startup_event = Event()
 
-        # the worker processes that do the actual analysis
-        self.workers = [] # of Process objects
+        # the worker manager is responsible for starting the actual workers (on a separate process)
+        # and restarting them if they die
+        self.worker_manager = None
 
         # used to start and stop the workers
         self.worker_control_event = Event()
@@ -160,8 +391,6 @@ class Engine(object):
         # this gets set to true when we receive a unix signal
         self.sigterm_received = False
         self.sighup_received = False
-        self.sigusr1_received = False
-        self.sigusr2_received = False
 
         # how often do we automatically reload the workers?
         self.auto_refresh_frequency = self.config.getint('auto_refresh_frequency')
@@ -212,7 +441,6 @@ class Engine(object):
         self.node_status_update_frequency = self.config.getint('node_status_update_frequency')
         # and then when will be the next time we make this update?
         self.next_status_update_time = None
-        
 
     def __str__(self):
         return "Engine ({})".format(saq.SAQ_NODE)
@@ -279,19 +507,11 @@ class Engine(object):
         def handle_sighup(signum, frame):
             self.sighup_received = True
 
-        def handle_sigusr1(signum, frame):
-            self.sigusr1_received = True
-
-        def handle_sigusr2(signum, frame):
-            self.sigusr2_received = True
-    
         def handle_sigterm(signal, frame):
             self.sigterm_received = True
 
         signal.signal(signal.SIGTERM, handle_sigterm)
         signal.signal(signal.SIGHUP, handle_sighup)
-        signal.signal(signal.SIGUSR1, handle_sigusr1)
-        signal.signal(signal.SIGUSR2, handle_sigusr2)
 
     def initialize_modules(self):
         """Loads all configured analysis modules and prepares the analysis mode mapping."""
@@ -549,11 +769,6 @@ class Engine(object):
         """Returns True if the engine is to be shut down NOW."""
         return self.immediate_event.is_set()
 
-    @property
-    def worker_shutdown(self):
-        """Returns True if the workers should be shutting down."""
-        return self.shutdown or self.worker_control_event.is_set()
-
     #
     # CONTROL FUNCTIONS
     # ------------------------------------------------------------------------
@@ -573,11 +788,12 @@ class Engine(object):
         logging.debug("control PID {}".format(os.getpid()))
         self.started = True
 
-    def single_threaded_start(self, analysis_mode_priority=None, started_event=None):
-        """Typically used for debugging. Runs the entire process under a single thread."""
+    def single_threaded_start(self, mode=None):
+        """Typically used for debugging. Runs the entire thing under a single process/thread."""
         logging.warning("executing in single threaded mode")
-        self.initialize()
-        self.worker_loop(analysis_mode_priority, started_event)
+        self.controlled_stop()
+        worker = Worker(mode)
+        worker.single_threaded_start()
 
     def stop(self):
         """Immediately stop the engine."""
@@ -586,7 +802,7 @@ class Engine(object):
 
     def controlled_stop(self):
         """Shutdown the engine in a controlled manner allowing existing jobs to complete."""
-        logging.info("shutting down {}".format(self))
+        logging.info("controlled stop started for {}".format(self))
         if self.controlled_shutdown:
             raise RuntimeError("already requested control_event")
         self.control_event.set()
@@ -673,11 +889,11 @@ class Engine(object):
     def root_lock_manager_loop(self, uuid):
         try:
             while not self.lock_manager_control_event.is_set():
-                if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
-                    logging.warning("failed to maintain lock")
+                if self.lock_manager_control_event.wait(float(saq.CONFIG['global']['lock_keepalive_frequency'])):
                     break
 
-                if self.lock_manager_control_event.wait(float(saq.CONFIG['global']['lock_keepalive_frequency'])):
+                if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
+                    logging.warning("failed to maintain lock")
                     break
 
         except Exception as e:
@@ -819,7 +1035,9 @@ class Engine(object):
         # go ahead and register our node before we start the workers
         self.update_node_status()
 
-        self.start_workers()
+        self.worker_manager = WorkerManager()
+        self.worker_manager.start()
+
         if self.auto_refresh_frequency:
             self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
                                           seconds=self.auto_refresh_frequency)
@@ -846,13 +1064,12 @@ class Engine(object):
                     self.next_status_update_time = datetime.datetime.now() + \
                     datetime.timedelta(seconds=self.node_status_update_frequency)
 
+                reload_flag = False
                 if self.auto_refresh_frequency and datetime.datetime.now() > self.next_auto_refresh_time:
                     logging.info("auto refresh frequency {} triggered reload of worker modules".format(
                                  self.auto_refresh_frequency))
 
-                    self.stop_workers()
-                    saq.load_configuration()
-                    self.start_workers()
+                    reload_flag = True
 
                     self.next_auto_refresh_time = datetime.datetime.now() + \
                     datetime.timedelta(seconds=self.auto_refresh_frequency)
@@ -861,50 +1078,24 @@ class Engine(object):
                 if self.sighup_received:
                     # we re-load the config when we receive SIGHUP
                     logging.info("reloading engine configuration")
-
-                    # reload the workers
-                    self.stop_workers()
-                    saq.load_configuration()
-                    self.start_workers()
-
+                    reload_flag = True
                     self.sighup_received = False
 
-                if self.sigusr1_received:
-                    for worker in self.workers:
-                        try:
-                            logging.info("sending SIGUSR1 to worker {}".format(worker))
-                            os.kill(worker.pid, signal.SIGUSR1)
-                        except Exception as e:
-                            logging.error("unable to send SIGUSR1 to worker {}".format(worker))
-                            report_exception()
-                    
-                    self.sigusr1_received = False
-
-                if self.sigusr2_received:
-                    for worker in self.workers:
-                        try:
-                            logging.info("sending SIGUSR2 to worker {}".format(worker))
-                            os.kill(worker.pid, signal.SIGUSR2)
-                        except Exception as e:
-                            logging.error("unable to send SIGUSR2 to worker {}".format(worker))
-                            report_exception()
-
-                    self.sigusr2_received = False
+                if reload_flag:
+                    # tell the manager to reload the workers
+                    self.worker_manager.restart_workers()
+                    # and then reload the configuration
+                    saq.load_configuration()
                 
                 # if this event is set then we need to exit now
-                if self.immediate_event.wait(0.1):
+                if self.immediate_event.wait(0.5):
                     break
         
-                if self.control_event.wait(0.1):
+                if self.control_event.wait(0.5):
                     break
 
             # if we're shutting down then go ahead and tell the workers to shut down
-            if self.shutdown:
-                self.stop_workers()
-            else:
-                # otherwise just wait for the workers to finish working the queue
-                self.wait_workers()
-
+            self.worker_manager.wait()
             self.stop_maintenance_threads()
 
         except KeyboardInterrupt:
@@ -916,129 +1107,6 @@ class Engine(object):
     # PROCESS MANAGEMENT
     # ------------------------------------------------------------------------
 
-    def start_workers(self):
-        logging.debug("starting workers")
-        self.worker_control_event.clear()
-        self.workers = []
-        tracking = [] # of (process, event)
-
-        for key in self.config.keys():
-            if key.startswith('analysis_pool_size_'):
-                mode = key[len('analysis_pool_size_'):]
-
-                # make sure we support this mode locally
-                if self.local_analysis_modes and mode not in self.local_analysis_modes:
-                    logging.warning("engine.{} specified but {} not in engine.local_analysis_modes".format(
-                                    key, mode))
-                    self.local_analysis_modes.append(mode)
-
-                for i in range(self.config.getint(key)):
-                    event = Event()
-                    p = Process(target=self.worker_loop, 
-                                name='Worker {} [{}]'.format(i, mode), args=(mode, event))
-                    self.workers.append(p)
-                    tracking.append((p, event))
-                    p.start()
-
-        # do we NOT have any defined analysis pools?
-        if len(self.workers) == 0:
-            logging.info("no analysis pools defined -- defaulting to {} workers assigned to any pool".format(
-                         cpu_count()))
-            for core in range(cpu_count()):
-                event = Event()
-                p = Process(target=self.worker_loop, name='Worker {} [{}]'.format(core, 'equal priority'), 
-                            args=(None, event))
-                self.workers.append(p)
-                tracking.append((p, event))
-                p.start()
-
-        logging.info("waiting for workers to start...")
-        for p, event in tracking:
-            if not event.wait(5):
-                logging.critical("detected {} failed to start".format(p.name))
-                return False
-
-        logging.info("workers started")
-        return True
-
-    def stop_workers(self):
-        logging.info("stopping workers")
-        self.worker_control_event.set()
-        self.wait_workers()
-
-    def wait_workers(self):
-        """Waits for all the workers to shutdown."""
-        for worker in self.workers:
-            logging.info("waiting for worker {}".format(worker.pid))
-            worker.join()
-            logging.info("worker {} stopped".format(worker.pid))
-
-    def restart_workers(self):
-        logging.info("restarting workers")
-        self.stop_workers()
-        self.start_workers()
-
-    def worker_loop(self, analysis_mode_priority, started_event):
-        logging.info("started worker loop on process {} with priority {}".format(os.getpid(), analysis_mode_priority))
-        enable_cached_db_connections()
-
-        # this determines what kind of work we look for first
-        self.analysis_mode_priority = analysis_mode_priority
-
-        # set up our lock
-        self.lock_uuid = str(uuid.uuid4())
-        self.lock_owner = '{}-{}-{}'.format(saq.SAQ_NODE, analysis_mode_priority, os.getpid())
-
-        try:
-            self.initialize_modules()
-        except Exception as e:
-            logging.error("unable to initialize modules: {} (worker exiting)".format(e))
-            report_exception()
-            return
-
-        self.initialize_signal_handlers()
-
-        # let the main process know we started
-        if started_event is not None:
-            started_event.set()
-        
-        while not self.shutdown and not self.worker_shutdown:
-            # we're not doing anything with these signals atm
-            if self.sigusr1_received:
-                self.sigusr1_received = False
-
-            if self.sigusr2_received:
-                self.sigusr2_received = False
-
-            try:
-                # if the control event is set then it means we're looking to exit when everything is done
-                if self.control_event.is_set():
-                    if self.delayed_analysis_queue_is_empty and self.workload_queue_is_empty:
-                        #self.stop() # XXX not sure we actually need this
-                        return
-
-                    logging.debug("queue sizes workload {} delayed {}".format(
-                                   self.workload_queue_size,
-                                   self.delayed_analysis_queue_size))
-
-                # if execute returns True it means it discovered and processed a work_item
-                # in that case we assume there is more work to do and we check again immediately
-                if self.execute():  
-                    continue
-
-                # otherwise we wait a second until we go again
-                self.sleep(1)
-                    
-            except KeyboardInterrupt:
-                logging.warning("caught user interrupt in worker_loop")
-                self.worker_control_event.set()
-            except Exception as e:
-                logging.error("uncaught exception in worker_loop: {}".format(str(e)))
-                report_exception()
-                self.sleep(1)
-
-        logging.debug("worker {} exiting".format(os.getpid()))
-        release_cached_db_connection()
 
     #
     # ANALYSIS
@@ -1260,6 +1328,28 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         execute_with_retry(db, c, "DELETE FROM locks where uuid = %s", (target.uuid))
         db.commit()
         logging.debug("cleared work target {}".format(target))
+
+    def setup(self, mode):
+        """Called to setup the engine for execution. Typically this is called on the worker
+           process just before the execution loop begins."""
+
+        enable_cached_db_connections()
+
+        # this determines what kind of work we look for first
+        self.analysis_mode_priority = mode
+
+        # set up our lock
+        self.lock_uuid = str(uuid.uuid4())
+        self.lock_owner = '{}-{}-{}'.format(saq.SAQ_NODE, mode, os.getpid())
+
+        try:
+            self.initialize_modules()
+        except Exception as e:
+            logging.error("unable to initialize modules: {} (worker exiting)".format(e))
+            report_exception()
+            return
+
+        self.initialize_signal_handlers()
         
     def execute(self):
 
@@ -1439,6 +1529,10 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             # turn off the root lock manager
             self.stop_root_lock_manager()
 
+            # stop any outstanding threaded modules
+            for analysis_module in self.analysis_modules:
+                analysis_module.stop_threaded_execution()
+
         # give the modules a chance to cleanup
         for analysis_module in self.analysis_modules:
             try:
@@ -1505,6 +1599,18 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         return
 
+    def get_analysis_modules_by_mode(self, analysis_mode):
+        """Returns the list of analysis modules configured for the given mode."""
+        if analysis_mode is None:
+            return self.analysis_mode_mapping[self.default_analysis_mode]
+        else:
+            try:
+                return self.analysis_mode_mapping[analysis_mode]
+            except KeyError:
+                logging.warning("invalid analysis mode {} - defaulting to {}".format(
+                                analysis_mode, self.default_analysis_mode))
+                return self.analysis_mode_mapping[self.default_analysis_mode]
+
     # ------------------------------------------------------------------------
     # This is the main processing loop of analysis in ACE.
     #
@@ -1530,7 +1636,13 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         state[analysis_module.config_section] = False
 
                 if self.cancel_analysis_flag:
+                    logging.debug("analysis for {} cancelled during pre-analysis".format(self.root))
                     return
+
+        # next we start threads for any configured threaded analysis modules available for the analysis
+        # mode of the current target
+        for analysis_module in self.get_analysis_modules_by_mode(self.root.analysis_mode):
+            analysis_module.start_threaded_execution()
 
         class WorkTarget(object):
             """Utility class the defines what exactly we're working on at the moment."""
@@ -1829,15 +1941,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             # first we limit ourselves to whatever analysis modules are available for the current analysis mode
             #logging.debug("analyzing {} in mode {}".format(self.root, self.root.analysis_mode))
             # if we didn't specify an analysis mode then we just use the default
-            if self.root.analysis_mode is None:
-                analysis_modules = self.analysis_mode_mapping[self.default_analysis_mode]
-            else:
-                try:
-                    analysis_modules = self.analysis_mode_mapping[self.root.analysis_mode]
-                except KeyError:
-                    logging.warning("{} specifies invalid analysis mode {} - defaulting to {}".format(
-                                    self.root, self.root.analysis_mode, self.default_analysis_mode))
-                    analysis_modules = self.analysis_mode_mapping[self.default_analysis_mode]
+            analysis_modules = self.get_analysis_modules_by_mode(self.root.analysis_mode)
                 
             # an Observable can specify a limited set of analysis modules to run
             # by using the limit_analysis() function
