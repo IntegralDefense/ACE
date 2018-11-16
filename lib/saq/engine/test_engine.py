@@ -967,6 +967,7 @@ class EngineTestCase(ACEEngineTestCase):
 
         engine = TestEngine()
         engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()
