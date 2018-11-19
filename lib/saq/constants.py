@@ -134,6 +134,7 @@ __all__ = [
     'ANALYSIS_MODE_EMAIL',
     'ANALYSIS_MODE_HTTP',
     'ANALYSIS_MODE_FILE',
+    'ANALYSIS_MODE_CLI',
     'ANALYSIS_TYPE_MAILBOX',
     'ANALYSIS_TYPE_BRO_SMTP',
     'ANALYSIS_TYPE_BRO_HTTP',
@@ -547,6 +548,7 @@ KEY_DETAILS = 'details'
 
 # analysis modes (more can be added)
 ANALYSIS_MODE_CORRELATION = 'correlation'
+ANALYSIS_MODE_CLI = 'cli'
 ANALYSIS_MODE_ANALYSIS = 'analysis'
 ANALYSIS_MODE_EMAIL = 'email'
 ANALYSIS_MODE_HTTP = 'http'

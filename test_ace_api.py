@@ -266,7 +266,7 @@ class APIWrapperTestCase(ACEEngineTestCase):
         self.assertEquals(result['workload']['analysis_mode'], 'test_empty')
         self.assertTrue(isinstance(parse_event_time(result['workload']['insert_date']), datetime.datetime))
 
-    def test_transfer(self):
+    def test_download(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         root.details = { 'hello': 'world' }
@@ -274,14 +274,28 @@ class APIWrapperTestCase(ACEEngineTestCase):
 
         temp_dir = tempfile.mkdtemp(dir=saq.CONFIG['global']['tmp_dir'])
         try:
-            result = ace_api.transfer(root.uuid, temp_dir)
+            result = ace_api.download(root.uuid, temp_dir)
             self.assertTrue(os.path.join(temp_dir, 'data.json'))
             root = RootAnalysis(storage_dir=temp_dir)
             root.load()
             self.assertEquals(root.details, { 'hello': 'world' })
         finally:
             shutil.rmtree(temp_dir)
-        
+
+    def test_upload(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), storage_dir=os.path.join(saq.CONFIG['global']['tmp_dir'], 'unittest'))
+        root.initialize_storage()
+        root.details = { 'hello': 'world' }
+        root.save()
+
+        result = ace_api.upload(root.uuid, root.storage_dir)
+        self.assertTrue(result['result'])
+
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
+        root.load()
+
+        self.assertEquals(root.details, { 'hello': 'world' })
+
     def test_clear(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()

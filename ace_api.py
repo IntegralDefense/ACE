@@ -27,6 +27,7 @@ import io
 import json
 import logging
 import os
+import os.path
 import socket
 import sys
 import tarfile
@@ -42,6 +43,9 @@ import warnings
 # https://github.com/shazow/urllib3/issues/497 for details.)
 
 warnings.simplefilter('ignore', urllib3.exceptions.SecurityWarning)
+
+# get our custom logger we use for this library
+log = logging.getLogger(__name__)
 
 def set_default_node(node):
     """Sets the default node used when no node is provided to the API calls."""
@@ -208,15 +212,15 @@ def get_analysis_status(uuid, *args, **kwargs):
     return _execute_api_call('analysis/status/{}'.format(uuid), *args, **kwargs).json()
 
 @api_command
-def transfer(uuid, target_dir, *args, **kwargs):
+def download(uuid, target_dir, *args, **kwargs):
 
     if not os.path.isdir(target_dir):
         os.makedirs(target_dir)
 
-    fp, tar_path = tempfile.mkstemp(prefix='transfer_{}'.format(uuid), suffix='.tar')
+    fp, tar_path = tempfile.mkstemp(prefix='download_{}'.format(uuid), suffix='.tar')
 
     try:
-        r = _execute_api_call('engine/transfer/{}'.format(uuid), stream=True, *args, **kwargs)
+        r = _execute_api_call('engine/download/{}'.format(uuid), stream=True, *args, **kwargs)
 
         size = 0
         for chunk in r.iter_content(io.DEFAULT_BUFFER_SIZE):
@@ -234,6 +238,31 @@ def transfer(uuid, target_dir, *args, **kwargs):
             os.remove(tar_path)
         except:
             sys.stderr.write("unable to delete temporary file {}: {}\n".format(tar_path, e))
+
+@api_command
+def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
+    
+    if not os.path.isdir(source_dir):
+        raise ValueError("{} is not a directory".format(source_dir))
+
+    fp, tar_path = tempfile.mkstemp(suffix='.tar', prefix='upload_{}'.format(uuid))
+    try:
+        tar = tarfile.open(fileobj=os.fdopen(fp, 'wb'), mode='w|')
+        tar.add(source_dir, '.')
+        tar.close()
+
+        with open(tar_path, 'rb') as fp:
+            return _execute_api_call('engine/upload/{}'.format(uuid), data={
+                'upload_modifiers': json.dumps({
+                    'overwrite': overwrite,
+                    'sync': sync,
+                })},
+                files=[('archive', (os.path.basename(tar_path), fp))]).json()
+    finally:
+        try:
+            os.remove(tar_path)
+        except Exception as e:
+            log.warning("unable to remove {}: {}".foramt(tar_path, e))
 
 @api_command
 def clear(uuid, lock_uuid, *args, **kwargs):

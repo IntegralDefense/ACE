@@ -111,6 +111,8 @@ class AnalysisModule(object):
         if not self.is_threaded:
             return
 
+        logging.info("stopping threaded execution for {}".format(self))
+
         self.threaded_execution_stop_event.set()
         start = datetime.datetime.now()
         while True:

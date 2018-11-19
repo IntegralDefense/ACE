@@ -81,7 +81,7 @@ class Worker(object):
     def start(self):
         self.worker_shutdown_event = Event()
         self.worker_startup_event = Event()
-        self.process = Process(target=self.worker_loop, name='Worker [{}]'.format(self.mode))
+        self.process = Process(target=self.worker_loop, name='Worker [{}]'.format(self.mode if self.mode else 'any'))
         self.process.start()
   
     def single_threaded_start(self):
@@ -171,7 +171,7 @@ class Worker(object):
                     if self.worker_shutdown_event.wait(1):
                         break
                 else:
-                    self.sleep(1)
+                    time.sleep(1)
                     
             except KeyboardInterrupt:
                 logging.warning("caught user interrupt in worker_loop")
@@ -183,7 +183,7 @@ class Worker(object):
             except Exception as e:
                 logging.error("uncaught exception in worker_loop: {}".format(e))
                 report_exception()
-                self.sleep(1)
+                time.sleep(1)
 
         logging.debug("worker {} exiting".format(os.getpid()))
         release_cached_db_connection()
@@ -299,11 +299,6 @@ class WorkerManager(object):
 
 class Engine(object):
     """Analysis Correlation Engine"""
-
-    @property
-    def workload_count(self):
-        """Returns the current size of the workload."""
-        raise NotImplementedError()
 
     # 
     # INITIALIZATION
@@ -442,6 +437,10 @@ class Engine(object):
         # and then when will be the next time we make this update?
         self.next_status_update_time = None
 
+        # if this is set then this engine will ONLY work on work that has the given exclusive_uuid
+        # by default is is None which means the engine will process anything that does NOT have an exclusive_uuid
+        self.exclusive_uuid = None
+
     def __str__(self):
         return "Engine ({})".format(saq.SAQ_NODE)
 
@@ -449,7 +448,13 @@ class Engine(object):
     @use_db
     def delayed_analysis_queue_size(self, db, c):
         """Returns the size of the delayed analysis queue (for this node.)"""
-        c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node = %s", (saq.SAQ_NODE,))
+        if self.exclusive_uuid is None:
+            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node = %s AND exclusive_uuid IS NULL", 
+                     (saq.SAQ_NODE,))
+        else:
+            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node = %s AND exclusive_uuid = %s", 
+                     (saq.SAQ_NODE, self.exclusive_uuid))
+
         row = c.fetchone()
         return row[0]
 
@@ -457,7 +462,12 @@ class Engine(object):
     @use_db
     def workload_queue_size(self, db, c):
         """Returns the size of the workload queue (for this node.)"""
-        c.execute("SELECT COUNT(*) FROM workload WHERE node = %s", (saq.SAQ_NODE,))
+        if self.exclusive_uuid is None:
+            c.execute("SELECT COUNT(*) FROM workload WHERE node = %s AND exclusive_uuid IS NULL", (saq.SAQ_NODE,))
+        else:
+            c.execute("SELECT COUNT(*) FROM workload WHERE node = %s AND exclusive_uuid = %s", 
+                     (saq.SAQ_NODE, self.exclusive_uuid))
+
         row = c.fetchone()
         return row[0]
 
@@ -468,7 +478,13 @@ class Engine(object):
     @use_db
     def delayed_analysis_queue_is_empty(self, db, c):
         """Returns True if the delayed analysis queue is empty, False otherwise."""
-        c.execute("SELECT id FROM delayed_analysis WHERE node = %s LIMIT 1", (saq.SAQ_NODE,))
+        if self.exclusive_uuid is None:
+            c.execute("SELECT id FROM delayed_analysis WHERE node = %s AND exclusive_uuid IS NULL LIMIT 1", 
+                     (saq.SAQ_NODE,))
+        else:
+            c.execute("SELECT id FROM delayed_analysis WHERE node = %s AND exclusive_uuid = %s LIMIT 1", 
+                     (saq.SAQ_NODE, self.exclusive_uuid))
+
         row = c.fetchone()
         return row is None
 
@@ -476,7 +492,13 @@ class Engine(object):
     @use_db
     def workload_queue_is_empty(self, db, c):
         """Returns True if the work queue is empty, False otherwise."""
-        c.execute("SELECT id FROM workload WHERE node = %s LIMIT 1", (saq.SAQ_NODE,))
+        if self.exclusive_uuid is None:
+            c.execute("SELECT id FROM workload WHERE node = %s AND exclusive_uuid IS NULL LIMIT 1", 
+                     (saq.SAQ_NODE,))
+        else:
+            c.execute("SELECT id FROM workload WHERE node = %s AND exclusive_uuid = %s LIMIT 1", 
+                     (saq.SAQ_NODE, self.exclusive_uuid))
+
         row = c.fetchone()
         return row is None
 
@@ -554,7 +576,7 @@ class Engine(object):
             # is this module in the list of disabled modules?
             # these are always disabled regardless of any other setting
             if section in saq.CONFIG['disabled_modules'] and saq.CONFIG['disabled_modules'].getboolean(section):
-                logging.info("{} is disabled".format(section))
+                logging.debug("{} is disabled".format(section))
                 continue
 
             # is this module disabled globally?
@@ -679,8 +701,8 @@ class Engine(object):
 
                         # make sure the module was loaded
                         if key_name not in self.analysis_module_mapping:
-                            logging.info("{} specified for {} but is disabled globally".format(
-                                         analysis_module_name, section))
+                            logging.debug("{} specified for {} but is disabled globally".format(
+                                           analysis_module_name, section))
                             continue
 
                         # are we adding or removing?
@@ -938,7 +960,8 @@ class Engine(object):
 
         # add the request to the workload
         try:
-            if add_delayed_analysis_request(root, observable, analysis_module, next_analysis):
+            if add_delayed_analysis_request(root, observable, analysis_module, next_analysis, 
+                                            exclusive_uuid=self.exclusive_uuid):
                 analysis.delayed = True
         except Exception as e:
             logging.error("unable to insert delayed analysis on {} by {} for {}: {}".format(
@@ -1111,12 +1134,18 @@ class Engine(object):
     #
     # ANALYSIS
     # ------------------------------------------------------------------------
+
+    def add_workload(self, root):
+        """See saq.database.add_workload."""
+        assert isinstance(root, RootAnalysis)
+        return saq.database.add_workload(root, exclusive_uuid=self.exclusive_uuid)
     
     @use_db
     def transfer_work_target(self, uuid, node, db, c):
-        """Moves the given work target from the given remote node to the local node."""
-        import ace_api
-        logging.info("transferring work target {} from {}".format(uuid, node))
+        """Moves the given work target from the given remote node to the local node.
+           Returns the (unloaded) RootAnalysis for the object transfered."""
+        from ace_api import download, clear
+        logging.info("downloading work target {} from {}".format(uuid, node))
 
         # get a lock on the target we want to transfer
         if not acquire_lock(uuid, self.lock_uuid):
@@ -1154,18 +1183,20 @@ class Engine(object):
                 return False
 
             remote_node = row[0]
-            ace_api.transfer(uuid, target_dir, node=remote_node)
+            download(uuid, target_dir, node=remote_node)
 
             # update the node (location) of this workitem to the local node
-            execute_with_retry(db, c, "UPDATE workload SET node = %s WHERE uuid = %s", (saq.SAQ_NODE, uuid))
-            execute_with_retry(db, c, "UPDATE delayed_analysis SET node = %s WHERE uuid = %s", (saq.SAQ_NODE, uuid))
+            execute_with_retry(db, c, "UPDATE workload SET node = %s, storage_dir = %s WHERE uuid = %s", (
+                               saq.SAQ_NODE, target_dir, uuid))
+            execute_with_retry(db, c, "UPDATE delayed_analysis SET node = %s, storage_dir = %s WHERE uuid = %s", (
+                               saq.SAQ_NODE, target_dir, uuid))
             db.commit()
 
             # then finally tell the remote system to clear this work item
             # we use our lock uuid as kind of password for clearing the work item
-            ace_api.clear(uuid, self.lock_uuid, node=remote_node)
+            clear(uuid, self.lock_uuid, node=remote_node)
 
-            return True
+            return RootAnalysis(uuid=uuid, storage_dir=target_dir)
             
         except Exception as e:
             logging.error("unable to transfer {}: {}".format(uuid, e))
@@ -1175,7 +1206,7 @@ class Engine(object):
                 logging.error("unable to clear transfer target_dir {}: {}".format(target_dir, e))
                 report_exception()
             
-            return False
+            return None
 
         finally:
             try:
@@ -1190,24 +1221,39 @@ class Engine(object):
         """Returns the next DelayedAnalysisRequest that is ready, or None if none are ready."""
         # get the next thing to do
         # first we look for any delayed analysis that needs to complete
-        c.execute("""
+
+        # if the engine that is currently running has the exclusive_uuid set
+        # then we ONLY pull work with that exclusive_uuid
+        exclusive_clause = 'AND exclusive_uuid IS NULL'
+        if self.exclusive_uuid is not None:
+            exclusive_clause = 'AND exclusive_uuid = %s'
+
+        sql = """
 SELECT 
     delayed_analysis.id, 
     delayed_analysis.uuid, 
     delayed_analysis.observable_uuid, 
     delayed_analysis.analysis_module, 
-    delayed_analysis.delayed_until
+    delayed_analysis.delayed_until,
+    delayed_analysis.storage_dir
 FROM
     delayed_analysis LEFT JOIN locks ON delayed_analysis.uuid = locks.uuid
 WHERE
     delayed_analysis.node = %s
     AND locks.uuid IS NULL
     AND NOW() > delayed_until
+    {}
 ORDER BY
     delayed_until ASC
-""", (saq.SAQ_NODE,))
+""".format(exclusive_clause)
 
-        for _id, uuid, observable_uuid, analysis_module, delayed_until in c:
+        params = [ saq.SAQ_NODE ]
+        if self.exclusive_uuid is not None:
+            params.append(self.exclusive_uuid)
+
+        c.execute(sql, tuple(params))
+
+        for _id, uuid, observable_uuid, analysis_module, delayed_until, storage_dir in c:
             if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
                 continue
 
@@ -1215,6 +1261,7 @@ ORDER BY
                                           observable_uuid,
                                           analysis_module,
                                           delayed_until,
+                                          storage_dir,
                                           database_id=_id)
 
         return None
@@ -1250,6 +1297,12 @@ ORDER BY
             where_clause.append('workload.analysis_mode IN ( {} )'.format(','.join(['%s' for _ in self.local_analysis_modes])))
             params.extend(self.local_analysis_modes)
 
+        if self.exclusive_uuid is not None:
+            where_clause.append('workload.exclusive_uuid = %s')
+            params.append(self.exclusive_uuid)
+        else:
+            where_clause.append('workload.exclusive_uuid IS NULL')
+
         where_clause = ' AND '.join(['({})'.format(clause) for clause in where_clause])
 
         logging.debug("looking for work with {} ({})".format(where_clause, ','.join([str(_) for _ in params])))
@@ -1260,7 +1313,8 @@ SELECT
     workload.uuid,
     workload.analysis_mode,
     workload.insert_date,
-    workload.node
+    workload.node,
+    workload.storage_dir
 FROM
     workload LEFT JOIN locks ON workload.uuid = locks.uuid
 WHERE
@@ -1269,17 +1323,16 @@ ORDER BY
     id ASC
 LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
-        for _id, uuid, analysis_mode, insert_date, node in c:
+        for _id, uuid, analysis_mode, insert_date, node, storage_dir in c:
             if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
                 continue
 
             # is this work item on a different node?
             if node != saq.SAQ_NODE:
                 # go grab it
-                if not self.transfer_work_target(uuid, node):
-                    return None
+                return self.transfer_work_target(uuid, node)
 
-            return RootAnalysis(uuid=uuid, storage_dir=storage_dir_from_uuid(uuid))
+            return RootAnalysis(uuid=uuid, storage_dir=storage_dir)
 
         return None
 
@@ -1394,7 +1447,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                           self.root, current_analysis_mode, self.root.analysis_mode))
 
             try:
-                add_workload(self.root.uuid, self.root.analysis_mode)
+                add_workload(self.root, exclusive_uuid=self.exclusive_uuid)
             except Exception as e:
                 logging.error("unable to add {} to workload: {}".format(self.root, e))
                 report_exception()
@@ -1485,18 +1538,21 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         logging_handler.setFormatter(logging.getLogger().handlers[0].formatter)
         logging.getLogger().addHandler(logging_handler)
 
+        # remember what mode we were in when we started
+        initial_mode = self.root.analysis_mode
+
         elapsed_time = None
         error_report_path = None
         try:
             start_time = time.time()
-            
+
             # don't even start if we're already cancelled
             if not self.cancel_analysis_flag:
                 self.execute_module_analysis()
 
             # do we NOT have any outstanding delayed analysis requests?
             if not self.root.delayed:
-                for analysis_module in self.analysis_modules:
+                for analysis_module in self.get_analysis_modules_by_mode(initial_mode):
                     try:
                         # give the modules an opportunity to do something after all analysis has completed
                         # NOTE that this does NOT allow adding any new observables or analysis
@@ -1530,8 +1586,11 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             self.stop_root_lock_manager()
 
             # stop any outstanding threaded modules
-            for analysis_module in self.analysis_modules:
+            for analysis_module in self.get_analysis_modules_by_mode(initial_mode):
                 analysis_module.stop_threaded_execution()
+
+            for t in threading.enumerate():
+                logging.debug("ACTIVE THREAD: {}".format(t))
 
         # give the modules a chance to cleanup
         for analysis_module in self.analysis_modules:
@@ -2187,23 +2246,21 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
 class DelayedAnalysisRequest(object):
     """Encapsulates a request for delayed analysis."""
-    def __init__(self, uuid, observable_uuid, analysis_module, next_analysis, database_id=None):
+    def __init__(self, uuid, observable_uuid, analysis_module, next_analysis, storage_dir, database_id=None):
 
         assert isinstance(uuid, str) and uuid
         assert isinstance(observable_uuid, str) and observable_uuid
         assert isinstance(analysis_module, str) and analysis_module
+        assert isinstance(storage_dir, str) and storage_dir
         
         self.uuid = uuid
         self.observable_uuid = observable_uuid
         self.analysis_module = analysis_module
         self.next_analysis = next_analysis
         self.database_id = database_id
+        self.storage_dir = storage_dir
 
         self.root = None
-
-    @property
-    def storage_dir(self):
-        return storage_dir_from_uuid(self.uuid)
 
     def load(self):
         self.root = RootAnalysis(uuid=self.uuid, storage_dir=self.storage_dir)

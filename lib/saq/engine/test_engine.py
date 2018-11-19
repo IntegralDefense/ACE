@@ -1440,7 +1440,7 @@ class EngineTestCase(ACEEngineTestCase):
         # wait for the queues to empty because only the local queue is checked (which is currently empty)
 
         # look for the log to move the work target
-        wait_for_log_count('transferring work target {} from '.format(root.uuid), 1, 5)
+        wait_for_log_count('downloading work target {} from '.format(root.uuid), 1, 5)
         wait_for_log_count('completed analysis RootAnalysis({})'.format(root.uuid), 1, 5)
         engine.controlled_stop()
         engine.wait()
@@ -1695,4 +1695,42 @@ class EngineTestCase(ACEEngineTestCase):
         # and then we should have seen two workers start
         wait_for_log_count('started worker loop', 2, 5)
         engine.stop()
+        engine.wait()
+
+    @use_db
+    def test_engine_exclusive_uuid(self, db, c):
+
+        exclusive_uuid = str(uuid.uuid4())
+        
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        root.analysis_mode = 'test_empty'
+        root.save()
+        root.schedule(exclusive_uuid)
+
+        c.execute("SELECT exclusive_uuid FROM workload WHERE uuid = %s", (root.uuid,))
+        row = c.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEquals(row[0], exclusive_uuid)
+        
+        # this engine should NOT process the work item
+        # since the exclusive_uuid is NOT set
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
+        engine.start()
+        # we should see this a bunch of times
+        wait_for_log_count('workload.exclusive_uuid IS NULL', 3, 5)
+        self.assertEquals(log_count('queue sizes workload 1 delayed 0'), 0)
+        engine.stop()
+        engine.wait()
+
+        # this engine should process the work item
+        engine = TestEngine()
+        engine.exclusive_uuid = exclusive_uuid
+        engine.enable_module('analysis_module_basic_test')
+        engine.set_analysis_pool_size(1)
+        engine.controlled_stop()
+        engine.start()
         engine.wait()

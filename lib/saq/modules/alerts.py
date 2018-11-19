@@ -50,11 +50,11 @@ class ACEDetectionAnalyzer(AnalysisModule):
 
     def execute_post_analysis(self):
         # do not alert on a root that has been whitelisted
-        if self.root.whitelisted:
+        if not saq.FORCED_ALERTS and self.root.whitelisted:
             logging.debug("{} has been whitelisted".format(self.root))
             return
 
-        if self.root.has_detections():
+        if saq.FORCED_ALERTS or self.root.has_detections():
             logging.info("{} has {} detection points - changing mode to {}".format(
                          self.root, len(self.root.all_detection_points), self.target_mode))
             self.root.analysis_mode = self.target_mode

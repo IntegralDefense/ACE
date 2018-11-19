@@ -2700,10 +2700,10 @@ class RootAnalysis(Analysis):
 
         return self.record_observable(observable)
 
-    def schedule(self):
-        """Schedules analysis of this RootAnalysis object by ACE."""
+    def schedule(self, exclusive_uuid=None):
+        """See saq.database.add_workload."""
         from saq.database import add_workload
-        add_workload(self.uuid, self.analysis_mode, self.company_id)
+        add_workload(self, exclusive_uuid=exclusive_uuid)
 
     def submit(self, target_company=None):
         """Submit this RootAnalysis as an Alert to the ACE system."""

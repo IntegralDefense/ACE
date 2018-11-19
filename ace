@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import atexit
 import datetime
 import fnmatch
 import getpass
@@ -365,98 +366,47 @@ compile_ssdeep_parser.set_defaults(func=compile_ssdeep)
 
 def correlate(args):
     # initialize command line engine
-    import saq.lock
-
     from saq import CONFIG
     from saq.analysis import RootAnalysis
     from saq.constants import F_FILE, F_SUSPECT_FILE, VALID_OBSERVABLE_TYPES, event_time_format, \
                               EVENT_GLOBAL_TAG_ADDED, \
                               EVENT_GLOBAL_ANALYSIS_ADDED, \
-                              EVENT_GLOBAL_OBSERVABLE_ADDED
-    #from saq.database import Alert
+                              EVENT_GLOBAL_OBSERVABLE_ADDED, \
+                              ANALYSIS_MODE_CLI, ANALYSIS_MODE_CORRELATION
     from saq.engine import Engine
     from saq.error import report_exception
-    from saq.network_client import submit_alerts
     from saq.process_server import initialize_process_server
     from saq.util import parse_event_time
 
     initialize_process_server()
 
-    def _tag_added_event(source, event_type, tag):
-        logging.info("tagged {} with {}".format(source, tag.name))
+    # this ties any work we add to this instance
+    exclusive_uuid = str(uuid.uuid4())
 
-    def _observable_added_event(source, event_type, observable):
-        logging.info("observed {} in {}".format(observable, source))
+    def _cleanup():
+        nonlocal exclusive_uuid
+        from saq.database import get_db_connection
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("DELETE FROM workload WHERE exclusive_uuid = %s", (exclusive_uuid,))
+            c.execute("DELETE FROM delayed_analysis WHERE exclusive_uuid = %s", (exclusive_uuid,))
+            db.commit()
 
-    def _analysis_added_event(source, event_type, analysis):
-        logging.info("analyzed {} with {}".format(source, analysis))
+    # when all is said and done we want to make sure we don't leave any work entries behind in the database
+    atexit.register(_cleanup)
 
-    class CommandLineCorrelationEngine(Engine):
-        def __init__(self, work, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.work = work
-            self.total_work_count = len(self.work)
-            self.completed_work_count = 0
+    # these might not make sense any more
+    #def _tag_added_event(source, event_type, tag):
+        #logging.info("tagged {} with {}".format(source, tag.name))
 
-        @property
-        def name(self):
-            return 'cli_correlation'
+    #def _observable_added_event(source, event_type, observable):
+        #logging.info("observed {} in {}".format(observable, source))
 
-        def root_analysis_completed(self, root):
-            self.completed_work_count += 1
-            if self.completed_work_count == self.total_work_count:
-                self.controlled_stop()
-
-        def collect(self):
-            root = self.work.pop()
-            self.add_work_item(root.storage_dir)
-
-            if not self.work:
-                self.stop_collection()
-
-        def process(self, request):
-            try:
-                root = RootAnalysis()
-                root.storage_dir = request
-
-                root.add_event_listener(EVENT_GLOBAL_TAG_ADDED, _tag_added_event)
-                root.add_event_listener(EVENT_GLOBAL_OBSERVABLE_ADDED, _observable_added_event)
-                root.add_event_listener(EVENT_GLOBAL_ANALYSIS_ADDED, _analysis_added_event)
-
-                root.load()
-
-                # if we're skipping analysis then we just clear them out before we use them
-                if args.skip_analysis and self.analysis_modules:
-                    logging.warning("skipping analysis for {}".format(request))
-                    self.analysis_modules.clear()
-
-                self.analyze(root)
-
-            except Exception as e:
-                logging.error("unable to analyze {0}: {1}".format(root, str(e)))
-                report_exception()
-
-        def post_analysis(self, root):
-            if not args.alert:
-                return
-
-            if self.should_alert(root):
-
-                root.save()
-
-                logging.info("sending {} as alert".format(root))
-                remote_host = args.remote_host if args.remote_host else CONFIG['network_client_ace']['remote_host']
-                remote_port = args.remote_port if args.remote_port else CONFIG['network_client_ace'].getint('remote_port')
-                ssl_key = args.ssl_key if args.ssl_key else CONFIG['network_client_ace']['ssl_key']
-                ssl_cert = args.ssl_root_cert if args.ssl_root_cert else CONFIG['network_client_ace']['ssl_cert']
-                ca_path = args.ssl_ca_path if args.ssl_ca_path else CONFIG['network_client_ace']['ca_path']
-                ssl_hostname = args.ssl_hostname if args.ssl_hostname else CONFIG['network_client_ace']['ssl_hostname']
-
-                try:
-                    submit_alerts(remote_host, remote_port, ssl_cert, ssl_hostname, ssl_key, ca_path, [root.storage_dir])
-                except Exception as e:
-                    logging.error("unable to submit alert {}: {}".format(root, e))
-                    report_exception()
+    #def _analysis_added_event(source, event_type, analysis):
+        #logging.info("analyzed {} with {}".format(source, analysis))
+                #root.add_event_listener(EVENT_GLOBAL_TAG_ADDED, _tag_added_event)
+                #root.add_event_listener(EVENT_GLOBAL_OBSERVABLE_ADDED, _observable_added_event)
+                #root.add_event_listener(EVENT_GLOBAL_ANALYSIS_ADDED, _analysis_added_event)
 
     if len(args.targets) % 2 != 0:
         logging.error("odd number of arguments (you need pairs of type and value)")
@@ -486,17 +436,7 @@ def correlate(args):
                 logging.error("unable to delete existing output directory ace.out: {}".format(e))
                 sys.exit(1)
         else:
-            logging.error("output directory {0} already exists".format(args.storage_dir))
-            sys.exit(1)
-
-    if os.path.exists(args.storage_dir):
-        logging.warning("storage directory {} already exists".format(args.storage_dir))
-    else:
-        # create the output directory
-        try:
-            os.makedirs(args.storage_dir)
-        except Exception as e:
-            logging.error("unable to create output directory {0}: {1}".format(args.storage_dir, str(e)))
+            logging.error("output directory {} already exists".format(args.storage_dir))
             sys.exit(1)
 
     roots = []
@@ -505,16 +445,28 @@ def correlate(args):
     # create a RootAnalysis to pass to the engine for analysis
     root.storage_dir = args.storage_dir
 
+    if os.path.exists(args.storage_dir):
+        logging.warning("storage directory {} already exists".format(args.storage_dir))
+    else:
+        # create the output directory
+        try:
+            root.initialize_storage()
+        except Exception as e:
+            logging.error("unable to create output directory {}: {}".format(args.storage_dir, e))
+            sys.exit(1)
+
     if args.load:
         root.load()
     else:
         # set all of the properties individually
+        # XXX only require company_id in RootAnalysis
         if args.company_name:
             root.company_name = args.company_name
 
         root.tool = 'ACE - Command Line Analysis'
         root.tool_instance = socket.gethostname()
         root.alert_type = args.alert_type
+        root.analysis_mode = ANALYSIS_MODE_CLI
         root.description = args.description if args.description else 'Command Line Correlation'
         root.event_time = datetime.datetime.now() if reference_time is None else reference_time
         root.details = { 
@@ -549,10 +501,11 @@ def correlate(args):
 
             current_root.storage_dir = os.path.join(subdir, current_root.uuid)
             try:
-                os.mkdir(current_root.storage_dir)
+                current_root.initialize_storage()
             except Exception as e:
                 logging.error("unable to create directory {}: {}".format(subdir, e))
 
+            # XXX not sure we need this any more
             # we'll make a little symlink if we can to help analysts know which directory is what
             # it's ok if this fails
             try:
@@ -563,18 +516,19 @@ def correlate(args):
             current_root.tool = root.tool
             current_root.tool_instance = root.tool_instance
             current_root.alert_type = root.alert_type
+            current_root.analysis_mode = root.analysis_mode
             current_root.description = "{} - {}:{}".format(root.description, o_type, o_value)
             current_root.event_time = root.event_time
             current_root.details = root.details
 
         # if this is a file then we need to copy it over to the storage directory
-        if o_type == F_FILE or o_type == F_SUSPECT_FILE:
+        if o_type == F_FILE:
             dest_path = os.path.join(current_root.storage_dir, os.path.basename(o_value))
             try:
-                logging.debug("copying {0} to {1}".format(o_value, dest_path))
+                logging.debug("copying {} to {}".format(o_value, dest_path))
                 shutil.copy(o_value, dest_path)
             except Exception as e:
-                logging.error("unable to copy {0} to {1} for analysis: {2}".format(o_value, dest_path, str(e)))
+                logging.error("unable to copy {} to {} for analysis: {}".format(o_value, dest_path, e))
                 sys.exit(1)
 
             o_value = os.path.basename(o_value)
@@ -587,11 +541,13 @@ def correlate(args):
 
         if args.split:
             current_root.save()
+            current_root.schedule(exclusive_uuid=exclusive_uuid)
             roots.append(current_root)
 
     # if we are not splitting up the alerts then we just have one alert to look at
     if not args.split:
         root.save()
+        root.schedule(exclusive_uuid=exclusive_uuid)
         roots.append(root)
 
     # allow the user to control what analysis modules run
@@ -602,7 +558,6 @@ def correlate(args):
                 continue
 
             saq.CONFIG[section]['enabled'] = 'no'
-        #saq.CONFIG['engine_cli_correlation']['module_groups'] = ''
 
     if args.disabled_modules:
         for section in saq.CONFIG.sections():
@@ -636,20 +591,49 @@ def correlate(args):
                     saq.CONFIG[section]['enabled'] = 'yes'
                     saq.CONFIG['engine_cli_correlation'][section] = 'yes'
 
-    cli_engine = CommandLineCorrelationEngine(roots)
+    engine = Engine()
+    engine.exclusive_uuid = exclusive_uuid
 
     try:
-        cli_engine.start()
-        cli_engine.wait()
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
     except KeyboardInterrupt:
         logging.warning("user interrupted correlation")
-        cli_engine.stop()
-        cli_engine.wait()
+        engine.stop()
+        engine.wait()
 
     for root in roots:
         # display the results
+        root = RootAnalysis(storage_dir=root.storage_dir)
         root.load()
         display_analysis(root)
+
+        if args.alert:
+            if root.whitelisted:
+                logging.info("{} was whitelisted".format(root))
+                continue
+
+            if saq.FORCED_ALERTS or root.has_detections():
+                from ace_api import upload
+                try:
+                    logging.info("uploading {}".format(root))
+
+                    # need to switch the mode to correlation
+                    root.analysis_mode = ANALYSIS_MODE_CORRELATION
+                    root.save()
+
+                    node = None # if left as None then the api call defaults it to ace_api.default_node
+                    if args.remote_host is not None:
+                        node = args.remote_host
+
+                    if args.remote_port is not None:
+                        node = '{}:{}'.format(node, args.remote_port)
+
+                    result = upload(root.uuid, root.storage_dir, node=node, ssl_verification=args.ssl_ca_path)
+
+                except Exception as e:
+                    logging.error("unable to upload {}: {}".format(root, e))
 
     sys.exit(0)
 
@@ -684,194 +668,27 @@ correlate_parser.add_argument('--remote-host', required=False, dest='remote_host
     help="Specify the remote host of the ACE system (defaults to the engine_ace configuration values).")
 correlate_parser.add_argument('--remote-port', required=False, dest='remote_port', default=None, type=int,
     help="Specify the remote port of the ACE system (defaults to the engine_ace configuration values).")
-correlate_parser.add_argument('--ssl-root-cert', required=False, dest='ssl_root_cert', default=None,
-    help="Specify the path to the SSL cert for the ACE system (defaults to the engine_ace configuration values).")
-correlate_parser.add_argument('--ssl-key', required=False, dest='ssl_key', default=None,
-    help="Specify the path to the SSL key for the ACE system (defaults to the engine_ace configuration values).")
+#correlate_parser.add_argument('--ssl-root-cert', required=False, dest='ssl_root_cert', default=None,
+    #help="Specify the path to the SSL cert for the ACE system (defaults to the engine_ace configuration values).")
+#correlate_parser.add_argument('--ssl-key', required=False, dest='ssl_key', default=None,
+    #help="Specify the path to the SSL key for the ACE system (defaults to the engine_ace configuration values).")
 correlate_parser.add_argument('--ssl-ca-path', required=False, dest='ssl_ca_path', default=None,
     help="Specify the path to the CA cert for the ACE system (defaults to the engine_ace configuration values).")
-correlate_parser.add_argument('--ssl-hostname', required=False, dest='ssl_hostname', default=None,
-    help="Specify the ssl hostname of the ACE system (defaults to the engine_ace configuration values).")
+#correlate_parser.add_argument('--ssl-hostname', required=False, dest='ssl_hostname', default=None,
+    #help="Specify the ssl hostname of the ACE system (defaults to the engine_ace configuration values).")
 correlate_parser.add_argument('--split', required=False, dest='split', action='store_true', default=False,
     help="Split the observables up into individual analysis.")
 correlate_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
     help="Read observables from stanard input.  Defaults to treating them as file-type observables.")
 correlate_parser.add_argument('--stdin-type', required=False, dest='stdin_type', default='file',
     help="Specify the observable type when reading observables from stdin. Defaults to file.")
-correlate_parser.add_argument('--skip-analysis', required=False, dest='skip_analysis', action='store_true', default=False,
-    help="Skip analyzing the alert. Useful if you just want to send a bunch of stuff to ACE for analysis.")
+#correlate_parser.add_argument('--skip-analysis', required=False, dest='skip_analysis', action='store_true', default=False,
+    #help="Skip analyzing the alert. Useful if you just want to send a bunch of stuff to ACE for analysis.")
 correlate_parser.add_argument('--load', required=False, dest='load', action='store_true', default=False,
     help="Instead of creating a new analysis, load the existing analysis stored at --storage-dir.")
 correlate_parser.add_argument('targets', nargs="*",
     help="One or more pairs of indicator types and values.")
 correlate_parser.set_defaults(func=correlate)
-
-# ============================================================================
-# command line file analysis
-#
-
-def analyze_files(args):
-
-    from saq.analysis import RootAnalysis
-    from saq.constants import F_FILE, F_FILE_LOCATION, create_file_location, parse_file_location, DIRECTIVE_COLLECT_FILE
-    from saq.engine import Engine
-    from saq.error import report_exception
-
-    from multiprocessing import Queue
-    from queue import Empty
-
-    class CommandLineAnalysisEngine(Engine):
-        def __init__(self, storage_dir, files, *args, **kwargs):
-            # note that files is an iterator that returns the list of files to scan
-            # this is either a list of files (as specified on the command line) or sys.stdin
-            super(CommandLineAnalysisEngine, self).__init__(*args, **kwargs)
-            self.storage_dir = storage_dir
-            self.files = files
-
-            # keep track of what files did and did not alert
-            self.did_alert = Queue()
-            self.did_not_alert = Queue()
-
-        @property
-        def name(self):
-            return 'cli_analysis'
-
-        def collect(self):
-            for f in self.files:
-                self.add_work_item(f)
-
-            # that is all we do
-            self.stop_collection()
-
-        def process(self, work_item):
-
-            remote_host = None
-            remote_path = None
-
-            if work_item.startswith('remote:'):
-                work_item = work_item[len('remote:'):]
-                remote_host, remote_path = parse_file_location(work_item)
-                work_item = remote_path
-        
-            root = RootAnalysis()
-            root.uuid = str(uuid.uuid4())
-            root.storage_dir = os.path.join(self.storage_dir, '{}.ace'.format(os.path.basename(work_item)))
-            # set all of the properties individually
-            root.tool = 'ACE - Command Line Analysis'
-            root.tool_instance = socket.gethostname()
-            root.alert_type = 'cli_analysis' if not args.alert_type else args.alert_type
-            root.description = 'Command Line Analysis {}'.format(os.path.basename(work_item))
-            root.event_time = datetime.datetime.now()
-            root.details = { 
-                'target': work_item,
-                'local_user': pwd.getpwuid(os.getuid())[0],
-                'local_user_uid': os.getuid(),
-                'remote_host': remote_host,
-                'remote_path': remote_path }
-
-            if not os.path.exists(root.storage_dir):
-                try:
-                    os.makedirs(root.storage_dir)
-                except Exception as e:
-                    logging.error("unable to create storage directory {0}".format(root.storage_dir))
-
-            # is this a remote file?
-            if remote_host:
-                root.add_observable(F_FILE_LOCATION, create_file_location(
-                                     remote_host, remote_path)).add_directive(DIRECTIVE_COLLECT_FILE)
-            else:
-                # copy the file to be scanned into the storage directory
-                dest_path = os.path.join(root.storage_dir, os.path.basename(work_item))
-                try:
-                    shutil.copy(work_item, dest_path)
-                except Exception as e:
-                    logging.error("unable to copy file {0} to {1}: {2}".format(work_item, dest_path, str(e)))
-                    return
-
-                root.add_observable(F_FILE, os.path.basename(work_item))
-
-            try:
-                logging.info("analyzing {}".format(root))
-                self.analyze(root)
-            except Exception as e:
-                logging.error("unable to analyze {}: {}".format(root, e))
-                report_exception()
-
-        def post_analysis(self, root):
-            # display some output to the CLI
-            if root.delayed:
-                logging.info("waiting for delayed analysis on {} to complete...".format(root.details['target']))
-                return
-
-            is_alert = self.should_alert(root)
-            display_analysis(root)
-
-            if is_alert:
-                logging.warning("{} generated an alert".format(root))
-                self.did_alert.put(root.details['target'], block=False)
-            else:
-                self.did_not_alert.put(root.details['target'], block=False)
-
-    if os.path.exists(args.storage_dir) and not args.load:
-        logging.error("output directory {0} already exists".format(args.storage_dir))
-        sys.exit(1)
-
-    if args.from_stdin:
-        files = [x.strip() for x in sys.stdin.readlines()]
-        logging.info("scanning {0} files".format(len(files)))
-    else:
-        files = args.files
-
-    cli_engine = CommandLineAnalysisEngine(args.storage_dir, files)
-
-    try:
-        cli_engine.start()
-        cli_engine.wait()
-    except KeyboardInterrupt:
-        logging.warning("caught user interrupt")
-        cli_engine.stop()
-        cli_engine.wait()
-
-    did_alert_count = cli_engine.did_alert.qsize()
-    did_not_alert_count = cli_engine.did_not_alert.qsize()
-
-    print()
-    print("DETECTION SUMMARY")
-    print("-----------------")
-    while True:
-        try:
-            f = cli_engine.did_alert.get(block=False)
-            print("ALERT: {}".format(f))
-        except Empty:
-            break
-
-    while True:
-        try:
-            f = cli_engine.did_not_alert.get(block=False)
-            print("BENIGN: {}".format(f))
-        except Empty:
-            break
-
-    print("{} of {} detected".format(did_alert_count, did_alert_count + did_not_alert_count))
-    print("-----------------")
-    print()
-
-    sys.exit(0)
-
-# analyze-files
-analyze_files_parser = subparsers.add_parser('analyze-files',
-    help="Analyze one or more files using ACE.")
-analyze_files_parser.add_argument('-d', '--storage-dir', required=False, dest='storage_dir', default='ace.out',
-    help="Specify an output directory.  Defaults to ace.out.  Each analyzed file will have an output subdirectory inside this directory.")
-analyze_files_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
-    help="Read the files to scan from standard input (one per line).")
-analyze_files_parser.add_argument('--alert-type', required=False, dest='alert_type', default=None,
-    help="Specify an alternate alert type.")
-analyze_files_parser.add_argument('--skip-delayed-analysis', required=False, dest='skip_delayed_analysis', default=False, action='store_true',
-    help="Skip delayed analysis efforts.")
-analyze_files_parser.add_argument('files', nargs="*",
-    help="One or more files to analyze.  Remote files are specified as remote:hostname@file_path")
-analyze_files_parser.set_defaults(func=analyze_files)
 
 # ============================================================================
 # network server
