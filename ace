@@ -145,13 +145,6 @@ def kill_daemon(daemon_name):
         logging.error("cannot read PID from {0}: {1}".format(daemon_pid_path, str(e)))
         sys.exit(1)
 
-    #for child in parent.children(recursive=True):
-        #try:
-            #child.kill()
-            #logging.info("killed child process {0}".format(child.pid))
-        #except Exception as e:
-            #logging.error("unable to kill child process {0}: {1}".format(child, str(e)))
-
     try:
         parent = psutil.Process(daemon_pid)
 
@@ -1373,6 +1366,7 @@ network_semaphore_test.set_defaults(func=test_network_semaphore)
 # alert management
 #
 
+# XXX FIX ME
 def resync_alert(args):
     """Remaps observables, tags, and profile points to the alert."""
     from saq.database import Alert, DatabaseSession
@@ -1435,6 +1429,7 @@ resync_alert_parser.set_defaults(func=resync_alert)
 def import_alerts(args):
     """Imports one or more alerts from the given directories."""
     import saq
+    from saq.constants import ANALYSIS_MODE_CORRELATION
     from saq.database import Alert, DatabaseSession
 
     for _dir in args.dirs:
@@ -1477,6 +1472,7 @@ def import_alerts(args):
         alert.location = saq.SAQ_NODE
         alert.company_id = saq.CONFIG['global'].getint('company_id')
         alert.company_name = saq.CONFIG['global']['company_name']
+        alert.analysis_mode = ANALYSIS_MODE_CORRELATION
         alert.disposition = None
         alert.disposition_user_id = None
         alert.disposition_time = None
@@ -1498,6 +1494,7 @@ import_alert_parser.add_argument('-r', '--reset', action='store_true', default=F
 import_alert_parser.add_argument('dirs', nargs='+', default=[], help="One ore more alert directories to import.")
 import_alert_parser.set_defaults(func=import_alerts)
 
+# XXX fix me
 def forward_alerts(args):
     """Imports one or more alerts from the given directories."""
     import saq
@@ -1664,78 +1661,6 @@ reset_alert_parser = subparsers.add_parser('archive-alerts',
     help="Archives a given alert by deleting analysis details and external files but keeping observations and tags.")
 reset_alert_parser.add_argument('dirs', nargs='+', help="One or more alert directories to archive.")
 reset_alert_parser.set_defaults(func=archive_alerts)
-
-def analyze_alerts(args):
-    """Re-analyze alerts that already exist inside ACE."""
-    # initialize command line engine
-    from saq.engine import Engine
-    from saq.database import Alert
-
-    class CustomEngine(Engine):
-        def __init__(self, storage_dirs, reset_alerts, *args, **kwargs):
-            super(CustomEngine, self).__init__(*args, **kwargs)
-            # the UUIDs of the alerts to analyze
-            self.storage_dirs = storage_dirs
-            # set to True to reset the alerts before analysis
-            self.reset_alerts = reset_alerts
-
-        @property
-        def name(self):
-            return 'ace'
-
-        def collect(self):
-            for storage_dir in self.storage_dirs:
-                self.add_work_item(storage_dir)
-
-            # that is all we do
-            self.stop_collection()
-
-        def process(self, storage_dir):
-            if not os.path.exists(storage_dir):
-                logging.error("storage directory {} does not exist".format(storage_dir))
-                return
-
-            alert = Alert()
-            alert.storage_dir = storage_dir
-            if not alert.lock():
-                logging.error("unable to acquire lock for {}".format(alert))
-                return
-
-            try:
-                alert.load()
-
-                if self.reset_alerts:
-                    logging.info("resetting {}".format(alert))
-                    alert.reset()
-                
-                try:
-                    logging.info("analyzing {}".format(alert))
-                    self.analyze(alert)
-                except Exception as e:
-                    logging.error("unable to analyze {}: {}".format(alert, str(e)))
-            finally:
-                alert.unlock()
-
-        def post_analysis(self, analysis):
-            pass
-
-    cli_engine = CustomEngine(args.dirs, args.reset_alerts)
-
-    try:
-        cli_engine.start()
-        cli_engine.wait()
-    except KeyboardInterrupt:
-        cli_engine.stop()
-        cli_engine.wait()
-
-    sys.exit(0)
-
-analyze_alert_parser = subparsers.add_parser('analyze-alerts',
-    help="Run the analysis engine on the given alerts specified by UUID.")
-analyze_alert_parser.add_argument('--reset', dest='reset_alerts', action='store_true', required=False, default=False,
-    help="Reset all the alerts before analysis.")
-analyze_alert_parser.add_argument('dirs', nargs='+', help="One or more alerts directories to analyze.")
-analyze_alert_parser.set_defaults(func=analyze_alerts)
 
 def add_observable(args):
     import saq
@@ -2101,34 +2026,6 @@ remediate_email_parser.add_argument('--decoded-subject', required=False, dest='d
 remediate_email_parser.add_argument('message_ids', nargs='*',
     help="One or more message-ids to remediate. You can also specify --from-stdin.")
 remediate_email_parser.set_defaults(func=remediate_email)
-
-def manage_lock(args):
-    from saq.analysis import Alert
-    
-    alert = Alert()
-    alert.storage_dir = os.path.abspath(args.dir)
-
-    if args.lock_action == 'lock':
-        if not alert.lock():
-            logging.error("unable to lock {}".format(alert))
-            sys.exit(0)
-
-    elif args.lock_action == 'unlock':
-        if not alert.unlock():
-            logging.error("unable to unlock {}".format(alert))
-            sys.exit(0)
-
-    logging.info("operation completed successfully")
-
-manage_lock_parser = subparsers.add_parser('lock-alert',
-    help="Locks a given alert preventing analysis until unlocked.")
-manage_lock_parser.add_argument('dir', help="The storage directory of the alert to lock.")
-manage_lock_parser.set_defaults(func=manage_lock, lock_action='lock')
-
-manage_lock_parser = subparsers.add_parser('unlock-alert',
-    help="Unlocks a given alert if locked.")
-manage_lock_parser.add_argument('dir', help="The storage directory of the alert to unlock.")
-manage_lock_parser.set_defaults(func=manage_lock, lock_action='unlock')
 
 def update_organization(args):
 
@@ -2546,7 +2443,7 @@ list_observables_parsers = subparsers.add_parser('list-observables',
     help="List available observable types and their descriptions.")
 list_observables_parsers.set_defaults(func=list_observables)
 
-
+# XXX get rid of this
 def crits_activity_sync(args):
     import saq
     from saq.constants import DISPOSITION_IGNORE
@@ -2575,150 +2472,6 @@ crits_activity_sync_parsers = subparsers.add_parser('crits-activity-sync',
 crits_activity_sync_parsers.add_argument('-d','--number-days-to-sync',dest='numdays',default=1,type=int,
     help="Number of days in the past to sync activity to CRITS, default is previous day")
 crits_activity_sync_parsers.set_defaults(func=crits_activity_sync)
-
-def sync_profile_points(args):
-    """Syncs the profile points as configured in etc/pp/profile_points with the ACE databases."""
-    import saq
-    from saq.database import get_db_connection
-
-    all_profile_points = []
-    profile_points = {} # (key = descrption)
-    all_profiles = set()
-
-    json_dir = os.path.join(saq.SAQ_HOME, 'etc', 'pp', 'profile_points')
-    for json_path in [os.path.join(json_dir, d) for d in os.listdir(os.path.join(json_dir))]:
-        if not json_path.endswith('.json'):
-            continue
-
-        logging.info("loading profile points from {}".format(json_path))
-        with open(json_path, 'r') as fp:
-            parsed_json = json.load(fp)
-
-        all_profile_points.extend(parsed_json)
-
-    for profile_point in all_profile_points:
-        for profile in profile_point['profiles']:
-            all_profiles.add(profile)
-
-        # build a little in-memory database
-        profile_points[profile_point['description']] = profile_point
-
-    with get_db_connection() as db:
-        c = db.cursor()
-
-        # first make sure we have all the tags we're using in json in ace
-        # these becomes "tags" in ace
-        try:
-            for profile in all_profiles:
-                logging.debug("checking profile {}".format(profile))
-                c.execute("""SELECT id FROM tags WHERE name = %s""", (profile,))
-                result = c.fetchone()
-                if result is None:
-                    logging.info("adding profile {}".format(profile))
-                    c.execute("""INSERT INTO tags ( name ) VALUES ( %s )""", (profile,))
-        except Exception as e:
-            db.rollback()
-            traceback.print_exc()
-            logging.error(str(e))
-            return
-
-        db.commit()
-
-        # then make sure we've got all the profile points
-        for profile_point in all_profile_points:
-            #logging.info("updating profile point {} profiles {}".format(profile_point['description'], profile_point['profiles']))
-            try:
-                c.execute("""SELECT id FROM profile_points WHERE description = %s""",
-                         (profile_point['description'],))
-                result = c.fetchone()
-                if result is None:
-                    logging.info("adding profile point {}".format(profile_point['description']))
-                    c.execute("""INSERT INTO profile_points ( description ) VALUES ( %s )""", 
-                             (profile_point['description'],))
-            except Exception as e:
-                db.rollback()
-                traceback.print_exc()
-                logging.error(str(e))
-                return
-
-        db.commit()
-
-        # now sync the other way (updating existing and delete deleted entries)
-        try:
-            existing_profile_points = []
-            deleted_profile_points = [] # of profile_points.id
-            deleted_profile_mappings = []
-            new_profile_mappings = []
-
-            c.execute("""SELECT id, description FROM profile_points""")
-            for row in c:
-                existing_profile_points.append(row)
-
-            db.commit()
-
-            for _id, description in existing_profile_points:
-                logging.debug("checking for {}".format(description))
-                if description not in profile_points:
-                    logging.info("removing stale profile point {} ({})".format(description, _id))
-                    deleted_profile_points.append(_id)
-                else:
-                    profile_point = profile_points[description]
-                    # if it is in the json, then make sure that all the profile mappings we have for it match what is in the json
-                    logging.debug("checking profile mappings for profile point {} ({})".format(description, _id))
-                    c.execute("""SELECT t.name, t.id FROM pp_tag_mapping pptm JOIN tags t ON pptm.tag_id = t.id 
-                                 WHERE pptm.profile_point_id = %s""", (_id,))
-                    existing_profiles = set()
-                    for row in c:
-                        profile_name, profile_id = row
-                        existing_profiles.add(profile_name)
-                        if profile_name not in profile_point['profiles']:
-                            logging.info("removing profile mapping {} for {}".format(profile_name, description))
-                            deleted_profile_mappings.append((_id, profile_id))
-
-                    logging.debug("existing profiles for {} ({}): {}".format(description, _id, existing_profiles))
-
-                    # then check for new profile mappings in json that are not in the database yet
-                    for json_profile in profile_point['profiles']:
-                        if json_profile not in existing_profiles:
-                            # get the profile_id we need
-                            c.execute("""SELECT id FROM tags WHERE name = %s""", (json_profile,))
-                            row = c.fetchone()
-                            profile_id = row[0]
-                            # create the mapping with this id
-                            new_profile_mappings.append((_id, profile_id))
-                            logging.info("updated profile mapping for {} -> {}".format(_id, profile_id))
-
-            db.commit()
-
-            for _id in deleted_profile_points:
-                logging.info("deleting profile point {}".format(_id))
-                c.execute("""DELETE FROM profile_points WHERE id = %s""", (_id,))
-
-            db.commit()
-
-            for profile_point_id, profile_id in deleted_profile_mappings:
-                logging.info("deleting profile point mapping from {} to {}".format(profile_point_id, profile_id))
-                c.execute("""DELETE FROM pp_tag_mapping WHERE profile_point_id = %s AND tag_id = %s""",
-                          (profile_point_id, profile_id))
-
-            db.commit()
-
-            for profile_point_id, profile_id in new_profile_mappings:
-                logging.info("inserting profile point mapping from {} to {}".format(profile_point_id, profile_id))
-                c.execute("""INSERT INTO pp_tag_mapping ( profile_point_id, tag_id ) VALUES ( %s, %s )""",
-                          (profile_point_id, profile_id))
-
-            db.commit()
-
-        except Exception as e:
-            logging.error(str(e))
-            traceback.print_exc()
-            db.rollback()
-            return
-
-sync_profile_points_parser = subparsers.add_parser('sync-profile-points',
-    help="Syncs the profile points as configured in etc/pp/profile_points with CRITS with ACE databases.""")
-sync_profile_points_parser.set_defaults(func=sync_profile_points)
 
 def cleanup_alerts(args):
     """Performs system maintenance.  This is meant to be called from a cron job."""
@@ -2819,21 +2572,6 @@ display_alert_parser = subparsers.add_parser('display-alert',
 display_alert_parser.add_argument('dir', 
     help="The directory of the alert to display")
 display_alert_parser.set_defaults(func=display_alert)
-
-def initialize_delayed_analysis(args):
-    from saq.delayed_analysis import DelayedAnalysisManager
-    db_path = os.path.join('var', '{}.db'.format(args.engine_name))
-    if os.path.exists(db_path):
-        os.remove(db_path)
-
-    mgr = DelayedAnalysisManager(os.path.join('var', '{}.db'.format(args.engine_name)))
-    mgr.initialize()
-
-initialize_delayed_analysis_parser = subparsers.add_parser('initialize-delayed-analysis',
-    help="Initialize the delayed analysis database for a given engine.")
-initialize_delayed_analysis_parser.add_argument('engine_name',
-    help="The name of the engine to initialize (ex: ace).")
-initialize_delayed_analysis_parser.set_defaults(func=initialize_delayed_analysis)
 
 # ============================================================================
 # company management
@@ -3012,6 +2750,7 @@ test_process_server_parser = subparsers.add_parser('test-process-server',
     help="Test process server.")
 test_process_server_parser.set_defaults(func=test_process_server)
 
+# XXX replace this with calls to the engine code
 def verify_modules(args):
     """Executes verify_environment() on all modules that are enabled."""
     # we run the same code the engines run to load the modules
@@ -3066,14 +2805,6 @@ def verify_modules(args):
 verify_modules_parsers = subparsers.add_parser('verify-modules',
     help="Executes verify_environment() on all modules that are enabled.")
 verify_modules_parsers.set_defaults(func=verify_modules)
-
-def verify_test_imports(args):
-    import saq.test_database
-    pass
-
-verify_test_imports_parser = subparsers.add_parser('verify-test-imports',
-    help="Verify import of test modules.")
-verify_test_imports_parser.set_defaults(func=verify_test_imports)
 
 def set_encryption_password(args):
     from saq.crypto import set_encryption_password
@@ -3233,9 +2964,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     # was this command called as a symlink?
-    if os.path.basename(sys.argv[0]) == 'analyze':
-        sys.argv.insert(1, 'analyze-files')
-    elif os.path.basename(sys.argv[0]) == 'correlate':
+    if os.path.basename(sys.argv[0]) == 'correlate':
         sys.argv.insert(1, 'correlate')
 
     # parse the command line arguments
@@ -3261,8 +2990,6 @@ if __name__ == '__main__':
 
     # are we prompting for the decryption password?
     if args.provide_decryption_password:
-        import tempfile
-        from subprocess import Popen, PIPE
         from saq.crypto import test_encryption_password, get_aes_key
 
         while True:
