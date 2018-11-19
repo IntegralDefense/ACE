@@ -134,7 +134,7 @@ def kill_daemon(daemon_name):
 
     daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
     if not os.path.exists(daemon_pid_path):
-        logging.warning("daemon file {0} does not exist (process not running?)".format(daemon_pid_path))
+        logging.warning("daemon file {} does not exist (process not running?)".format(daemon_pid_path))
         sys.exit(1)
 
     deamon_pid = None
@@ -142,7 +142,7 @@ def kill_daemon(daemon_name):
         with open(daemon_pid_path, 'r') as fp:
             daemon_pid = int(fp.read())
     except Exception as e:
-        logging.error("cannot read PID from {0}: {1}".format(daemon_pid_path, str(e)))
+        logging.error("cannot read PID from {}: {}".format(daemon_pid_path, e))
         sys.exit(1)
 
     try:
@@ -164,7 +164,7 @@ def kill_daemon(daemon_name):
                     child.kill()
                     logging.info("killed child process {}".format(child.pid))
                 except Exception as e:
-                    logging.error("unable to kill child process {}: {}".format(child, str(e)))
+                    logging.error("unable to kill child process {}: {}".format(child, e))
 
             try:
                 parent.kill()
@@ -172,12 +172,12 @@ def kill_daemon(daemon_name):
                 logging.error("unable to kill process {}: {}".format(parent.pid, e))
 
     except Exception as e:
-        logging.error("unable to stop process {}: {}".format(parent, str(e)))
+        logging.error("unable to stop process {}: {}".format(parent, e))
 
     try:
         os.remove(daemon_pid_path)
     except Exception as e:
-        logging.error("unable to delete PID file {}: {}".format(daemon_pid_path, str(e)))
+        logging.error("unable to delete PID file {}: {}".format(daemon_pid_path, e))
         sys.exit(1)
 
     sys.exit(0)
@@ -252,6 +252,8 @@ def daemonize(daemon_name):
 # ============================================================================
 # export observables
 #
+
+# XXX not sure we need this anymore
 
 def export_observables(args):
     """Exports observables, mappings and some alert context into a sqlite database."""
