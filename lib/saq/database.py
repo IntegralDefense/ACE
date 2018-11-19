@@ -1518,28 +1518,36 @@ class Workload(Base):
 
     company = relationship('saq.database.Company', foreign_keys=[company_id])
 
+    exclusive_uuid = Column(
+        String(36), 
+        nullable=True)
+
+    storage_dir = Column(
+        String(1024), 
+        unique=True, 
+        nullable=False)
+
 @use_db
-def add_workload(uuid, analysis_mode, company_id=None, db=None, c=None):
+def add_workload(root, exclusive_uuid=None, db=None, c=None):
     """Adds the given work item to the workload queue."""
     # if we don't specify an analysis mode then we default to whatever the engine default is
     # NOTE you should always specify an analysis mode
-    if analysis_mode is None:
-        logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(uuid))
-        analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
-
-    # the company_id simply defaults to the current company_id
-    if company_id is None:
-        company_id = saq.COMPANY_ID
+    if root.analysis_mode is None:
+        logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(root))
+        root.analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
         
     execute_with_retry(db, c, """
 INSERT INTO workload (
     uuid,
     node,
     analysis_mode,
-    company_id )
-VALUES ( %s, %s, %s, %s )""", (uuid, saq.SAQ_NODE, analysis_mode, company_id))
+    company_id,
+    exclusive_uuid,
+    storage_dir )
+VALUES ( %s, %s, %s, %s, %s, %s )""", (root.uuid, saq.SAQ_NODE, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
     db.commit()
-    logging.info("added {} to workload with analysis mode {} company_id {}".format(uuid, analysis_mode, company_id))
+    logging.info("added {} to workload with analysis mode {} company_id {} exclusive_uuid {}".format(
+                  root.uuid, root.analysis_mode, root.company_id, exclusive_uuid))
 
 class Lock(Base):
     
@@ -1692,13 +1700,22 @@ class DelayedAnalysis(Base):
         nullable=False, 
         index=True)
 
+    exclusive_uuid = Column(
+        String(36), 
+        nullable=True)
+
+    storage_dir = Column(
+        String(1024), 
+        unique=False, 
+        nullable=False)
+
 @use_db
-def add_delayed_analysis_request(root, observable, analysis_module, next_analysis, db, c):
+def add_delayed_analysis_request(root, observable, analysis_module, next_analysis, exclusive_uuid=None, db=None, c=None):
     try:
         execute_with_retry(db, c, """
-                           INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node ) 
-                           VALUES ( %s, %s, %s, %s, %s )""", 
-                          ( root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE ))
+                           INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node, exclusive_uuid, storage_dir ) 
+                           VALUES ( %s, %s, %s, %s, %s, %s, %s )""", 
+                          ( root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE, exclusive_uuid, root.storage_dir ))
 
         db.commit()
 

@@ -1,9 +1,11 @@
 # vim: sw=4:ts=4:et
 
+import json
 import logging
 import os
 import shutil
 import tarfile
+import tempfile
 import uuid
 
 import saq
@@ -12,13 +14,14 @@ from saq.constants import *
 from saq.database import acquire_lock, release_lock, use_db
 from api.test import *
 from saq.test import *
+from saq.util import storage_dir_from_uuid
 
 from flask import url_for
 
 class APIEngineTestCase(APIBasicTestCase):
-    def test_transfer(self):
+    def test_download(self):
 
-        # first create something to transfer
+        # first create something to download
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         root.details = { 'hello': 'world' }
@@ -27,12 +30,12 @@ class APIEngineTestCase(APIBasicTestCase):
         file_observable = root.add_observable(F_FILE, 'test.dat')
         root.save()
 
-        # ask for a transfer
-        result = self.client.get(url_for('engine.transfer', uuid=root.uuid))
+        # ask for a download
+        result = self.client.get(url_for('engine.download', uuid=root.uuid))
 
         # we should get back a tar file
-        tar_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'transfer.tar')
-        output_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], 'transfer')
+        tar_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'download.tar')
+        output_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], 'download')
 
         try:
             with open(tar_path, 'wb') as fp:
@@ -63,6 +66,38 @@ class APIEngineTestCase(APIBasicTestCase):
                 shutil.rmtree(output_dir)
             except:
                 pass
+
+    def test_upload(self):
+        
+        # first create something to upload
+        root = create_root_analysis(uuid=str(uuid.uuid4()), storage_dir=os.path.join(saq.CONFIG['global']['tmp_dir'], 'test_upload'))
+        root.initialize_storage()
+        root.details = { 'hello': 'world' }
+        with open(os.path.join(root.storage_dir, 'test.dat'), 'w') as fp:
+            fp.write('test')
+        file_observable = root.add_observable(F_FILE, 'test.dat')
+        root.save()
+
+        # create a tar file of the entire thing
+        fp, tar_path = tempfile.mkstemp(suffix='.tar', prefix='upload_{}'.format(root.uuid), dir=saq.CONFIG['global']['tmp_dir'])
+        tar = tarfile.open(fileobj=os.fdopen(fp, 'wb'), mode='w|')
+        tar.add(root.storage_dir, '.')
+        tar.close()
+
+        # upload it
+        with open(tar_path, 'rb') as fp:
+            result = self.client.post(url_for('engine.upload', uuid=root.uuid), data={ 
+                                      'upload_modifiers' : json.dumps({
+                                          'overwrite': False,
+                                          'sync': True,
+                                      }),
+                                      'archive': (fp, os.path.basename(tar_path))})
+
+        # make sure it uploaded
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
+        root.load()
+
+        self.assertEquals(root.details, { 'hello': 'world' })
 
     def test_clear(self):
 

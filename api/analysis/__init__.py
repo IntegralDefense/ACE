@@ -139,6 +139,7 @@ def submit():
                     logging.error("duplicate file name {}".format(_path))
                     abort(400)
 
+                # XXX why are we saving it here and then moving it over?
                 logging.debug("saving file to {}".format(_path))
                 try:
                     f.save(_path)
