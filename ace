@@ -309,6 +309,8 @@ export_observables_parser.set_defaults(func=export_observables)
 # ssdeep compilation
 #
 
+# XXX get rid of this garbage
+
 def compile_ssdeep(args):
     """Compile the etc/ssdeep.json CRITS export into a usable ssdeep hash file."""
     import saq
@@ -691,40 +693,6 @@ correlate_parser.add_argument('targets', nargs="*",
 correlate_parser.set_defaults(func=correlate)
 
 # ============================================================================
-# network server
-#
-
-def network_server(args):
-    import saq
-    import saq.server
-
-    daemon_name = 'network-server'
-
-    if args.stop:
-        kill_daemon(daemon_name)
-        sys.exit(0)
-
-    elif args.start:
-        if args.daemon:
-            logging.info("starting daemon {0}".format(daemon_name))
-            daemonize(daemon_name)
-
-        saq.server.app.run(
-            debug=True if not args.daemon else False,
-            host=saq.CONFIG.get('server', 'listen_address'),
-            port=saq.CONFIG.getint('server', 'listen_port'))
-    else:
-        logging.error("You must specify either --start or --stop for this service.")
-        sys.exit(1)
-
-    sys.exit(0)
-
-# network-server
-network_server_parser = subparsers.add_parser('network-server',
-    help="Start/Stop the ACE Network Server.")
-network_server_parser.set_defaults(func=network_server)
-
-# ============================================================================
 # correlation engine
 #
 
@@ -742,7 +710,7 @@ def correlation_engine(args):
 
     elif args.start:
         if args.daemon:
-            logging.info("starting daemon {0}".format(daemon_name))
+            logging.info("starting daemon {}".format(daemon_name))
             daemonize(daemon_name)
 
         initialize_process_server()
@@ -1291,71 +1259,25 @@ delete_user_parser.set_defaults(func=delete_user)
 #
 
 def create_alert(args):
-    from saq.database import Alert
+    from saq.analysis import RootAnalysis
 
-    alert = Alert()
-    alert.tool = 'command line'
-    alert.tool_instance = 'n/a'
-    alert.alert_type = 'debug'
-    alert.description = 'Manual Alert'
-    alert.event_time = datetime.datetime.now()
-    alert.storage_dir = args.dir
+    root = RootAnalysis()
+    root.tool = 'command line'
+    root.tool_instance = 'n/a'
+    root.root_type = 'debug'
+    root.description = 'Manual Alert'
+    root.event_time = datetime.datetime.now()
+    root.storage_dir = args.dir
 
-    alert.details = { 'description': 'manually created alert' }
-    alert.save()
+    root.initialize_storage()
+
+    root.details = { 'description': 'manually created root' }
+    root.save()
 
 create_alert_parser = subparsers.add_parser('create-alert',
     help="Create a blank alert in the given directory.")
 create_alert_parser.add_argument('dir', help="The directory to store the alert in.")
 create_alert_parser.set_defaults(func=create_alert)
-
-def test_local_locking(args):
-    from saq.lock import LocalLockableObject
-    from multiprocessing import Process
-
-    class TestLock(LocalLockableObject):
-        def __init__(self, uuid, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self._uuid = uuid
-
-        @property
-        def uuid(self):
-            return self._uuid
-
-        @uuid.setter
-        def uuid(self, value):
-            self._uuid = value
-
-    target_uuid = str(uuid.uuid4())
-
-    def callback(target_uuid):
-        l = TestLock(target_uuid)
-        while True:
-            if not l.lock():
-                time.sleep(1)
-                continue
-
-            break
-
-        time.sleep(3)
-        l.refresh_lock()
-        time.sleep(3)
-        l.unlock()
-
-    p1 = Process(target=callback, args=(target_uuid,))
-    p1.start()
-
-    p2 = Process(target=callback, args=(target_uuid,))
-    p2.start()
-
-    p1.join()
-    p2.join()
-    
-    sys.exit(0)
-
-test_local_locking_parser = subparsers.add_parser('test-local-locking',
-    help="Test the local locking system.")
-test_local_locking_parser.set_defaults(func=test_local_locking)
 
 def test_condition_reporting(args):
     from saq.error import report_condition
