@@ -9,7 +9,7 @@ from saq.constants import *
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 
-from cbapi_legacy import CbApi
+from cbapi.response import *
 
 import requests
 
@@ -25,6 +25,15 @@ class CarbonBlackProcessAnalysis_v1(Analysis):
     def jinja_template_path(self):
         return "analysis/carbon_black.html"
 
+    def print_facet_histogram(self, facets):
+        total_results = sum([entry['value'] for entry in facets])
+        return_string = "\n\t\t\tTotal Process Segments: {}\n".format(total_results)
+        return_string += "\t\t\t--------------------------\n"
+        for entry in facets:
+            return_string += "%50s: %5s %5s%% %s\n" % (entry["name"][:45], entry['value'], entry["ratio"],
+                  u"\u25A0"*(int(entry['percent']/2)))
+        return return_string
+
     def generate_summary(self):
         if self.details is None:
             return None
@@ -32,7 +41,8 @@ class CarbonBlackProcessAnalysis_v1(Analysis):
         if KEY_TOTAL_RESULTS not in self.details:
             return None
 
-        return 'Carbon Black Process Analysis ({} matches)'.format(self.details[KEY_TOTAL_RESULTS])
+        return 'Carbon Black Process Analysis ({} process matches - Sample of {} processes)'.format(self.details[KEY_TOTAL_RESULTS],
+                                                                                                    len(self.details['results']))
 
 class CarbonBlackProcessAnalyzer_v1(AnalysisModule):
     def verify_environment(self):
@@ -45,12 +55,12 @@ class CarbonBlackProcessAnalyzer_v1(AnalysisModule):
                 raise ValueError("missing config item {} in section carbon_black".format(key))
 
     @property
-    def url(self):
-        return saq.CONFIG['carbon_black']['url']
+    def max_results(self):
+        return self.config.getint('max_results')
 
     @property
-    def token(self):
-        return saq.CONFIG['carbon_black']['token']
+    def credentials(self):
+        return saq.CONFIG['carbon_black']['credential_file']
 
     @property
     def generated_analysis_type(self):
@@ -80,7 +90,7 @@ class CarbonBlackProcessAnalyzer_v1(AnalysisModule):
         elif observable.type == F_FILE_PATH or observable.type == F_FILE_NAME:
             query = '"{}"'.format(observable.value.replace('"', '\\"'))
         elif observable.type == F_MD5:
-            query = observable.value
+            query = 'md5:"{}"'.format(observable.value)
         elif observable.type == F_SHA1:
             query = observable.value
         elif observable.type == F_SHA256:
@@ -92,32 +102,44 @@ class CarbonBlackProcessAnalyzer_v1(AnalysisModule):
 
         analysis = self.create_analysis(observable)
 
-        api = CbApi(self.url, ssl_verify=False, token=self.token)
+        # the default is to use the 'default' profile
+        cb = CbResponseAPI(credential_file=self.credentials)
 
         # when love makes a sound babe
         # a heart needs a second chance
         attempt = 0
         while True:
             try:
-                analysis.details = api.process_search(query)
+                processes = cb.select(Process).where(query).group_by('id')
                 break
-            except requests.exceptions.HTTPError as e:
+            except Exception as e:
                 if attempt > 2:
                     raise e
+                attempt += 1
+                logging.warning("{} - retrying attempt #{}".format(e, attempt))
+                # XXX use delayed analysis instead
+                self.sleep(5) # wait a few seconds and try again
+                if self.shutdown or self.cancel_analysis_flag:
+                    return False
 
-                # requests.exceptions.HTTPError: 502 Server Error: Bad Gateway for url: https://cmas.ashland.com:8443/api/v1/process
-                # requests.exceptions.HTTPError: 504 Server Error: Gateway Time-out for url: https://cmas.ashland.com:8443/api/v1/process
-                if e.response.status_code in [ 502, 504 ]:
-                    attempt += 1
-                    logging.warning("{} - retrying attempt #{}".format(e, attempt))
-                    # XXX use delayed analysis instead
-                    self.sleep(5) # wait a few seconds and try again
-                    if self.shutdown or self.cancel_analysis_flag:
-                        return False
+        analysis.details['results'] = []
+        analysis.details['total_results'] = len(processes)
+        # generate some facet data
+        analysis.details['process_name_facet'] = processes.facets('process_name')['process_name']
+        for process in processes:
+            if len(analysis.details['results']) >= self.max_results:
+                break
+            analysis.details['results'].append({'id': process.id,
+                    'start': process.start,
+                    'username': process.username,
+                    'hostname': process.hostname,
+                    'cmdline': process.cmdline,
+                    'process_md5': process.process_md5,
+                    'path': process.path,
+                    'webui_link': process.webui_link
+                    })
+            analysis.add_observable(F_PROCESS_GUID, process.id)
 
-                    continue
-
-                raise e
 
         # look for people using skype
         for result in analysis.details['results']:
