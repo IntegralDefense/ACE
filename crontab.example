@@ -1,0 +1,8 @@
+0 3 * * * /opt/ace/bin/backup-databases >> /opt/ace/logs/backup-databases-`date '+\%Y-\%m-\%d'`.log 2>&1
+#*/10 * * * * /opt/ace/bin/update-yara-rules >> /opt/ace/logs/update-yara-rules-`date '+\%Y-\%m-\%d'`.log 2>&1
+0 0 * * * /opt/ace/bin/cleanup >> /opt/ace/logs/cron.log 2>&1
+#0 1 * * * /opt/ace/bin/update-snort-rules >> /opt/ace/logs/update-snort-rules-`date '+\%Y-\%m-\%d'`.log 2>&1
+#0 1 * * * /opt/ace/bin/update-asn-data >> /opt/ace/logs/update-asn-data-`date '+\%Y-\%m-\%d'`.log 2>&1
+#0 1 * * * /opt/ace/bin/report-scan-failures >> /opt/ace/logs/report-scan-failures-`date '+\%Y-\%m-\%d'`.log 2>&1
+#0 * * * * /opt/ace/bin/update-ssdeep >> /opt/ace/logs/update-ssdeep-`date '+\%Y-\%m-\%d'`.log 2>&1
+*/2 * * * * /opt/ace/bin/update-crits-cache >> /opt/ace/logs/update-crits-cache-`date '+\%Y-\%m-\%d'`.log 2>&1

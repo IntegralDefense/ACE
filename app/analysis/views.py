@@ -57,7 +57,7 @@ from flask import jsonify, render_template, redirect, request, url_for, flash, s
 from flask_login import login_user, logout_user, login_required, current_user
 
 from sqlalchemy import and_, or_, func, distinct
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql import text, func
 
@@ -1819,24 +1819,13 @@ def manage():
     if filters[FILTER_CB_USE_SEARCH_OBSERVABLE].value and filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value != '' and \
                     filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value != '':
         
-        query = query.join(ObservableMapping, GUIAlert.id == ObservableMapping.alert_id)\
-                     .join(saq.database.Observable, ObservableMapping.observable_id == saq.database.Observable.id)\
+        observable_mapping_search = aliased(ObservableMapping)
+        observable_search = aliased(saq.database.Observable)
+        query = query.join(observable_mapping_search, GUIAlert.id == observable_mapping_search.alert_id)\
+                     .join(observable_search, observable_mapping_search.observable_id == observable_search.id)\
                      .filter(and_(True if filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value == 'ANY' 
-                                       else saq.database.Observable.type == filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value,
-                                  saq.database.Observable.value.like('%{}%'.format(filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value))))
-        #query = query.filter(
-            #GUIAlert.id.in_(
-                #db.session.query(GUIAlert.id)
-                    #.join(ObservableMapping, GUIAlert.id == ObservableMapping.alert_id)
-                    #.join(saq.database.Observable, ObservableMapping.observable_id == saq.database.Observable.id)
-                    #.filter(and_(
-                    #True if filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value == 'ANY' else saq.database.Observable.type ==
-                                                                                         #filters[
-                                                                                             #FILTER_S_SEARCH_OBSERVABLE_TYPE].value,
-                    #saq.database.Observable.value.like(
-                        #'%{}%'.format(filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value)))).subquery()
-            #)
-        #)
+                                       else observable_search.type == filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value,
+                                  observable_search.value.like('%{}%'.format(filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value))))
 
         filter_english.append("has observable of type {0} with value {1}".format(
             filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value,

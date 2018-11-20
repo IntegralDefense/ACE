@@ -73,7 +73,7 @@ TAG_OUTBOUND_EMAIL = 'outbound_email'
 # regex to match an email header line
 RE_EMAIL_HEADER = re.compile(r'^[^:]+:\s.*$')
 # regex to match an email header continuation line
-RE_EMAIL_HEADER_CONTINUE = re.compile(r'^\t.*$')
+RE_EMAIL_HEADER_CONTINUE = re.compile(r'^\s.*$')
 
 class EncryptedArchiveAnalysis(Analysis):
     def initialize_details(self):
@@ -1484,35 +1484,33 @@ class EmailAnalyzer(AnalysisModule):
         is_email |= 'message/rfc822' in file_type_analysis.mime_type
 
         if not is_email:
-            has_subject = None
-            has_mail_to = None
-            has_mail_from = None
-
+            header_count = 0
             try:
                 with open(os.path.join(self.root.storage_dir, _file.value), 'r') as fp:
                     while True:
                         line = fp.readline(1024)
                         m = RE_EMAIL_HEADER.match(line)
                         if m:
-                            #logging.info("MARKER: header line")
-                            if line.lower().startswith('to:'):
-                                has_mail_to = True
-                            elif line.lower().startswith('from:'):
-                                has_mail_from = True
-                            elif line.lower().startswith('subject:'):
-                                has_subject = True
-                
+                            header_count += 1
+                            #logging.info("MARKER: header")
                             continue
+
+                        # have we reached the end of the headers?
+                        if line.strip() == '':
+                            #logging.info("MARKER: headers end")
+                            break
 
                         m = RE_EMAIL_HEADER_CONTINUE.match(line)
                         if m:
-                            #logging.info("MARKER: header continuation line")
+                            #logging.info("MARKER: header continuation")
                             continue
 
-                        #logging.info("MARKER: non header line")
+                        # we read some non-email header content
+                        #logging.info("MARKER: non header: [{}]".format(line.strip()))
+                        header_count = 0
                         break
 
-                if has_subject and has_mail_to and has_mail_from:
+                if header_count > 5: # completely arbitrary value
                     logging.debug("detected email file {} by inspecting contents".format(_file.value))
                     is_email = True
 
