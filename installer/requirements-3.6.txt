@@ -13,7 +13,7 @@ WTForms
 beautifulsoup4
 businesstime
 cbapi
-cbinterface
+cbinterface==1.1.6
 dnspython
 html2text
 iptools
