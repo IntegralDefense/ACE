@@ -973,14 +973,16 @@ class EmailAnalyzer(AnalysisModule):
         # START WHITELISTING
 
         # for office365 we check to see if this email is inbound
-        if 'X-MS-Exchange-Organization-MessageDirectionality' in target_email:
-            if target_email['X-MS-Exchange-Organization-MessageDirectionality'] != 'Incoming':
-                _file.add_tag(TAG_OUTBOUND_EMAIL)
-                # are we scanning inbound only?
-                if self.config.getboolean('scan_inbound_only'):
-                    logging.debug("skipping outbound office365 email {}".format(_file))
-                    _file.mark_as_whitelisted()
-                    return False
+        # this only applies to the original email, not email attachments
+        if _file.has_directive(DIRECTIVE_ORIGINAL_EMAIL):
+            if 'X-MS-Exchange-Organization-MessageDirectionality' in target_email:
+                if target_email['X-MS-Exchange-Organization-MessageDirectionality'] != 'Incoming':
+                    _file.add_tag(TAG_OUTBOUND_EMAIL)
+                    # are we scanning inbound only?
+                    if self.config.getboolean('scan_inbound_only'):
+                        logging.debug("skipping outbound office365 email {}".format(_file))
+                        _file.mark_as_whitelisted()
+                        return False
 
         # check to see if the sender or receiver has been whitelisted
         # this is useful to filter out internally sourced garbage
