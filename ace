@@ -620,14 +620,14 @@ def correlate(args):
                     root.analysis_mode = ANALYSIS_MODE_CORRELATION
                     root.save()
 
-                    node = None # if left as None then the api call defaults it to ace_api.default_node
+                    remote_host = None # if left as None then the api call defaults it to ace_api.default_node
                     if args.remote_host is not None:
-                        node = args.remote_host
+                        remote_host = args.remote_host
 
                     if args.remote_port is not None:
-                        node = '{}:{}'.format(node, args.remote_port)
+                        remote_host = '{}:{}'.format(remote_host, args.remote_port)
 
-                    result = upload(root.uuid, root.storage_dir, node=node, ssl_verification=args.ssl_ca_path)
+                    result = upload(root.uuid, root.storage_dir, remote_host=remote_host, ssl_verification=args.ssl_ca_path)
 
                 except Exception as e:
                     logging.error("unable to upload {}: {}".format(root, e))
@@ -1009,9 +1009,7 @@ email_parser.set_defaults(func=email_scanner)
 #
 
 def http_scanner(args):
-    from saq.engine.http import HTTPScanningEngine
-    from saq.process_server import initialize_process_server
-
+    
     daemon_name = 'http_scanner'
     disable_proxy()
 
@@ -1021,28 +1019,18 @@ def http_scanner(args):
 
     elif args.start:
         if args.daemon:
-            logging.info("starting daemon {0}".format(daemon_name))
+            logging.info("starting daemon {}".format(daemon_name))
             daemonize(daemon_name)
 
-        initialize_process_server()
-
-        engine = None
-
-        # add the capability for a graceful shutdown
-        def handle_sigterm(signum, frame):
-            logging.warning("received SIGTERM")
-            engine.stop()
-
-        signal.signal(signal.SIGTERM, handle_sigterm)
-    
         try:
-            engine = HTTPScanningEngine()
-            engine.keep_work_dir = args.keep_work_dir
-            engine.start()
-            engine.wait()
-        except KeyboardInterrupt as e:
+            from saq.collectors.bro_http import BroHTTPCollector
+            collector = BroHTTPCollector()
+            collector.start()
+            collector.wait()
+        except KeyboardInterrupt:
             logging.warning("caught user interrupt")
-            engine.wait()
+            collector.stop()
+            collector.wait()
     else:
         logging.error("You must specify either --start or --stop for this service.")
         sys.exit(1)

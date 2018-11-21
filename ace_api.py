@@ -47,10 +47,10 @@ warnings.simplefilter('ignore', urllib3.exceptions.SecurityWarning)
 # get our custom logger we use for this library
 log = logging.getLogger(__name__)
 
-def set_default_node(node):
-    """Sets the default node used when no node is provided to the API calls."""
-    global default_node
-    default_node = node
+def set_default_remote_host(remote_host):
+    """Sets the default remote host used when no remote host is provided to the API calls."""
+    global default_remote_host
+    default_remote_host = remote_host
 
 def set_default_ssl_ca_path(ssl_verification):
     """Sets the default SSL verification mode. 
@@ -63,8 +63,8 @@ def set_default_ssl_ca_path(ssl_verification):
 # dictionary that maps command names to their functions
 commands = { }
 
-# the default node to use when no node is provided
-default_node = 'localhost'
+# the default remote host to use when no remote host is provided
+default_remote_host = 'localhost'
 default_ssl_verification = None
 
 # the local timezone
@@ -78,19 +78,19 @@ def api_command(func):
     commands[func.__name__] = func
     return func
 
-def _execute_api_call(command, node=None, ssl_verification=None, stream=False, data=None, files=None):
-    if node is None:
-        node = default_node
+def _execute_api_call(command, remote_host=None, ssl_verification=None, stream=False, data=None, files=None):
+    if remote_host is None:
+        remote_host = default_remote_host
 
     if ssl_verification is None:
         ssl_verification = default_ssl_verification
 
     if data is None:
         # if we're not passing data then it's a GET
-        r = requests.get('https://{}/api/{}'.format(node, command), verify=ssl_verification, stream=stream)
+        r = requests.get('https://{}/api/{}'.format(remote_host, command), verify=ssl_verification, stream=stream)
     else:
         # otherwise it's a POST
-        r = requests.post('https://{}/api/{}'.format(node, command), verify=ssl_verification, stream=stream,
+        r = requests.post('https://{}/api/{}'.format(remote_host, command), verify=ssl_verification, stream=stream,
                           data=data, files=files)
 
     r.raise_for_status()
@@ -271,7 +271,7 @@ def clear(uuid, lock_uuid, *args, **kwargs):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
-    parser.add_argument('node', help="The remote node to connect to in host[:port] format.")
+    parser.add_argument('remote_host', help="The remote host to connect to in host[:port] format.")
     parser.add_argument('command', choices=commands.keys(), help="The API command to execute.")
     parser.add_argument('command_arguments', nargs='*', help="The arguments to the API call.")
     parser.add_argument('--ssl-verification', required=False, default='/opt/ace/ssl/ca-chain.cert.pem',
@@ -279,7 +279,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     try:
-        result = commands[args.command](node=args.node, 
+        result = commands[args.command](remote_host=args.remote_host, 
                                         ssl_verification=args.ssl_verification, 
                                         *args.command_arguments)
         print(json.dumps(result, sort_keys=True, indent=4))

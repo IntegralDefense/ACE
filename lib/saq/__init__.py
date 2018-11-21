@@ -29,6 +29,7 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 
 SAQ_HOME = None
 SAQ_NODE = None
+SAQ_NODE_ID = None
 API_PREFIX = None
 SAQ_RELATIVE_DIR = None
 CONFIG = None

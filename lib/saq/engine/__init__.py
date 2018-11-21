@@ -240,12 +240,6 @@ class WorkerManager(object):
             if key.startswith('analysis_pool_size_'):
                 mode = key[len('analysis_pool_size_'):]
 
-                # make sure we support this mode locally
-                if CURRENT_ENGINE.local_analysis_modes and mode not in CURRENT_ENGINE.local_analysis_modes:
-                    logging.warning("engine.{} specified but {} not in engine.local_analysis_modes".format(
-                                    key, mode))
-                    CURRENT_ENGINE.local_analysis_modes.append(mode)
-
                 for i in range(CURRENT_ENGINE.config.getint(key)):
                     self.add_worker(mode)
 
@@ -369,10 +363,22 @@ class Engine(object):
 
         # and make sure we actually support this analysis mode locally
         # if we don't when we issue a warning and support it
-        if self.local_analysis_modes and self.default_analysis_mode not in self.local_analysis_modes:
-            logging.warning("engine.default_analysis_mode is {} but is not listed in engine.local_analysis_modes".format(
-                            self.default_analysis_mode))
-            self.local_analysis_modes.append(self.default_analysis_mode)
+        if self.local_analysis_modes:
+            if self.default_analysis_mode not in self.local_analysis_modes:
+                logging.warning("engine.default_analysis_mode is {} but is not listed in engine.local_analysis_modes".format(
+                                self.default_analysis_mode))
+                self.local_analysis_modes.append(self.default_analysis_mode)
+
+            # enumerate analysis pool and make sure we support the modes locally that we specify in the pools
+            for key in self.config.keys():
+                if key.startswith('analysis_pool_size_'):
+                    mode = key[len('analysis_pool_size_'):]
+
+                    # make sure we support this mode locally
+                    if mode not in self.local_analysis_modes:
+                        logging.warning("engine.{} specified but {} not in engine.local_analysis_modes".format(
+                                        key, mode))
+                        self.local_analysis_modes.append(mode)
 
         # things we do *not* want to analyze
         self.observable_exclusions = {} # key = o_type, value = [] of values
@@ -515,8 +521,9 @@ class Engine(object):
         logging.error("request for analysis module that generates {} failed".format(analysis))
         return None
 
-    def initialize(self):
-        """Initialization routines executed once as startup."""
+    @use_db
+    def initialize(self, db, c):
+        """Initialization routines executed once at startup."""
         # make sure these exist
         for d in [ self.work_dir, self.var_dir, self.stats_dir ]:
             try:
@@ -547,28 +554,6 @@ class Engine(object):
         # quick mapping of analysis module section name to the loaded AnalysisModule
         self.analysis_module_mapping = {} # key = analysis_module_name, value = AnalysisModule
 
-        # a module_group define a list of modules to load for a given engine
-        # the module_groups config option defines a comma separated list of groups to load
-        # each group defines one or more modules to load
-        #if 'module_groups' in self.config:
-            #self.module_groups = [x for x in self.config['module_groups'].split(',') if x]
-
-        #group_configured_modules = {}
-        #for group_name in self.module_groups:
-            #group_section = 'module_group_{}'.format(group_name)
-            #if group_section not in saq.CONFIG:
-                #logging.error("invalid module group {} specified for {}".format(group_name, self))
-                #continue
-
-            #for module_name in saq.CONFIG[group_section].keys():
-                #if module_name in group_configured_modules:
-                    #logging.debug("replacing config for module {} by module_group {}".format(
-                                  #module_name, group_section))
-
-                #group_configured_modules[module_name] = saq.CONFIG[group_section].getboolean(module_name)
-                #if group_configured_modules[module_name]:
-                    #logging.debug("module {} enabled by group config {}".format(module_name, group_name))
-
         for section in saq.CONFIG.sections():
             if not section.startswith('analysis_module_'):
                 continue
@@ -584,23 +569,6 @@ class Engine(object):
             if not saq.CONFIG.getboolean(section, 'enabled'):
                 logging.debug("analysis module {} disabled (globally)".format(section))
                 continue
-
-            #logging.info("{} enabled globally".format(section))
-
-            # the module has to be specified in the engine configuration to be used
-            #if section not in self.config and section not in group_configured_modules:
-                #logging.debug("analysis module {} is not specified for {}".format(section, self.name))
-                #continue
-
-            # and it must be enabled
-            #if ( section in self.config and not self.config.getboolean(section) ) or (
-                 #section in group_configured_modules and not group_configured_modules[section] ):
-                #logging.debug("analysis module {} is disabled for {}".format(section, self.name))
-                #continue
-
-            # we keep track of how much memory this module uses when it starts up
-            #current_process = psutil.Process()
-            #starting_rss = current_process.memory_info().rss
 
             module_name = saq.CONFIG[section]['module']
             try:
@@ -661,7 +629,7 @@ class Engine(object):
                 mode = section[len('analysis_mode_'):]
                 # make sure every analysis mode defines cleanup
                 if 'cleanup' not in saq.CONFIG[section]:
-                    logging.critical("{} missing cleanup key".format(section))
+                    logging.critical("{} missing cleanup key in configuration file".format(section))
 
                 self.analysis_mode_mapping[mode] = []
 
@@ -713,15 +681,6 @@ class Engine(object):
                             if self.analysis_module_mapping[key_name] in self.analysis_mode_mapping[mode]:
                                 self.analysis_mode_mapping[mode].remove(self.analysis_module_mapping[key_name])
                                 logging.debug("removed {} from analysis mode {}".format(analysis_module_name, mode))
-
-            # how much memory did we end up using here?
-            #ending_rss = current_process.memory_info().rss
-
-            # we want to warn if the memory usage is very large ( > 10MB)
-            #if ending_rss - starting_rss > 1024 * 1024 * 10:
-                #logging.warning("memory usage grew by {} bytes for loading analysis module {}".format(
-                                #human_readable_size(ending_rss - starting_rss),
-                                #analysis_module))
 
         logging.debug("finished loading {} modules".format(len(self.analysis_modules)))
 
@@ -977,22 +936,12 @@ class Engine(object):
 
     @use_db
     def update_node_status(self, db, c):
-        """Updates the nodes database table with the api prefix (location) and the company ID of this node.
-           This is called automatically at startup and periodically in the main engine loop."""
+        """Updates the last_update field of the node table for this node."""
         try:
-            execute_with_retry(db, c, """INSERT INTO nodes ( node, location, company_id, last_update )
-                                         VALUES ( %s, %s, %s, NOW() )
-                                         ON DUPLICATE KEY UPDATE
-                                         location = %s, company_id = %s, last_update = NOW()""",
-                               (saq.SAQ_NODE,
-                               saq.API_PREFIX,
-                               saq.COMPANY_ID,
-                               saq.API_PREFIX,
-                               saq.COMPANY_ID))
-
+            execute_with_retry(db, c, """UPDATE nodes SET last_update = NOW() WHERE id = %s""", (saq.SAQ_NODE_ID,))
             db.commit()
 
-            logging.info("updated node {} location {} company_id {}".format(saq.SAQ_NODE, saq.API_PREFIX, saq.COMPANY_ID))
+            logging.info("updated node {}".format(saq.SAQ_NODE))
 
         except Exception as e:
             logging.error("unable to update node {} status: {}".format(saq.SAQ_NODE, e))
@@ -1005,19 +954,19 @@ class Engine(object):
             # is there a primary node that has updated node status in the past N seconds
             # where N is 30 + node update status frequency
             c.execute("""
-                SELECT node FROM nodes 
+                SELECT name FROM nodes 
                 WHERE 
                     is_primary = 1 
                     AND TIMESTAMPDIFF(SECOND, last_update, NOW()) < %s
                 """, (self.node_status_update_frequency + 30,))
 
-            primary_node = c.fetchone()
+            primary_node= c.fetchone()
 
             # is there no primary node at this point?
             if primary_node is None:
                 execute_with_retry(db, c, "UPDATE nodes SET is_primary = 0", ())
-                execute_with_retry(db, c, "UPDATE nodes SET is_primary = 1, last_update = NOW() WHERE node = %s", 
-                                  (saq.SAQ_NODE,))
+                execute_with_retry(db, c, "UPDATE nodes SET is_primary = 1, last_update = NOW() WHERE id = %s", 
+                                  (saq.SAQ_NODE_ID,))
                 db.commit()
                 primary_node = saq.SAQ_NODE
                 logging.info("this node {} has become the primary node".format(saq.SAQ_NODE))
@@ -1054,9 +1003,6 @@ class Engine(object):
 
     def engine_loop(self):
         logging.info("started engine on process {}".format(os.getpid()))
-
-        # go ahead and register our node before we start the workers
-        self.update_node_status()
 
         self.worker_manager = WorkerManager()
         self.worker_manager.start()
@@ -1141,7 +1087,7 @@ class Engine(object):
         return saq.database.add_workload(root, exclusive_uuid=self.exclusive_uuid)
     
     @use_db
-    def transfer_work_target(self, uuid, node, db, c):
+    def transfer_work_target(self, uuid, node_id, db, c):
         """Moves the given work target from the given remote node to the local node.
            Returns the (unloaded) RootAnalysis for the object transfered."""
         from ace_api import download, clear
@@ -1176,25 +1122,25 @@ class Engine(object):
         try:
             # now make the transfer
             # look up the url for this target node
-            c.execute("SELECT location FROM nodes WHERE node = %s", (node,))
+            c.execute("SELECT location FROM nodes WHERE node_id = %s", (node_id,))
             row = c.fetchone()
             if row is None:
-                logging.error("cannot find node {} in nodes table".format(node))
+                logging.error("cannot find node_id {} in nodes table".format(node_id))
                 return False
 
-            remote_node = row[0]
-            download(uuid, target_dir, node=remote_node)
+            remote_host = row[0]
+            download(uuid, target_dir, remote_host=remote_host)
 
             # update the node (location) of this workitem to the local node
-            execute_with_retry(db, c, "UPDATE workload SET node = %s, storage_dir = %s WHERE uuid = %s", (
-                               saq.SAQ_NODE, target_dir, uuid))
-            execute_with_retry(db, c, "UPDATE delayed_analysis SET node = %s, storage_dir = %s WHERE uuid = %s", (
-                               saq.SAQ_NODE, target_dir, uuid))
+            execute_with_retry(db, c, "UPDATE workload SET node_id = %s, storage_dir = %s WHERE uuid = %s", (
+                               saq.SAQ_NODE_ID, target_dir, uuid))
+            execute_with_retry(db, c, "UPDATE delayed_analysis SET node_id = %s, storage_dir = %s WHERE uuid = %s", (
+                               saq.SAQ_NODE_ID, target_dir, uuid))
             db.commit()
 
             # then finally tell the remote system to clear this work item
             # we use our lock uuid as kind of password for clearing the work item
-            clear(uuid, self.lock_uuid, node=remote_node)
+            clear(uuid, self.lock_uuid, remote_host=remote_host)
 
             return RootAnalysis(uuid=uuid, storage_dir=target_dir)
             
@@ -1239,7 +1185,7 @@ SELECT
 FROM
     delayed_analysis LEFT JOIN locks ON delayed_analysis.uuid = locks.uuid
 WHERE
-    delayed_analysis.node = %s
+    delayed_analysis.node_id = %s
     AND locks.uuid IS NULL
     AND NOW() > delayed_until
     {}
@@ -1247,7 +1193,7 @@ ORDER BY
     delayed_until ASC
 """.format(exclusive_clause)
 
-        params = [ saq.SAQ_NODE ]
+        params = [ saq.SAQ_NODE_ID ]
         if self.exclusive_uuid is not None:
             params.append(self.exclusive_uuid)
 
@@ -1283,8 +1229,8 @@ ORDER BY
             params.append(self.analysis_mode_priority)
 
         if local:
-            where_clause.append('workload.node = %s')
-            params.append(saq.SAQ_NODE)
+            where_clause.append('workload.node_id = %s')
+            params.append(saq.SAQ_NODE_ID)
         else:
             # if we're looking remotely then we need to make sure we only select work for whatever company
             # this node belongs to
@@ -1313,7 +1259,7 @@ SELECT
     workload.uuid,
     workload.analysis_mode,
     workload.insert_date,
-    workload.node,
+    workload.node_id,
     workload.storage_dir
 FROM
     workload LEFT JOIN locks ON workload.uuid = locks.uuid
@@ -1323,14 +1269,14 @@ ORDER BY
     id ASC
 LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
-        for _id, uuid, analysis_mode, insert_date, node, storage_dir in c:
+        for _id, uuid, analysis_mode, insert_date, node_id, storage_dir in c:
             if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
                 continue
 
             # is this work item on a different node?
-            if node != saq.SAQ_NODE:
+            if node_id != saq.SAQ_NODE_ID:
                 # go grab it
-                return self.transfer_work_target(uuid, node)
+                return self.transfer_work_target(uuid, node_id)
 
             return RootAnalysis(uuid=uuid, storage_dir=storage_dir)
 
