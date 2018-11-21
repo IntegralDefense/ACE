@@ -25,7 +25,7 @@ class APIWrapperTestCase(ACEEngineTestCase):
         super().setUp(*args, **kwargs)
         self.start_api_server()
 
-        ace_api.set_default_node(saq.API_PREFIX)
+        ace_api.set_default_remote_host(saq.API_PREFIX)
         ace_api.set_default_ssl_ca_path(saq.CONFIG['SSL']['ca_chain_path'])
 
     def test_ping(self):
@@ -148,12 +148,12 @@ class APIWrapperTestCase(ACEEngineTestCase):
         self.assertEquals(os.path.getsize(os.path.join(root.storage_dir, o.value)), 1024)
 
         # we should see a single workload entry
-        c.execute("SELECT id, uuid, node, analysis_mode FROM workload WHERE uuid = %s", (uuid,))
+        c.execute("SELECT id, uuid, node_id, analysis_mode FROM workload WHERE uuid = %s", (uuid,))
         row = c.fetchone()
         self.assertIsNotNone(row)
         self.assertIsNotNone(row[0])
         self.assertEquals(row[1], uuid)
-        self.assertEquals(row[2], saq.SAQ_NODE)
+        self.assertEquals(row[2], saq.SAQ_NODE_ID)
         self.assertEquals(row[3], 'test_empty')
 
     def test_get_analysis(self):

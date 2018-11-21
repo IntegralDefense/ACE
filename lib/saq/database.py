@@ -50,6 +50,66 @@ def use_db(method=None, name=None):
 
     return wrapper
 
+def execute_with_retry(db, cursor, sql, params=None, attempts=2, commit=False):
+    """Executes the given SQL (and params) against the given cursor with
+       re-attempts up to N times (defaults to 2) on deadlock detection.
+       
+       To execute a single statement, sql is the parameterized SQL statement
+       and params is the tuple of parameter values.  params is optional and defaults
+       to an empty tuple.
+    
+       To execute multi-statement transactions, sql is a list of parameterized
+       SQL statements, and params is a matching list of tuples of parameters."""
+
+    assert isinstance(sql, str) or isinstance(sql, list)
+    assert params is None or isinstance(params, tuple) or ( 
+        isinstance(params, list) and all([isinstance(_, tuple) for _ in params]) )
+
+    if isinstance(sql, str):
+        sql = [ sql ]
+
+    if isinstance(params, tuple):
+        params = [ params ]
+    elif params is None:
+        params = [ () for _ in sql ]
+
+    if len(sql) != len(params):
+        raise ValueError("the length of sql statements does not match the length of parameter tuples: {} {}".format(
+                         sql, params))
+
+    count = 1
+    while True:
+        try:
+            for (_sql, _params) in zip(sql, params):
+                cursor.execute(_sql, _params)
+
+            if commit:
+                db.commit()
+
+            break
+
+        except pymysql.err.OperationalError as e:
+            # see http://stackoverflow.com/questions/25026244/how-to-get-the-mysql-type-of-error-with-pymysql
+            # to explain e.args[0]
+            if (e.args[0] == 1213 or e.args[0] == 1205) and count < attempts:
+                logging.warning("deadlock detected -- trying again (attempt #{})".format(count))
+                try:
+                    db.rollback()
+                except Exception as rollback_error:
+                    logging.error("rollback failed for transaction in deadlock: {}".format(rollback_error))
+                    raise e
+
+                count += 1
+                continue
+            else:
+                i = 0
+                for _sql, _params in zip(sql, params):
+                    logging.warning("DEADLOCK STATEMENT #{} SQL {} PARAMS {}".format(i, _sql, ','.join(_params)))
+                    i += 1
+
+                # TODO log innodb lock status
+                raise e
+
 def _get_cache_identifier():
     """Returns the key for _use_cache_flags"""
     return '{}:{}'.format(os.getpid(), threading.get_ident())
@@ -76,7 +136,8 @@ def disable_cached_db_connections():
                 release_cached_db_connection(name)
 
     with _use_cache_flags_lock:
-        _use_cache_flags.remove(_get_cache_identifier())
+        if _get_cache_identifier() in _use_cache_flags:
+            _use_cache_flags.remove(_get_cache_identifier())
 
 def _cached_db_connections_enabled():
     """Returns True if cached database connections are enabled for this process and thread."""
@@ -214,24 +275,6 @@ def get_db_connection(*args, **kwargs):
             raise e
 
         raise e
-
-def execute_with_retry(db, cursor, sql, params, attempts=2):
-    """Executes the given SQL (and params) against the given cursor with re-attempts up to N times (defaults to 2) on deadlock detection."""
-    count = 1
-    while True:
-        try:
-            cursor.execute(sql, params)
-            break
-        except pymysql.err.InternalError as e:
-            # see http://stackoverflow.com/questions/25026244/how-to-get-the-mysql-type-of-error-with-pymysql
-            # to explain e.args[0]
-            if (e.args[0] == 1213 or e.args[0] == 1205) and count < attempts:
-                logging.debug("deadlock detected -- trying again...")
-                db.rollback()
-                count += 1
-                continue
-            else:
-                raise e
 
 # new school database connections
 import logging
@@ -1495,8 +1538,8 @@ class Workload(Base):
         nullable=False,
         unique=True)
 
-    node = Column(
-        String(256), 
+    node_id = Column(
+        Integer,
         nullable=False, 
         index=True)
 
@@ -1536,15 +1579,16 @@ def add_workload(root, exclusive_uuid=None, db=None, c=None):
         logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(root))
         root.analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
         
+    logging.info("MARKER: NODE_ID = {}".format(saq.SAQ_NODE_ID))
     execute_with_retry(db, c, """
 INSERT INTO workload (
     uuid,
-    node,
+    node_id,
     analysis_mode,
     company_id,
     exclusive_uuid,
     storage_dir )
-VALUES ( %s, %s, %s, %s, %s, %s )""", (root.uuid, saq.SAQ_NODE, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
+VALUES ( %s, %s, %s, %s, %s, %s )""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
     db.commit()
     logging.info("added {} to workload with analysis mode {} company_id {} exclusive_uuid {}".format(
                   root.uuid, root.analysis_mode, root.company_id, exclusive_uuid))
@@ -1583,11 +1627,10 @@ def acquire_lock(_uuid, lock_uuid=None, lock_owner=None, db=None, c=None):
         if lock_uuid is None:
             lock_uuid = str(uuid.uuid4())
 
-        execute_with_retry(db, c , "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
-                          ( _uuid, lock_uuid, lock_owner ))
+        execute_with_retry(db, c, "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
+                          ( _uuid, lock_uuid, lock_owner ), commit=True)
 
         logging.debug("locked {} with {}".format(_uuid, lock_uuid))
-        db.commit()
         return lock_uuid
 
     except pymysql.err.IntegrityError as e:
@@ -1658,7 +1701,7 @@ def release_lock(uuid, lock_uuid, db, c):
 def clear_expired_locks(db, c):
     """Clear any locks that have exceeded saq.LOCK_TIMEOUT_SECONDS."""
     execute_with_retry(db, c, "DELETE FROM locks WHERE TIMESTAMPDIFF(SECOND, lock_time, NOW()) >= %s",
-                              saq.LOCK_TIMEOUT_SECONDS)
+                              (saq.LOCK_TIMEOUT_SECONDS,))
     db.commit()
     if c.rowcount:
         logging.debug("removed {} expired locks".format(c.rowcount))
@@ -1695,8 +1738,7 @@ class DelayedAnalysis(Base):
         nullable=False, 
         index=True)
 
-    node = Column(
-        String(256), 
+    node_id = Column(
         nullable=False, 
         index=True)
 
@@ -1713,9 +1755,9 @@ class DelayedAnalysis(Base):
 def add_delayed_analysis_request(root, observable, analysis_module, next_analysis, exclusive_uuid=None, db=None, c=None):
     try:
         execute_with_retry(db, c, """
-                           INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node, exclusive_uuid, storage_dir ) 
+                           INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node_id, exclusive_uuid, storage_dir ) 
                            VALUES ( %s, %s, %s, %s, %s, %s, %s )""", 
-                          ( root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE, exclusive_uuid, root.storage_dir ))
+                          ( root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE_ID, exclusive_uuid, root.storage_dir ))
 
         db.commit()
 
@@ -1740,3 +1782,25 @@ def initialize_database():
         **config[saq.CONFIG['global']['instance_type']].SQLALCHEMY_DATABASE_OPTIONS)
 
     DatabaseSession = sessionmaker(bind=engine)
+
+    # make sure we have a node_id allocated in the database for this node
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("SELECT id FROM nodes WHERE name = %s", (saq.SAQ_NODE,))
+        row = c.fetchone()
+        if row is None:
+            execute_with_retry(db, c, """INSERT INTO nodes ( name, location, company_id ) 
+                                         VALUES ( %s, %s, %s )""", 
+                              (saq.SAQ_NODE, saq.API_PREFIX, saq.COMPANY_ID),
+                              commit=True)
+
+            c.execute("SELECT id FROM nodes WHERE name = %s", (saq.SAQ_NODE,))
+            row = c.fetchone()
+            if row is None:
+                logging.critical("unable to allocate a node_id from the database")
+            else:
+                saq.SAQ_NODE_ID = row[0]
+                logging.info("allocated node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))
+        else:
+            saq.SAQ_NODE_ID = row[0]
+            logging.debug("got node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))

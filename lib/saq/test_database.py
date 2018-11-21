@@ -1,10 +1,11 @@
 # vim: sw=4:ts=4:et
 
 import logging
-import uuid
-import unittest
-import threading
 import multiprocessing
+import threading
+import time
+import unittest
+import uuid
 
 from multiprocessing import Process, Event, Pipe
 
@@ -13,12 +14,189 @@ import saq.database
 import saq.test
 
 from saq.constants import *
-from saq.database import get_db_connection, Alert, \
+from saq.database import get_db_connection, Alert, use_db, \
                          enable_cached_db_connections, disable_cached_db_connections, \
-                         acquire_lock, release_lock
+                         acquire_lock, release_lock, \
+                         execute_with_retry
 from saq.test import *
 
+import pymysql.err
+
 class DatabaseTestCase(ACEBasicTestCase):
+
+    @use_db
+    def test_execute_with_retry(self, db, c):
+        # simple single statement transaction
+        execute_with_retry(db, c, [ 'SELECT 1' ], [ tuple() ])
+        db.commit()
+
+        # multi statement transaction
+        _uuid = str(uuid.uuid4())
+        _lock_uuid = str(uuid.uuid4())
+        execute_with_retry(db, c, [ 
+            'INSERT INTO locks ( uuid ) VALUES ( %s )',
+            'UPDATE locks SET lock_uuid = %s WHERE uuid = %s',
+            'DELETE FROM locks WHERE uuid = %s',
+        ], [ 
+            (_uuid,),
+            (_lock_uuid, _uuid),
+            (_uuid,),
+        ])
+        db.commit()
+
+    def test_execute_with_retry_commit(self):
+        _uuid = str(uuid.uuid4())
+        _lock_uuid = str(uuid.uuid4())
+        disable_cached_db_connections()
+
+        # simple insert statement with commit option
+        with get_db_connection() as db:
+            c = db.cursor()
+            execute_with_retry(db, c, 'INSERT INTO locks ( uuid ) VALUES ( %s )', (_uuid,), commit=True)
+
+        # check it on another connection
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("SELECT uuid FROM locks WHERE uuid = %s", (_uuid,))
+            self.assertIsNotNone(c.fetchone())
+
+        _uuid = str(uuid.uuid4())
+        _lock_uuid = str(uuid.uuid4())
+
+        # and then this one should fail since we did not commit it
+        with get_db_connection() as db:
+            c = db.cursor()
+            execute_with_retry(db, c, 'INSERT INTO locks ( uuid ) VALUES ( %s )', (_uuid,), commit=False)
+
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("SELECT uuid FROM locks WHERE uuid = %s", (_uuid,))
+            self.assertIsNone(c.fetchone())
+
+        enable_cached_db_connections()
+
+    def test_deadlock(self):
+        # make sure we can always generate a deadlock
+        _uuid = str(uuid.uuid4())
+        _lock_uuid = str(uuid.uuid4())
+
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("INSERT INTO locks ( uuid, lock_uuid ) VALUES ( %s, %s )", ( _uuid, _lock_uuid ))
+            db.commit()
+
+        # one of these threads will get a deadlock
+        def _t1():
+            _uuid = str(uuid.uuid4())
+            _lock_uuid = str(uuid.uuid4())
+            try:
+                with get_db_connection() as db:
+                    c = db.cursor()
+                    c.execute("INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    # wait for signal to continue
+                    time.sleep(2)
+                    c.execute("UPDATE locks SET lock_owner = 'whatever'")
+                    db.commit()
+            except pymysql.err.OperationalError as e:
+                if e.args[0] == 1213 or e.args[0] == 1205:
+                    deadlock_event.set()
+
+        def _t2():
+            _uuid = str(uuid.uuid4())
+            _lock_uuid = str(uuid.uuid4())
+            try:
+                with get_db_connection() as db:
+                    c = db.cursor()
+                    c.execute("UPDATE locks SET lock_owner = 'whatever'")
+                    # wait for signal to continue
+                    time.sleep(2)
+                    c.execute("INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    db.commit()
+            except pymysql.err.OperationalError as e:
+                if e.args[0] == 1213 or e.args[0] == 1205:
+                    deadlock_event.set()
+
+        deadlock_event = threading.Event()
+
+        t1 = threading.Thread(target=_t1)
+        t2 = threading.Thread(target=_t2)
+
+        t1.start()
+        t2.start()
+
+        self.assertTrue(deadlock_event.wait(5))
+        t1.join(5)
+        t2.join(5)
+
+        self.assertFalse(t1.is_alive())
+        self.assertFalse(t2.is_alive())
+
+    def test_retry_on_deadlock(self):
+        # make sure our code to retry failed transactions on deadlocks
+        _uuid = str(uuid.uuid4())
+        _lock_uuid = str(uuid.uuid4())
+
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("INSERT INTO locks ( uuid, lock_uuid ) VALUES ( %s, %s )", ( _uuid, _lock_uuid ))
+            db.commit()
+
+        # one of these threads will get a deadlock
+        def _t1():
+            _uuid = str(uuid.uuid4())
+            _lock_uuid = str(uuid.uuid4())
+            try:
+                with get_db_connection() as db:
+                    c = db.cursor()
+                    execute_with_retry(db, c, "INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    # wait for signal to continue
+                    time.sleep(2)
+                    execute_with_retry(db, c, "UPDATE locks SET lock_owner = 'whatever'")
+                    db.commit()
+            except pymysql.err.OperationalError as e:
+                if e.args[0] == 1213 or e.args[0] == 1205:
+                    deadlock_event.set()
+
+        def _t2():
+            _uuid = str(uuid.uuid4())
+            _lock_uuid = str(uuid.uuid4())
+            try:
+                with get_db_connection() as db:
+                    c = db.cursor()
+                    execute_with_retry(db, c, "UPDATE locks SET lock_owner = 'whatever'")
+                    # wait for signal to continue
+                    time.sleep(2)
+                    execute_with_retry(db, c, "INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    db.commit()
+            except pymysql.err.OperationalError as e:
+                if e.args[0] == 1213 or e.args[0] == 1205:
+                    deadlock_event.set()
+
+        deadlock_event = threading.Event()
+
+        t1 = threading.Thread(target=_t1)
+        t2 = threading.Thread(target=_t2)
+
+        t1.start()
+        t2.start()
+
+        self.assertFalse(deadlock_event.wait(5))
+        t1.join(5)
+        t2.join(5)
+
+        self.assertFalse(t1.is_alive())
+        self.assertFalse(t2.is_alive())
+
+        self.assertEquals(log_count('deadlock detected'), 1)
+
+    @use_db
+    def test_acquire_node_id(self, db, c):
+        # when the system starts up it should acquire a node_id for saq.SAQ_NODE
+        self.assertIsNotNone(saq.SAQ_NODE_ID)
+        c.execute("SELECT name FROM nodes WHERE id = %s", (saq.SAQ_NODE_ID,))
+        row = c.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEquals(row[0], saq.SAQ_NODE)
 
     def insert_alert(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()))
