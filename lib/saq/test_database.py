@@ -75,6 +75,7 @@ class DatabaseTestCase(ACEBasicTestCase):
 
         enable_cached_db_connections()
 
+    @unittest.skip
     def test_deadlock(self):
         # make sure we can always generate a deadlock
         _uuid = str(uuid.uuid4())
@@ -131,6 +132,7 @@ class DatabaseTestCase(ACEBasicTestCase):
         self.assertFalse(t1.is_alive())
         self.assertFalse(t2.is_alive())
 
+    @unittest.skip
     def test_retry_on_deadlock(self):
         # make sure our code to retry failed transactions on deadlocks
         _uuid = str(uuid.uuid4())
@@ -188,15 +190,6 @@ class DatabaseTestCase(ACEBasicTestCase):
         self.assertFalse(t2.is_alive())
 
         self.assertEquals(log_count('deadlock detected'), 1)
-
-    @use_db
-    def test_acquire_node_id(self, db, c):
-        # when the system starts up it should acquire a node_id for saq.SAQ_NODE
-        self.assertIsNotNone(saq.SAQ_NODE_ID)
-        c.execute("SELECT name FROM nodes WHERE id = %s", (saq.SAQ_NODE_ID,))
-        row = c.fetchone()
-        self.assertIsNotNone(row)
-        self.assertEquals(row[0], saq.SAQ_NODE)
 
     def insert_alert(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()))

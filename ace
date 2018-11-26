@@ -377,16 +377,17 @@ def correlate(args):
 
     initialize_process_server()
 
-    # this ties any work we add to this instance
-    exclusive_uuid = str(uuid.uuid4())
+    engine = Engine()
+    engine.set_local()
 
     def _cleanup():
-        nonlocal exclusive_uuid
+        nonlocal engine
         from saq.database import get_db_connection
         with get_db_connection() as db:
             c = db.cursor()
-            c.execute("DELETE FROM workload WHERE exclusive_uuid = %s", (exclusive_uuid,))
-            c.execute("DELETE FROM delayed_analysis WHERE exclusive_uuid = %s", (exclusive_uuid,))
+            c.execute("DELETE FROM workload WHERE exclusive_uuid = %s", (engine.exclusive_uuid,))
+            c.execute("DELETE FROM delayed_analysis WHERE exclusive_uuid = %s", (engine.exclusive_uuid,))
+            c.execute("DELETE FROM nodes WHERE id = %s", (saq.SAQ_NODE_ID,))
             db.commit()
 
     # when all is said and done we want to make sure we don't leave any work entries behind in the database
@@ -544,7 +545,7 @@ def correlate(args):
     # if we are not splitting up the alerts then we just have one alert to look at
     if not args.split:
         root.save()
-        root.schedule(exclusive_uuid=exclusive_uuid)
+        root.schedule(exclusive_uuid=engine.exclusive_uuid)
         roots.append(root)
 
     # allow the user to control what analysis modules run
@@ -587,9 +588,6 @@ def correlate(args):
                     logging.info("enabling {}".format(section))
                     saq.CONFIG[section]['enabled'] = 'yes'
                     saq.CONFIG['engine_cli_correlation'][section] = 'yes'
-
-    engine = Engine()
-    engine.exclusive_uuid = exclusive_uuid
 
     try:
         engine.controlled_stop()

@@ -320,7 +320,7 @@ def initialize_test_environment():
     from saq.crypto import get_aes_key
     saq.ENCRYPTION_PASSWORD = get_aes_key('password')
 
-    initialize_database()
+    #initialize_database()
     initialized = True
 
 # expected values
@@ -563,7 +563,8 @@ class ACEBasicTestCase(TestCase):
         c.execute("DELETE FROM events")
         c.execute("DELETE FROM remediation")
         c.execute("DELETE FROM company WHERE name != 'default'")
-        c.execute("DELETE FROM nodes")
+        c.execute("DELETE FROM nodes WHERE is_local = 1")
+        c.execute("UPDATE nodes SET is_primary = 0")
         c.execute("DELETE FROM locks")
         c.execute("DELETE FROM delayed_analysis")
         db.commit()
@@ -597,7 +598,7 @@ class ACEBasicTestCase(TestCase):
         errors = []
         for x in range(5):
             try:
-                result = ace_api.ping(node=saq.API_PREFIX, ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+                result = ace_api.ping(remote_host=saq.API_PREFIX, ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
                 break
             except Exception as e:
                 errors.append(str(e))

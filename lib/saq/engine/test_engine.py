@@ -18,7 +18,7 @@ from queue import Empty
 import saq, saq.test
 from saq.analysis import RootAnalysis, _get_io_read_count, _get_io_write_count, Observable
 from saq.constants import *
-from saq.database import get_db_connection, use_db, acquire_lock, clear_expired_locks
+from saq.database import get_db_connection, use_db, acquire_lock, clear_expired_locks, initialize_node
 from saq.engine import Engine, DelayedAnalysisRequest, add_workload
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
@@ -95,6 +95,53 @@ class EngineTestCase(ACEEngineTestCase):
         m = regex.search(results[0].getMessage())
         self.assertIsNotNone(m)
         self.assertEquals(int(m.group(1)), cpu_count())
+
+    @use_db
+    def test_acquire_node_id(self, db, c):
+
+        engine = Engine()
+        engine.start()
+        engine.stop()
+        engine.wait()
+
+        # when an Engine starts up it should acquire a node_id for saq.SAQ_NODE
+        self.assertIsNotNone(saq.SAQ_NODE_ID)
+        c.execute("""SELECT name, location, company_id, is_primary, any_mode, is_local 
+                     FROM nodes WHERE id = %s""", (saq.SAQ_NODE_ID,))
+        row = c.fetchone()
+        self.assertIsNotNone(row)
+        _name, _location, _company_id, _is_primary, _any_mode, _is_local = row
+        self.assertEquals(_name, saq.SAQ_NODE)
+        self.assertEquals(_location, saq.API_PREFIX)
+        self.assertEquals(_company_id, saq.COMPANY_ID)
+        #self.assertIsInstance(_any_mode, int)
+        #self.assertEquals(_any_mode, 0)
+        self.assertIsInstance(_is_local, int)
+        self.assertEquals(_is_local, 0)
+
+    @use_db
+    def test_acquire_local_node_id(self, db, c):
+
+        engine = Engine()
+        engine.set_local()
+        engine.start()
+        engine.stop()
+        engine.wait()
+
+        # when a local engine starts up it should acquire a local node with a uuid as the name
+        self.assertIsNotNone(saq.SAQ_NODE_ID)
+        c.execute("""SELECT name, location, company_id, is_primary, any_mode, is_local 
+                     FROM nodes WHERE id = %s""", (saq.SAQ_NODE_ID,))
+        row = c.fetchone()
+        from saq.util import validate_uuid
+        self.assertIsNotNone(row)
+        _name, _location, _company_id, _is_primary, _any_mode, _is_local = row
+        self.assertTrue(validate_uuid(_name))
+        self.assertEquals(_company_id, saq.COMPANY_ID)
+        #self.assertIsInstance(_any_mode, int)
+        #self.assertEquals(_any_mode, 0)
+        self.assertIsInstance(_is_local, int)
+        self.assertEquals(_is_local, 1)
 
     def test_engine_analysis_modes(self):
         """Tests analysis mode module loading."""
@@ -1425,7 +1472,7 @@ class EngineTestCase(ACEEngineTestCase):
 
         # now start another engine on a different "node"
         saq.CONFIG['global']['node'] = 'second_host'
-        saq.SAQ_NODE = 'second_host'
+        saq.set_node('second_host')
         saq.CONFIG['analysis_mode_test_single']['cleanup'] = 'no'
 
         # and this node handles the test_single mode
@@ -1510,7 +1557,7 @@ class EngineTestCase(ACEEngineTestCase):
 
         # now start another engine on a different "node"
         saq.CONFIG['global']['node'] = 'second_host'
-        saq.SAQ_NODE = 'second_host'
+        saq.set_node('second_host')
         saq.CONFIG['analysis_mode_test_single']['cleanup'] = 'no'
 
         # and this node handles the test_single mode
@@ -1539,7 +1586,7 @@ class EngineTestCase(ACEEngineTestCase):
         wait_for_log_count('updated node', 1, 5)
         
         # do we have an entry in the nodes database table?
-        c.execute("SELECT node, location, company_id, last_update FROM nodes WHERE node = %s", (saq.SAQ_NODE,))
+        c.execute("SELECT name, location, company_id, last_update FROM nodes WHERE id = %s", (saq.SAQ_NODE_ID,))
         row = c.fetchone()
         self.assertIsNotNone(row)
         self.assertEquals(row[0], saq.SAQ_NODE)
@@ -1550,14 +1597,55 @@ class EngineTestCase(ACEEngineTestCase):
         engine.wait()
 
     @use_db
+    def test_node_modes_update(self, db, c):
+
+        # when an Engine starts up it updates the node_modes database with the list of analysis modes it locally supports
+        # configure to support two modes
+        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty,test_single'
+        engine = TestEngine()
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should have two entries in the node_modes database for the current node_id
+        c.execute("SELECT analysis_mode FROM node_modes WHERE node_id = %s ORDER BY analysis_mode ASC", (saq.SAQ_NODE_ID,))
+        self.assertEquals(c.fetchone(), ('test_empty',))
+        self.assertEquals(c.fetchone(), ('test_single',))
+
+        # and the any_mode column should be 0 for this node
+        c.execute("SELECT any_mode FROM nodes WHERE id = %s", (saq.SAQ_NODE_ID,))
+        self.assertEquals(c.fetchone(), (0,))
+
+    @use_db
+    def test_node_modes_update_any(self, db, c):
+
+        # when an Engine starts up it updates the node_modes database with the list of analysis modes it locally supports
+        # configure to support two modes
+        saq.CONFIG['engine']['local_analysis_modes'] = ''
+        engine = TestEngine()
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should have NO entries in the node_modes database for the current node_id
+        c.execute("SELECT analysis_mode FROM node_modes WHERE node_id = %s ORDER BY analysis_mode ASC", (saq.SAQ_NODE_ID,))
+        self.assertIsNone(c.fetchone())
+
+        # and the any_mode column should be 1 for this node
+        c.execute("SELECT any_mode FROM nodes WHERE id = %s", (saq.SAQ_NODE_ID,))
+        self.assertEquals(c.fetchone(), (1,))
+
+    @use_db
     def test_primary_node(self, db, c):
+
         # test having a node become the primary node
+        saq.CONFIG['engine']['node_status_update_frequency'] = '1'
         engine = TestEngine()
         engine.start()
         
         wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
 
-        c.execute("SELECT node FROM nodes WHERE node = %s AND is_primary = 1", (saq.SAQ_NODE,))
+        c.execute("SELECT name FROM nodes WHERE id = %s AND is_primary = 1", (saq.SAQ_NODE_ID,))
         self.assertIsNotNone(c.fetchone())
 
         engine.stop()
@@ -1572,13 +1660,13 @@ class EngineTestCase(ACEEngineTestCase):
         
         wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
 
-        c.execute("SELECT node FROM nodes WHERE node = %s AND is_primary = 1", (saq.SAQ_NODE,))
+        c.execute("SELECT name FROM nodes WHERE id = %s AND is_primary = 1", (saq.SAQ_NODE_ID,))
         self.assertIsNotNone(c.fetchone())
 
         engine.stop()
         engine.wait()
 
-        saq.SAQ_NODE = 'another_node'
+        saq.set_node('another_node')
         engine = TestEngine()
         engine.start()
 
@@ -1595,17 +1683,19 @@ class EngineTestCase(ACEEngineTestCase):
         
         wait_for_log_count('this node {} has become the primary node'.format(saq.SAQ_NODE), 1, 5)
 
-        c.execute("SELECT node FROM nodes WHERE node = %s AND is_primary = 1", (saq.SAQ_NODE,))
+        c.execute("SELECT name FROM nodes WHERE id = %s AND is_primary = 1", (saq.SAQ_NODE_ID,))
         self.assertIsNotNone(c.fetchone())
 
         engine.stop()
         engine.wait()
 
         # update the node to make it look like it last updated a while ago
-        c.execute("UPDATE nodes SET last_update = ADDTIME(last_update, '-1:00:00') WHERE node = %s", (saq.SAQ_NODE,))
+        c.execute("UPDATE nodes SET last_update = ADDTIME(last_update, '-1:00:00') WHERE id = %s", (saq.SAQ_NODE_ID,))
         db.commit()
 
-        saq.SAQ_NODE = 'another_node'
+        c.execute("SELECT last_update FROM nodes WHERE id = %s", (saq.SAQ_NODE_ID,))
+
+        saq.set_node('another_node')
         engine = TestEngine()
         engine.start()
 
@@ -1633,6 +1723,26 @@ class EngineTestCase(ACEEngineTestCase):
         # make sure the lock is gone
         c.execute("SELECT uuid FROM locks WHERE uuid = %s", (target,))
         self.assertIsNone(c.fetchone())
+
+    @use_db
+    def test_primary_node_clear_expired_local_nodes(self, db, c):
+        # create a local node and have it expire
+        engine = TestEngine()
+        engine.set_local()
+        engine.controlled_stop()
+        engine.start()
+        engine.stop()
+
+        c.execute("UPDATE nodes SET last_update = ADDTIME(last_update, '-1:00:00') WHERE id = %s", (saq.SAQ_NODE_ID,))
+        db.commit()
+
+        saq.set_node('another_node')
+        engine = TestEngine()
+        engine.start()
+
+        wait_for_log_count('removed 1 expired local nodes', 1, 5)
+        engine.stop()
+        engine.wait()
 
     def test_threaded_analysis_module(self):
         

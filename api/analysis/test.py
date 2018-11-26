@@ -91,12 +91,12 @@ class APIAnalysisTestCase(APIBasicTestCase):
                 file_uuid = o['id']
 
         # we should see a single workload entry
-        c.execute("SELECT id, uuid, node, analysis_mode FROM workload WHERE uuid = %s", (uuid,))
+        c.execute("SELECT id, uuid, node_id, analysis_mode FROM workload WHERE uuid = %s", (uuid,))
         row = c.fetchone()
         self.assertIsNotNone(row)
         self.assertIsNotNone(row[0])
         self.assertEquals(row[1], uuid)
-        self.assertEquals(row[2], saq.SAQ_NODE)
+        self.assertEquals(row[2], saq.SAQ_NODE_ID)
         self.assertEquals(row[3], 'analysis')
 
         result = self.client.get(url_for('analysis.get_details', uuid=uuid, name=result['details']['file_path']))
@@ -126,7 +126,7 @@ class APIAnalysisTestCase(APIBasicTestCase):
         self.assertIsNone(result['locks'])
         self.assertTrue(isinstance(result['workload']['id'], int))
         self.assertEquals(result['workload']['uuid'], uuid)
-        self.assertEquals(result['workload']['node'], saq.SAQ_NODE)
+        self.assertEquals(result['workload']['node_id'], saq.SAQ_NODE_ID)
         self.assertEquals(result['workload']['analysis_mode'], 'analysis')
         self.assertTrue(isinstance(parse_event_time(result['workload']['insert_date']), datetime.datetime))
 

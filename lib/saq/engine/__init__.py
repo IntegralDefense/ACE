@@ -33,7 +33,7 @@ from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, Profi
 from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
-                         add_delayed_analysis_request, clear_expired_locks
+                         add_delayed_analysis_request, clear_expired_locks, clear_expired_local_nodes
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 from saq.performance import record_metric
@@ -291,6 +291,17 @@ class WorkerManager(object):
 
         logging.info("worker manager on pid {} exiting".format(os.getpid()))
 
+# syntactic suger for if self.is_local: return None
+def exclude_if_local(target_function):
+    """A member function of Engine wrapped with this function will not execute if the Engine is in "local" mode."""
+    def _wrapper(self, *args, **kwargs):
+        if self.is_local:
+            return None
+
+        return target_function(self, *args, **kwargs)
+
+    return _wrapper
+
 class Engine(object):
     """Analysis Correlation Engine"""
 
@@ -450,16 +461,30 @@ class Engine(object):
     def __str__(self):
         return "Engine ({})".format(saq.SAQ_NODE)
 
+    def set_local(self):
+        """Sets the Engine into "local" mode."""
+        self.exclusive_uuid = str(uuid.uuid4())
+        saq.set_node(str(uuid.uuid4()))
+        logging.info("set node {} to local exclusive uuid {}".format(saq.SAQ_NODE, self.exclusive_uuid))
+
+    @property
+    def is_local(self):
+        """An Engine is "local" if it is using an exclusive uuid. This means
+        the engine is running only once and any work it generates should be kept
+        local."""
+
+        return self.exclusive_uuid is not None
+
     @property
     @use_db
     def delayed_analysis_queue_size(self, db, c):
         """Returns the size of the delayed analysis queue (for this node.)"""
-        if self.exclusive_uuid is None:
-            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node = %s AND exclusive_uuid IS NULL", 
-                     (saq.SAQ_NODE,))
+        if not self.is_local:
+            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid IS NULL", 
+                     (saq.SAQ_NODE_ID,))
         else:
-            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node = %s AND exclusive_uuid = %s", 
-                     (saq.SAQ_NODE, self.exclusive_uuid))
+            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid = %s", 
+                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
 
         row = c.fetchone()
         return row[0]
@@ -468,11 +493,12 @@ class Engine(object):
     @use_db
     def workload_queue_size(self, db, c):
         """Returns the size of the workload queue (for this node.)"""
-        if self.exclusive_uuid is None:
-            c.execute("SELECT COUNT(*) FROM workload WHERE node = %s AND exclusive_uuid IS NULL", (saq.SAQ_NODE,))
+        if not self.is_local:
+            c.execute("SELECT COUNT(*) FROM workload WHERE node_id = %s AND exclusive_uuid IS NULL", 
+                     (saq.SAQ_NODE_ID,))
         else:
-            c.execute("SELECT COUNT(*) FROM workload WHERE node = %s AND exclusive_uuid = %s", 
-                     (saq.SAQ_NODE, self.exclusive_uuid))
+            c.execute("SELECT COUNT(*) FROM workload WHERE node_id = %s AND exclusive_uuid = %s", 
+                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
 
         row = c.fetchone()
         return row[0]
@@ -484,12 +510,12 @@ class Engine(object):
     @use_db
     def delayed_analysis_queue_is_empty(self, db, c):
         """Returns True if the delayed analysis queue is empty, False otherwise."""
-        if self.exclusive_uuid is None:
-            c.execute("SELECT id FROM delayed_analysis WHERE node = %s AND exclusive_uuid IS NULL LIMIT 1", 
-                     (saq.SAQ_NODE,))
+        if not self.is_local:
+            c.execute("SELECT id FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid IS NULL LIMIT 1", 
+                     (saq.SAQ_NODE_ID,))
         else:
-            c.execute("SELECT id FROM delayed_analysis WHERE node = %s AND exclusive_uuid = %s LIMIT 1", 
-                     (saq.SAQ_NODE, self.exclusive_uuid))
+            c.execute("SELECT id FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid = %s LIMIT 1", 
+                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
 
         row = c.fetchone()
         return row is None
@@ -498,12 +524,12 @@ class Engine(object):
     @use_db
     def workload_queue_is_empty(self, db, c):
         """Returns True if the work queue is empty, False otherwise."""
-        if self.exclusive_uuid is None:
-            c.execute("SELECT id FROM workload WHERE node = %s AND exclusive_uuid IS NULL LIMIT 1", 
-                     (saq.SAQ_NODE,))
+        if not self.is_local:
+            c.execute("SELECT id FROM workload WHERE node_id = %s AND exclusive_uuid IS NULL LIMIT 1", 
+                     (saq.SAQ_NODE_ID,))
         else:
-            c.execute("SELECT id FROM workload WHERE node = %s AND exclusive_uuid = %s LIMIT 1", 
-                     (saq.SAQ_NODE, self.exclusive_uuid))
+            c.execute("SELECT id FROM workload WHERE node_id = %s AND exclusive_uuid = %s LIMIT 1", 
+                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
 
         row = c.fetchone()
         return row is None
@@ -531,6 +557,23 @@ class Engine(object):
                     os.makedirs(d)
             except Exception as e:
                 logging.error("unable to create directory {}: {}".format(d, e))
+
+        # update the database with the list of analysis modes we accept
+        sql = [ "DELETE FROM node_modes WHERE node_id = %s" ]
+        params = [ (saq.SAQ_NODE_ID,) ]
+
+        
+        # if we do NOT specify local_analysis_modes then we default to ANY mode
+        # by setting the any_mode column of the node database row
+        sql.append("UPDATE nodes SET any_mode = %s WHERE id = %s")
+        params.append((0 if self.local_analysis_modes else 1, saq.SAQ_NODE_ID))
+
+        for mode in self.local_analysis_modes:
+            sql.append("INSERT INTO node_modes ( node_id, analysis_mode ) VALUES ( %s, %s )")
+            params.append((saq.SAQ_NODE_ID, mode))
+            logging.info("node {} supports mode {}".format(saq.SAQ_NODE, mode))
+
+        execute_with_retry(db, c, sql, params, commit=True)
 
     def initialize_signal_handlers(self):
         def handle_sighup(signum, frame):
@@ -688,6 +731,7 @@ class Engine(object):
     # MAINTENANCE
     # ------------------------------------------------------------------------
 
+    @exclude_if_local
     def start_maintenance_threads(self):
         self.maintenance_control = threading.Event()
 
@@ -701,6 +745,7 @@ class Engine(object):
             t.start()
             self.maintenance_threads.append(t)
 
+    @exclude_if_local
     def stop_maintenance_threads(self):
         self.maintenance_control.set()
         for t in self.maintenance_threads:
@@ -934,19 +979,21 @@ class Engine(object):
     # ANALYSIS ENGINE
     # ------------------------------------------------------------------------
 
+    @exclude_if_local
     @use_db
     def update_node_status(self, db, c):
         """Updates the last_update field of the node table for this node."""
         try:
-            execute_with_retry(db, c, """UPDATE nodes SET last_update = NOW() WHERE id = %s""", (saq.SAQ_NODE_ID,))
-            db.commit()
+            execute_with_retry(db, c, """UPDATE nodes SET last_update = NOW(), is_local = %s WHERE id = %s""", 
+                              (self.is_local, saq.SAQ_NODE_ID), commit=True)
 
-            logging.info("updated node {}".format(saq.SAQ_NODE))
+            logging.info("updated node {} ({}) (is_local = {})".format(saq.SAQ_NODE, saq.SAQ_NODE_ID, self.is_local))
 
         except Exception as e:
             logging.error("unable to update node {} status: {}".format(saq.SAQ_NODE, e))
             report_exception()
 
+    @exclude_if_local
     @use_db
     def execute_primary_node_routines(self, db, c):
         """Executes primary node routines and may become the primary node if no other node has done so."""
@@ -960,16 +1007,18 @@ class Engine(object):
                     AND TIMESTAMPDIFF(SECOND, last_update, NOW()) < %s
                 """, (self.node_status_update_frequency + 30,))
 
-            primary_node= c.fetchone()
+            primary_node = c.fetchone()
 
             # is there no primary node at this point?
             if primary_node is None:
-                execute_with_retry(db, c, "UPDATE nodes SET is_primary = 0", ())
-                execute_with_retry(db, c, "UPDATE nodes SET is_primary = 1, last_update = NOW() WHERE id = %s", 
-                                  (saq.SAQ_NODE_ID,))
-                db.commit()
+                execute_with_retry(db, c, [ 
+                    "UPDATE nodes SET is_primary = 0",
+                    "UPDATE nodes SET is_primary = 1, last_update = NOW() WHERE id = %s" ],
+                [ tuple(), (saq.SAQ_NODE_ID,) ], commit=True)
                 primary_node = saq.SAQ_NODE
                 logging.info("this node {} has become the primary node".format(saq.SAQ_NODE))
+            else:
+                primary_node = primary_node[0]
 
             # are we the primary node?
             if primary_node != saq.SAQ_NODE:
@@ -979,6 +1028,7 @@ class Engine(object):
             # do primary node stuff
             # clear any outstanding locks
             clear_expired_locks()
+            clear_expired_local_nodes()
 
         except Exception as e:
             logging.error("error executing primary node routines: {}".format(e))
@@ -1091,7 +1141,7 @@ class Engine(object):
         """Moves the given work target from the given remote node to the local node.
            Returns the (unloaded) RootAnalysis for the object transfered."""
         from ace_api import download, clear
-        logging.info("downloading work target {} from {}".format(uuid, node))
+        logging.info("downloading work target {} from {}".format(uuid, node_id))
 
         # get a lock on the target we want to transfer
         if not acquire_lock(uuid, self.lock_uuid):
@@ -1122,7 +1172,7 @@ class Engine(object):
         try:
             # now make the transfer
             # look up the url for this target node
-            c.execute("SELECT location FROM nodes WHERE node_id = %s", (node_id,))
+            c.execute("SELECT location FROM nodes WHERE id = %s", (node_id,))
             row = c.fetchone()
             if row is None:
                 logging.error("cannot find node_id {} in nodes table".format(node_id))
@@ -1322,9 +1372,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         if isinstance(target, DelayedAnalysisRequest):
             execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE id = %s", (target.database_id,))
         else:
-            execute_with_retry(db, c, "DELETE FROM workload WHERE uuid = %s", (target.uuid))
+            execute_with_retry(db, c, "DELETE FROM workload WHERE uuid = %s", (target.uuid,))
 
-        execute_with_retry(db, c, "DELETE FROM locks where uuid = %s", (target.uuid))
+        execute_with_retry(db, c, "DELETE FROM locks where uuid = %s", (target.uuid,))
         db.commit()
         logging.debug("cleared work target {}".format(target))
 
@@ -1385,6 +1435,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             self.clear_work_target(work_item)
         except Exception as e:
             logging.error("unable to clear work item {}: {}".format(work_item, e))
+            report_exception()
 
         # did the analysis mode change?
         # NOTE that we do this AFTER locks are released
