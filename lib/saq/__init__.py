@@ -27,71 +27,8 @@ import tzlocal
 # disable the verbose logging in the requests module
 logging.getLogger("requests").setLevel(logging.WARNING)
 
-SAQ_HOME = None
-SAQ_NODE = None
-SAQ_NODE_ID = None
-API_PREFIX = None
-SAQ_RELATIVE_DIR = None
-CONFIG = None
-CONFIG_PATHS = []
-DATA_DIR = None
-DEFAULT_ENCODING = None
-SEMAPHORES_ENABLED = False
-PROXIES = {}
-OTHER_PROXIES = {}
-TOR_PROXY = None
-# list of iptools.IpRange objects defined in [network_configuration]
-MANAGED_NETWORKS = None
-# set this to True to force all anlaysis to result in an alert being generated
-FORCED_ALERTS = False
-# this forces all execution on happen on the same process and thread
-SINGLE_THREADED = False
-# the gpg private key password for encrypting/decrypting archive files
-# this can be provided on the command line so that these files can also be analyzed
-ENCRYPTION_PASSWORD = None
 # local timezone
 LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
-
-# the global log level setting
-LOG_LEVEL = logging.INFO
-# global logging directory (relative to SAQ_HOME)
-LOG_DIRECTORY = 'logs'
-
-# directory containing statistical runtime info
-STATS_DIR = None 
-MODULE_STATS_DIR = None
-
-# are we running as a daemon in the background?
-DAEMON_MODE = False
-
-# path to the certifcate chain used by all SSL certs
-CA_CHAIN_PATH = None
-
-# what type of instance is this?
-INSTANCE_TYPE = INSTANCE_TYPE_PRODUCTION
-
-# SLA settings
-GLOBAL_SLA_SETTINGS = None
-OTHER_SLA_SETTINGS = []
-EXCLUDED_SLA_ALERT_TYPES = []
-
-# Yara Scanner Server base directory
-YSS_BASE_DIR = None
-YSS_SOCKET_DIR = None
-
-# set to True to cause tracebacks to be dumped to standard output
-# useful when debugging or testing
-DUMP_TRACEBACKS = False
-
-# the amount of time (in seconds) that a lock in the locks table is valid
-LOCK_TIMEOUT_SECONDS = None
-
-# amount of time (in seconds) before a process blows up because a threaded module won't stop
-EXECUTION_THREAD_LONG_TIMEOUT = None
-
-# the company/custom this node belongs to
-COMPANY_NAME = None
-COMPANY_ID = None
 
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
@@ -199,36 +136,117 @@ def initialize_logging(logging_config_path):
         sys.stderr.write("unable to load logging configuration: {}".format(e))
         raise e
 
+def set_node(name):
+    """Sets the value for saq.SAQ_NODE. Typically this is auto-set using the local fqdn."""
+    from saq.database import initialize_node
+    global SAQ_NODE
+    
+    if name != SAQ_NODE:
+        SAQ_NODE = name
+        initialize_node()
+
 def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=None, relative_dir=None):
 
-    from saq.database import initialize_database
+    from saq.database import initialize_database, initialize_node
 
-    global SAQ_HOME
-    global SAQ_NODE
     global API_PREFIX
-    global SAQ_RELATIVE_DIR
+    global CA_CHAIN_PATH
+    global COMPANY_ID
+    global COMPANY_NAME
     global CONFIG
     global CONFIG_PATHS
-    global SINGLE_THREADED
-    global DEFAULT_ENCODING
-    global SEMAPHORES_ENABLED
-    global MANAGED_NETWORKS
-    global FORCED_ALERTS
-    global LOG_LEVEL
     global DAEMON_MODE
-    global CA_CHAIN_PATH
-    global INSTANCE_TYPE
-    global GLOBAL_SLA_SETTINGS
+    global DATA_DIR
+    global DEFAULT_ENCODING
+    global DUMP_TRACEBACKS
+    global ENCRYPTION_PASSWORD
     global EXCLUDED_SLA_ALERT_TYPES
-    global STATS_DIR
+    global EXECUTION_THREAD_LONG_TIMEOUT
+    global FORCED_ALERTS
+    global GLOBAL_SLA_SETTINGS
+    global INSTANCE_TYPE
+    global LOCK_TIMEOUT_SECONDS
+    global LOG_DIRECTORY
+    global LOG_LEVEL
+    global MANAGED_NETWORKS
     global MODULE_STATS_DIR
+    global OTHER_PROXIES
+    global OTHER_SLA_SETTINGS
+    global PROXIES
+    global SAQ_HOME
+    global SAQ_NODE
+    global SAQ_NODE_ID
+    global SAQ_RELATIVE_DIR
+    global SEMAPHORES_ENABLED
+    global SINGLE_THREADED
+    global STATS_DIR
+    global TOR_PROXY
     global YSS_BASE_DIR
     global YSS_SOCKET_DIR
-    global DATA_DIR
-    global LOCK_TIMEOUT_SECONDS
-    global COMPANY_NAME
-    global COMPANY_ID
-    global EXECUTION_THREAD_LONG_TIMEOUT
+
+    SAQ_HOME = None
+    SAQ_NODE = None
+    SAQ_NODE_ID = None
+    API_PREFIX = None
+    SAQ_RELATIVE_DIR = None
+    CONFIG = None
+    CONFIG_PATHS = []
+    DATA_DIR = None
+    DEFAULT_ENCODING = None
+    SEMAPHORES_ENABLED = False
+    PROXIES = {}
+    OTHER_PROXIES = {}
+    TOR_PROXY = None
+    # list of iptools.IpRange objects defined in [network_configuration]
+    MANAGED_NETWORKS = None
+    # set this to True to force all anlaysis to result in an alert being generated
+    FORCED_ALERTS = False
+    # this forces all execution on happen on the same process and thread
+    SINGLE_THREADED = False
+    # the gpg private key password for encrypting/decrypting archive files
+    # this can be provided on the command line so that these files can also be analyzed
+    ENCRYPTION_PASSWORD = None
+
+    # the global log level setting
+    LOG_LEVEL = logging.INFO
+    # global logging directory (relative to SAQ_HOME)
+    LOG_DIRECTORY = 'logs'
+
+    # directory containing statistical runtime info
+    STATS_DIR = None 
+    MODULE_STATS_DIR = None
+
+    # are we running as a daemon in the background?
+    DAEMON_MODE = False
+
+    # path to the certifcate chain used by all SSL certs
+    CA_CHAIN_PATH = None
+
+    # what type of instance is this?
+    INSTANCE_TYPE = INSTANCE_TYPE_PRODUCTION
+
+    # SLA settings
+    GLOBAL_SLA_SETTINGS = None
+    OTHER_SLA_SETTINGS = []
+    EXCLUDED_SLA_ALERT_TYPES = []
+
+    # Yara Scanner Server base directory
+    YSS_BASE_DIR = None
+    YSS_SOCKET_DIR = None
+
+    # set to True to cause tracebacks to be dumped to standard output
+    # useful when debugging or testing
+    DUMP_TRACEBACKS = False
+
+    # the amount of time (in seconds) that a lock in the locks table is valid
+    LOCK_TIMEOUT_SECONDS = None
+
+    # amount of time (in seconds) before a process blows up because a threaded module won't stop
+    EXECUTION_THREAD_LONG_TIMEOUT = None
+
+    # the company/custom this node belongs to
+    COMPANY_NAME = None
+    COMPANY_ID = None
 
     # go ahead and try to figure out what text encoding we're using
     DEFAULT_ENCODING = locale.getpreferredencoding()
@@ -421,6 +439,9 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     # initialize the database connection
     initialize_database()
+    
+    # make sure our node is in the database (at this point it defaults to local if it's new)
+    initialize_node()
 
     # initialize fallback semaphores
     initialize_fallback_semaphores()

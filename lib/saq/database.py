@@ -77,6 +77,11 @@ def execute_with_retry(db, cursor, sql, params=None, attempts=2, commit=False):
         raise ValueError("the length of sql statements does not match the length of parameter tuples: {} {}".format(
                          sql, params))
 
+    #logging.info("MARKER: attempts {} commit {}".format(attempts, commit))
+    #index = 1
+    #for (_sql, _params) in zip(sql, params):
+        #logging.info("MARKER: #{} sql {} params {}".format(index, _sql, _params))
+
     count = 1
     while True:
         try:
@@ -1579,7 +1584,6 @@ def add_workload(root, exclusive_uuid=None, db=None, c=None):
         logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(root))
         root.analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
         
-    logging.info("MARKER: NODE_ID = {}".format(saq.SAQ_NODE_ID))
     execute_with_retry(db, c, """
 INSERT INTO workload (
     uuid,
@@ -1706,6 +1710,17 @@ def clear_expired_locks(db, c):
     if c.rowcount:
         logging.debug("removed {} expired locks".format(c.rowcount))
 
+@use_db
+def clear_expired_local_nodes(db, c):
+    """Clear any local nodes that have expired."""
+    # typically these are left over from running the local correlation command and killing it before
+    # it has a chance to clean itself up
+    execute_with_retry(db, c, "DELETE FROM nodes WHERE is_local = 1 AND TIMESTAMPDIFF(HOUR, last_update, NOW()) >= 1", 
+                       commit=True)
+
+    if c.rowcount:
+        logging.warning("removed {} expired local nodes".format(c.rowcount))
+
 class DelayedAnalysis(Base):
 
     __tablename__ = 'delayed_analysis'
@@ -1754,14 +1769,20 @@ class DelayedAnalysis(Base):
 @use_db
 def add_delayed_analysis_request(root, observable, analysis_module, next_analysis, exclusive_uuid=None, db=None, c=None):
     try:
+        logging.info("adding delayed analysis uuid {} observable_uuid {} analysis_module {} delayed_until {} node {} exclusive_uuid {} storage_dir {}".format(
+                     root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE_ID, exclusive_uuid, root.storage_dir))
+
         execute_with_retry(db, c, """
                            INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node_id, exclusive_uuid, storage_dir ) 
                            VALUES ( %s, %s, %s, %s, %s, %s, %s )""", 
                           ( root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE_ID, exclusive_uuid, root.storage_dir ))
-
         db.commit()
 
-    except pymysql.err.IntegrityError:
+        logging.info("added delayed analysis uuid {} observable_uuid {} analysis_module {} delayed_until {} node {} exclusive_uuid {} storage_dir {}".format(
+                     root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE_ID, exclusive_uuid, root.storage_dir))
+
+    except pymysql.err.IntegrityError as ie:
+        logging.warning(str(ie))
         logging.warning("already waiting for delayed analysis on {} by {} for {}".format(
                          root, analysis_module.config_section, observable))
         return True
@@ -1770,7 +1791,6 @@ def add_delayed_analysis_request(root, observable, analysis_module, next_analysi
                          root, analysis_module.config_section, observable, e))
         report_exception()
         return False
-    
     
 def initialize_database():
 
@@ -1783,24 +1803,30 @@ def initialize_database():
 
     DatabaseSession = sessionmaker(bind=engine)
 
-    # make sure we have a node_id allocated in the database for this node
-    with get_db_connection() as db:
-        c = db.cursor()
+@use_db
+def initialize_node(db, c):
+    """Populates saq.SAQ_NODE_ID with the node ID for saq.NODE. Optionally inserts the node into the database if it does not exist."""
+
+    saq.SAQ_NODE_ID = None
+
+    # we always default to a local node so that it doesn't get used by remote nodes automatically
+    c.execute("SELECT id FROM nodes WHERE name = %s", (saq.SAQ_NODE,))
+    row = c.fetchone()
+    if row is not None:
+        saq.SAQ_NODE_ID = row[0]
+        logging.debug("got existing node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))
+
+    if saq.SAQ_NODE_ID is None:
+        execute_with_retry(db, c, """INSERT INTO nodes ( name, location, company_id, is_local ) 
+                                     VALUES ( %s, %s, %s, %s )""", 
+                          (saq.SAQ_NODE, saq.API_PREFIX, saq.COMPANY_ID, True),
+                          commit=True)
+
         c.execute("SELECT id FROM nodes WHERE name = %s", (saq.SAQ_NODE,))
         row = c.fetchone()
         if row is None:
-            execute_with_retry(db, c, """INSERT INTO nodes ( name, location, company_id ) 
-                                         VALUES ( %s, %s, %s )""", 
-                              (saq.SAQ_NODE, saq.API_PREFIX, saq.COMPANY_ID),
-                              commit=True)
-
-            c.execute("SELECT id FROM nodes WHERE name = %s", (saq.SAQ_NODE,))
-            row = c.fetchone()
-            if row is None:
-                logging.critical("unable to allocate a node_id from the database")
-            else:
-                saq.SAQ_NODE_ID = row[0]
-                logging.info("allocated node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))
+            logging.critical("unable to allocate a node_id from the database")
+            sys.exit(1)
         else:
             saq.SAQ_NODE_ID = row[0]
-            logging.debug("got node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))
+            logging.info("allocated node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))

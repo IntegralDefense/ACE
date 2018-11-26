@@ -262,7 +262,7 @@ class APIWrapperTestCase(ACEEngineTestCase):
         self.assertIsNone(result['locks'])
         self.assertTrue(isinstance(result['workload']['id'], int))
         self.assertEquals(result['workload']['uuid'], uuid)
-        self.assertEquals(result['workload']['node'], saq.SAQ_NODE)
+        self.assertEquals(result['workload']['node_id'], saq.SAQ_NODE_ID)
         self.assertEquals(result['workload']['analysis_mode'], 'test_empty')
         self.assertTrue(isinstance(parse_event_time(result['workload']['insert_date']), datetime.datetime))
 

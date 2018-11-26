@@ -127,3 +127,5 @@ def storage_dir_from_uuid(uuid):
 def validate_uuid(uuid):
     if not UUID_REGEX.match(uuid):
         raise ValueError("invalid UUID {}".format(uuid))
+
+    return True

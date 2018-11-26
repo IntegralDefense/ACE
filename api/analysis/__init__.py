@@ -239,7 +239,7 @@ def get_status(uuid):
 SELECT 
     id, 
     uuid, 
-    node, 
+    node_id, 
     analysis_mode, 
     insert_date
 FROM
@@ -252,7 +252,7 @@ WHERE
             result['workload'] = {
                 'id': row[0],
                 'uuid': row[1],
-                'node': row[2],
+                'node_id': row[2],
                 'analysis_mode': row[3],
                 'insert_date': row[4]
             }
@@ -266,7 +266,7 @@ SELECT
     analysis_module,
     insert_date,
     delayed_until,
-    node
+    node_id
 FROM
     delayed_analysis
 WHERE
@@ -282,7 +282,7 @@ ORDER BY
                 'analysis_module': row[3],
                 'insert_date': row[4],
                 'delayed_until': row[5],
-                'node': row[6]
+                'node_id': row[6]
             })
 
         # are there any locks on it?
