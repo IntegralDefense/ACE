@@ -15,7 +15,6 @@ import saq, saq.test
 from saq.analysis import RootAnalysis
 from saq.constants import *
 from saq.database import get_db_connection
-from saq.engine.test_engine import TestEngine
 from saq.test import *
 from saq.util import storage_dir_from_uuid
 

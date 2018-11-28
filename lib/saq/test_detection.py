@@ -7,7 +7,6 @@ import uuid
 
 from saq.analysis import RootAnalysis
 from saq.constants import *
-from saq.engine.test_engine import TestEngine
 from saq.test import *
 
 SAMPLE_DETECTIONS = 'sample_detections'

@@ -11,8 +11,6 @@ from saq.database import use_db
 from saq.constants import *
 from saq.test import *
 
-from saq.engine.test_engine import TestEngine
-
 class AlertModuleTestCase(ACEModuleTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)

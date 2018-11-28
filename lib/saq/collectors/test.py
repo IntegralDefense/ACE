@@ -41,8 +41,7 @@ class _custom_submission(Submission):
         global fail_event
         fail_event.set()
 
-class CollectorTestCase(ACEBasicTestCase):
-
+class CollectorBaseTestCase(ACEBasicTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
@@ -53,6 +52,7 @@ class CollectorTestCase(ACEBasicTestCase):
             c.execute("DELETE FROM workload")
             db.commit()
 
+class CollectorTestCase(CollectorBaseTestCase):
     def create_submission(self):
         return Submission(
             description='test_description',
@@ -88,6 +88,17 @@ class CollectorTestCase(ACEBasicTestCase):
         row = result[0]
         self.assertEquals(row[0], group_id)
         self.assertEquals(row[1], 'test')
+
+    def test_load_groups(self):
+
+        collector = TestCollector()
+        collector.load_groups()
+        
+        self.assertEquals(len(collector.remote_node_groups), 1)
+        self.assertEquals(collector.remote_node_groups[0].name, 'unittest')
+        self.assertEquals(collector.remote_node_groups[0].coverage, 100)
+        self.assertEquals(collector.remote_node_groups[0].full_delivery, True)
+        self.assertEquals(collector.remote_node_groups[0].database, 'ace')
 
     def test_missing_groups(self):
         # a collector cannot be started without adding at least one group

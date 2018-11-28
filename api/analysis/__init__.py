@@ -132,20 +132,19 @@ def submit():
         # save the files to disk and add them as observables of type file
         for f in request.files.getlist('file'):
             logging.debug("recording file {}".format(f.filename))
-            temp_dir = tempfile.mkdtemp(dir=saq.CONFIG.get('server', 'incoming_dir'))
-            _path = os.path.join(temp_dir, secure_filename(f.filename))
+            #temp_dir = tempfile.mkdtemp(dir=saq.CONFIG.get('api', 'incoming_dir'))
+            #_path = os.path.join(temp_dir, secure_filename(f.filename))
             try:
-                if os.path.exists(_path):
-                    logging.error("duplicate file name {}".format(_path))
-                    abort(400)
+                #if os.path.exists(_path):
+                    #logging.error("duplicate file name {}".format(_path))
+                    #abort(400)
 
-                # XXX why are we saving it here and then moving it over?
-                logging.debug("saving file to {}".format(_path))
-                try:
-                    f.save(_path)
-                except Exception as e:
-                    logging.error("unable to save file to {}: {}".format(_path, e))
-                    abort(400)
+                #logging.debug("saving file to {}".format(_path))
+                #try:
+                    #f.save(_path)
+                #except Exception as e:
+                    #logging.error("unable to save file to {}: {}".format(_path, e))
+                    #abort(400)
 
                 full_path = os.path.join(root.storage_dir, f.filename)
 
@@ -158,8 +157,8 @@ def submit():
                             logging.error("unable to create directory {}: {}".format(dest_dir, e))
                             abort(400)
 
-                    logging.debug("copying file {} to {}".format(_path, full_path))
-                    shutil.copy(_path, full_path)
+                    logging.debug("saving file {}".format(full_path))
+                    f.save(full_path)
 
                     # add this as a F_FILE type observable
                     root.add_observable(F_FILE, os.path.relpath(full_path, start=root.storage_dir))
@@ -174,11 +173,11 @@ def submit():
                 report_exception()
                 abort(400)
 
-            finally:
-                try:
-                    shutil.rmtree(temp_dir)
-                except Exception as e:
-                    logging.error("unable to delete temp dir {}: {}".format(temp_dir, e))
+            #finally:
+                #try:
+                    #shutil.rmtree(temp_dir)
+                #except Exception as e:
+                    #logging.error("unable to delete temp dir {}: {}".format(temp_dir, e))
 
         try:
             if not root.save():

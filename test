@@ -47,13 +47,15 @@ fi
 if [ "$#" -eq "0" ]
 then
     PYTHONPATH=lib python3 -W ignore -m unittest -f -v \
+        saq.collectors.test \
+        saq.collectors.test_http \
         saq.test_observables \
         saq.test_crypto \
         saq.test_analysis \
         saq.test_database \
         saq.test_util \
         saq.test_locks \
-        saq.engine.test_engine \
+        saq.engine.test \
         saq.modules.test_alerts \
         saq.modules.test_asset \
         saq.modules.test_url \
