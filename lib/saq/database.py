@@ -87,8 +87,9 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
     count = 1
     while True:
         try:
+            result = None
             if callable(sql_or_func):
-                sql_or_func(db, cursor, *params)
+                result = sql_or_func(db, cursor, *params)
             else:
                 for (_sql, _params) in zip(sql_or_func, params):
                     cursor.execute(_sql, _params)
@@ -96,7 +97,7 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
             if commit:
                 db.commit()
 
-            break
+            return result
 
         except pymysql.err.OperationalError as e:
             # see http://stackoverflow.com/questions/25026244/how-to-get-the-mysql-type-of-error-with-pymysql

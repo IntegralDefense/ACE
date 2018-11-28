@@ -10,7 +10,6 @@ import unittest
 import saq, saq.test
 from saq.constants import *
 from saq.test import *
-from saq.engine.test_engine import TestEngine
 
 LOCAL_PORT = 43124
 web_server = None

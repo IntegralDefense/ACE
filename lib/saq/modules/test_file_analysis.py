@@ -13,7 +13,6 @@ from subprocess import Popen, PIPE
 import saq, saq.test
 from saq.constants import *
 from saq.test import *
-from saq.engine.test_engine import TestEngine
 from saq.analysis import Analysis, RootAnalysis
 
 UNITTEST_SOCKET_DIR = 'socket_unittest'

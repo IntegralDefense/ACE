@@ -4,16 +4,23 @@
 # These objects collect things for remote ACE nodes to analyze.
 #
 
+import logging
 import os, os.path
 import pickle
+import shutil
 import socket
 import threading
-import logging
+import uuid
 
 import ace_api
 
 import saq
-from saq.database import use_db, execute_with_retry, get_db_connection, enable_cached_db_connections
+from saq.database import use_db, \
+                         execute_with_retry, \
+                         get_db_connection, \
+                         enable_cached_db_connections, \
+                         disable_cached_db_connections
+
 from saq.error import report_exception
 
 # some constants used as return values
@@ -51,6 +58,7 @@ class Submission(object):
         self.observables = observables
         self.tags = tags
         self.files = files
+        self.uuid = str(uuid.uuid4())
 
     def __str__(self):
         return "{} ({})".format(self.description, self.analysis_mode)
@@ -58,21 +66,12 @@ class Submission(object):
     def success(self):
         """Called by the RemoteNodeGroup when this has been successfully submitted to a remote node.
            By default this deletes any files submitted."""
-        self.cleanup_files()
+        pass
 
     def fail(self):
         """Called by the RemoteNodeGroup when this has failed to be submitted and full_delivery is disabled.
            By default this deletes any files submitted."""
-        self.cleanup_files()
-
-    def cleanup_files(self):
-        """Removes any files passed in the files parameter."""
-        for file_path in self.files:
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception as e:
-                    logging.error("unable to delete {}: {}".format(file_path, e))
+        pass
 
 class RemoteNode(object):
     def __init__(self, id, name, location, any_mode, last_update, analysis_mode, workload_count):
@@ -84,6 +83,9 @@ class RemoteNode(object):
         self.analysis_mode = analysis_mode
         self.workload_count = workload_count
 
+        # the directory that contains any files that to be transfered along with submissions
+        self.incoming_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['incoming_dir'])
+
     def __str__(self):
         return "RemoteNode(id={},name={})".format(self.id, self.name)
 
@@ -91,7 +93,7 @@ class RemoteNode(object):
         """Attempts to submit the given Submission to this node."""
         assert isinstance(submission, Submission)
         # we need to convert the list of files to what is expected by the ace_api.submit function
-        files = [ (os.path.basename(f), open(f)) for f in submission.files]
+        files = [ (os.path.basename(f), open(os.path.join(self.incoming_dir, submission.uuid, os.path.basename(f)), 'rb')) for f in submission.files]
         result = ace_api.submit(
             submission.description,
             remote_host=self.location,
@@ -163,6 +165,9 @@ class RemoteNodeGroup(object):
         # at which point we no longer consider it for submissions
         self.node_status_update_frequency = saq.CONFIG['engine'].getint('node_status_update_frequency')
 
+        # the directory that contains any files that to be transfered along with submissions
+        self.incoming_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['incoming_dir'])
+
     def start(self):
         self.shutdown_event.clear()
 
@@ -204,6 +209,8 @@ class RemoteNodeGroup(object):
                 report_exception()
                 if self.shutdown_event.wait(1):
                     break
+
+        disable_cached_db_connections()
 
     @use_db
     def execute(self, db, c):
@@ -333,52 +340,47 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
                                              WHERE group_id = %s AND work_id = %s""",
                                   (self.group_id, self.work_id), commit=True)
                 logging.error("unable to un-pickle submission blob for id {}: {}".format(work_id, e))
+
+            # simple flag to remember if we failed to send
+            submission_failed = False
                 
             self.coverage_counter += self.coverage
             if self.coverage_counter < 100:
                 # we'll be skipping this one
-                execute_with_retry(db, c, """UPDATE work_distribution SET status = 'COMPLETED' 
-                                             WHERE group_id = %s AND work_id = %s""",
-                                  (self.group_id, work_id), commit=True)
-                logging.debug("skipped work id {} for group {} due to coverage constraints".format(
+                logging.debug("skipping work id {} for group {} due to coverage constraints".format(
                               work_id, self.name))
-                #logging.info("MARKER: coverage counter for {} is {}".format(self, self.coverage_counter))
-                continue
+            else:
+                # otherwise we try to submit it
+                self.coverage_counter -= 100
 
-            # otherwise we try to submit it
-            self.coverage_counter -= 100
+                # sort the list of RemoteNode objects by the workload_count
+                available_targets = any_mode_nodes[:]
+                if analysis_mode in analysis_mode_mapping:
+                    available_targets.extend(analysis_mode_mapping[analysis_mode])
+            
+                target = sorted(available_targets, key=lambda n: n.workload_count)
+                target = target[0] 
 
-            # sort the list of RemoteNode objects by the workload_count
-            available_targets = any_mode_nodes[:]
-            if analysis_mode in analysis_mode_mapping:
-                available_targets.extend(analysis_mode_mapping[analysis_mode])
-        
-            target = sorted(available_targets, key=lambda n: n.workload_count)
-            target = target[0] 
+                # attempt the send
+                try:
+                    result = target.submit(submission)
+                    logging.info("{} got submission result {} for {}".format(self, result, submission))
+                    submission_success = True
+                except Exception as e:
+                    log_function = logging.warning
+                    if not self.full_delivery:
+                        log_function = logging.debug
+                    else:
+                        report_exception()
 
-            # simple flag to remember if we failed to send
-            submission_failed = False
+                    log_function("unable to submit work item {} to {} via group {}: {}".format(
+                                 submission, target, self, e))
 
-            # attempt the send
-            try:
-                result = target.submit(submission)
-                logging.info("{} got submission result {} for {}".format(self, result, submission))
-                submission_success = True
-            except Exception as e:
-                log_function = logging.warning
-                if not self.full_delivery:
-                    log_function = logging.debug
-                #else:
-                    #report_exception()
+                    # if we are in full delivery mode then we need to try this one again later
+                    if self.full_delivery:
+                        continue
 
-                log_function("unable to submit work item {} to {} via group {}: {}".format(
-                             submission, target, self, e))
-
-                # if we are in full delivery mode then we need to try this one again later
-                if self.full_delivery:
-                    continue
-
-                submission_failed = True
+                    submission_failed = True
 
             # at this point we either sent it or we tried and failed but that's OK
             execute_with_retry(db, c, """UPDATE work_distribution SET status = 'COMPLETED' 
@@ -402,7 +404,9 @@ WHERE
             if result == 0:
                 logging.debug("completed work item {}".format(submission))
                 execute_with_retry(db, c, "DELETE FROM incoming_workload WHERE id = %s", (work_id,), commit=True)
-                
+
+                # give the collector a chance to do something with the
+                # submission BEFORE we delete the incoming directory for it
                 if submission_failed:
                     try:
                         submission.fail()
@@ -413,6 +417,14 @@ WHERE
                         submission.success()
                     except Exception as e:
                         logging.error("call to {}.success() failed: {}".format(submission, e))
+
+                if submission.files:
+                    try:
+                        target_dir = os.path.join(self.incoming_dir, submission.uuid)
+                        shutil.rmtree(target_dir)
+                        logging.debug("deleted incoming dir {}".format(target_dir))
+                    except Exception as e:
+                        logging.error("unable to delete directory {}: {}".format(target_dir, e))
 
         if submission_success:
             return WORK_SUBMITTED
@@ -434,6 +446,9 @@ class Collector(object):
         # the list of RemoteNodeGroup targets this collector will send to
         self.remote_node_groups = []
 
+        # the directory that contains any files that to be transfered along with submissions
+        self.incoming_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['incoming_dir'])
+
     @use_db
     def add_group(self, name, coverage, full_delivery, database, db, c):
         c.execute("SELECT id FROM work_distribution_groups WHERE name = %s", (name,))
@@ -450,10 +465,33 @@ class Collector(object):
         logging.info("added {}".format(remote_node_group))
         return remote_node_group
 
+    def load_groups(self):
+        """Loads groups from the ACE configuration file."""
+        for section in saq.CONFIG.keys():
+            if not section.startswith('collection_group_'):
+                continue
+
+            group_name = section[len('collection_group_'):]
+            coverage = saq.CONFIG[section].getint('coverage')
+            full_delivery = saq.CONFIG[section].getboolean('full_delivery')
+            database = saq.CONFIG[section]['database']
+            
+            logging.info("loaded group {} coverage {} full_delivery {} database {}".format(
+                         group_name, coverage, full_delivery, database))
+            self.add_group(group_name, coverage, full_delivery, database)
+
     def start(self):
         # you need to add at least one group to send to
         if not self.remote_node_groups:
             raise RuntimeError("no RemoteNodeGroup objects have been added to {}".format(self))
+
+        # make sure the incoming dir exists
+        if not os.path.isdir(self.incoming_dir):
+            try:
+                os.makedirs(self.incoming_dir)
+            except Exception as e:
+                logging.critical("unable to create incoming dir {}: {}".format(self.incoming_dir, e))
+                sys.exit(1)
 
         self.collection_thread = threading.Thread(target=self.loop, name="Collector")
         self.collection_thread.start()
@@ -491,6 +529,8 @@ class Collector(object):
             if self.shutdown_event.is_set():
                 break
 
+        disable_cached_db_connections()
+
     @use_db
     def execute(self, db, c):
         next_submission = self.get_next_submission()
@@ -503,9 +543,51 @@ class Collector(object):
         if not isinstance(next_submission, Submission):
             logging.critical("get_next_submission() must return an object derived from Submission")
 
-        # add this as a workload item to the database queue
-        execute_with_retry(db, c, self.insert_workload, (next_submission,), commit=True)
-        logging.info("scheduled {} mode {}".format(next_submission.description, next_submission.analysis_mode))
+        # we COPY the files over to another directory for transfer
+        # we'll DELETE them later if we are able to copy them all and then insert the entry into the database
+        target_dir = None
+        if next_submission.files:
+            target_dir = os.path.join(self.incoming_dir, next_submission.uuid)
+            if os.path.exists(target_dir):
+                logging.error("target directory {} already exists".format(target_dir))
+            else:
+                try:
+                    os.mkdir(target_dir)
+                    for f in next_submission.files:
+                        target_path = os.path.join(target_dir, os.path.basename(f))
+                        # TODO use hard links instead of copies to reduce I/O
+                        shutil.copy2(f, target_path)
+                        logging.debug("copied file from {} to {}".format(f, target_path))
+                except Exception as e:
+                    logging.error("I/O error moving files into {}: {}".format(target_dir, e))
+                    report_exception()
+
+        # we don't really need to change the file paths that are stored in the Submission object
+        # we just remember where we've moved them to (later)
+
+        try:
+            # add this as a workload item to the database queue
+            work_id = execute_with_retry(db, c, self.insert_workload, (next_submission,), commit=True)
+            assert isinstance(work_id, int)
+
+            logging.info("scheduled {} mode {}".format(next_submission.description, next_submission.analysis_mode))
+            
+        except Exception as e:
+            # something went wrong -- delete our incoming directory if we created one
+            if target_dir:
+                try:
+                    shutil.rmtree(target_dir)
+                except Exception as e:
+                    logging.error("unable to delete directory {}: {}".format(target_dir, e))
+
+            raise e
+
+        # all is well -- delete the files we've copied into our incoming directory
+        for f in next_submission.files:
+            try:
+                os.remove(f)
+            except Exception as e:
+                logging.error("unable to delete file {}: {}".format(f, e))
 
     def insert_workload(self, db, c, next_submission):
         c.execute("INSERT INTO incoming_workload ( mode, work ) VALUES ( %s, %s )",
@@ -520,6 +602,8 @@ class Collector(object):
         for remote_node_group in self.remote_node_groups:
             c.execute("INSERT INTO work_distribution ( work_id, group_id ) VALUES ( %s, %s )",
                      (work_id, remote_node_group.group_id))
+
+        return work_id
 
     def get_next_submission(self):
         """Returns the next Submission object to be submitted to the remote nodes."""
