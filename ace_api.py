@@ -177,7 +177,7 @@ def submit(
             'observables': observables,
             'tags': tags, 
         }),
-    }, files=files_params).json()
+    }, files=files_params, *args, **kwargs).json()
 
 @api_command
 def get_analysis(uuid, *args, **kwargs):

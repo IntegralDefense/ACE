@@ -2,6 +2,7 @@ import datetime
 import functools
 import logging
 import shutil
+import sys
 import threading
 import uuid
 
@@ -46,13 +47,17 @@ def use_db(method=None, name=None):
         except pymysql.err.MySQLError as e:
             logging.error("database error: {}".format(e))
             report_exception()
-            raise e
+            et, ei, tb = sys.exc_info()
+            raise e.with_traceback(tb)
 
     return wrapper
 
-def execute_with_retry(db, cursor, sql, params=None, attempts=2, commit=False):
-    """Executes the given SQL (and params) against the given cursor with
+def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=False):
+    """Executes the given SQL or function (and params) against the given cursor with
        re-attempts up to N times (defaults to 2) on deadlock detection.
+
+       If sql_or_func is a callable then the function will be called as 
+       sql_or_func(db, cursor, *params).
        
        To execute a single statement, sql is the parameterized SQL statement
        and params is the tuple of parameter values.  params is optional and defaults
@@ -61,32 +66,32 @@ def execute_with_retry(db, cursor, sql, params=None, attempts=2, commit=False):
        To execute multi-statement transactions, sql is a list of parameterized
        SQL statements, and params is a matching list of tuples of parameters."""
 
-    assert isinstance(sql, str) or isinstance(sql, list)
+    assert callable(sql_or_func) or isinstance(sql_or_func, str) or isinstance(sql_or_func, list)
     assert params is None or isinstance(params, tuple) or ( 
         isinstance(params, list) and all([isinstance(_, tuple) for _ in params]) )
 
-    if isinstance(sql, str):
-        sql = [ sql ]
+    # if we are executing sql then make sure we have a list of SQL statements and a matching list
+    # of tuple parameters
+    if not callable(sql_or_func):
+        if isinstance(sql_or_func, str):
+            sql_or_func = [ sql_or_func ]
 
-    if isinstance(params, tuple):
-        params = [ params ]
-    elif params is None:
-        params = [ () for _ in sql ]
+        if isinstance(params, tuple):
+            params = [ params ]
+        elif params is None:
+            params = [ () for _ in sql_or_func ]
 
-    if len(sql) != len(params):
-        raise ValueError("the length of sql statements does not match the length of parameter tuples: {} {}".format(
-                         sql, params))
-
-    #logging.info("MARKER: attempts {} commit {}".format(attempts, commit))
-    #index = 1
-    #for (_sql, _params) in zip(sql, params):
-        #logging.info("MARKER: #{} sql {} params {}".format(index, _sql, _params))
-
+        if len(sql_or_func) != len(params):
+            raise ValueError("the length of sql statements does not match the length of parameter tuples: {} {}".format(
+                             sql_or_func, params))
     count = 1
     while True:
         try:
-            for (_sql, _params) in zip(sql, params):
-                cursor.execute(_sql, _params)
+            if callable(sql_or_func):
+                sql_or_func(db, cursor, *params)
+            else:
+                for (_sql, _params) in zip(sql_or_func, params):
+                    cursor.execute(_sql, _params)
 
             if commit:
                 db.commit()
@@ -107,13 +112,14 @@ def execute_with_retry(db, cursor, sql, params=None, attempts=2, commit=False):
                 count += 1
                 continue
             else:
-                i = 0
-                for _sql, _params in zip(sql, params):
-                    logging.warning("DEADLOCK STATEMENT #{} SQL {} PARAMS {}".format(i, _sql, ','.join(_params)))
-                    i += 1
+                if not callable(sql_or_func):
+                    i = 0
+                    for _sql, _params in zip(sql_or_func, params):
+                        logging.warning("DEADLOCK STATEMENT #{} SQL {} PARAMS {}".format(i, _sql, ','.join(_params)))
+                        i += 1
 
-                # TODO log innodb lock status
-                raise e
+                    # TODO log innodb lock status
+                    raise e
 
 def _get_cache_identifier():
     """Returns the key for _use_cache_flags"""
