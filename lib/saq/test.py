@@ -28,6 +28,7 @@ __all__ = [
     'GUIServer',
     'search_log',
     'search_log_regex',
+    'search_log_condition',
     'TestEngine',
 ]
 
@@ -257,6 +258,9 @@ def search_log(text):
 
 def search_log_regex(regex):
     return memory_log_handler.search(lambda log_record: regex.search(log_record.getMessage()))
+
+def search_log_condition(func):
+    return memory_log_handler.search(func)
 
 def splunk_query(search_string, *args, **kwargs):
     config = saq.CONFIG['splunk']
