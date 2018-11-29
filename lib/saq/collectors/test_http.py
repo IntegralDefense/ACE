@@ -8,11 +8,12 @@ import tempfile
 from subprocess import Popen
 
 import saq
+from saq.collectors.test_bro import BroBaseTestCase
 from saq.collectors.http import BroHTTPStreamCollector
 from saq.collectors.test import CollectorBaseTestCase
 from saq.test import *
 
-class BroHTTPBaseTestCase(CollectorBaseTestCase):
+class BroHTTPBaseTestCase(CollectorBaseTestCase, BroBaseTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
@@ -20,29 +21,11 @@ class BroHTTPBaseTestCase(CollectorBaseTestCase):
         saq.CONFIG['bro']['http_dir'] = 'var/bro/http_unittest'
 
         self.bro_http_dir = saq.CONFIG['bro']['http_dir']
-        self.bro_work_dir = tempfile.mkdtemp(dir=os.path.join(saq.SAQ_HOME, 'var', 'tmp'))
 
         if os.path.exists(self.bro_http_dir):
             shutil.rmtree(self.bro_http_dir)
-            os.mkdir(self.bro_http_dir)
 
-        os.mkdir(os.path.join(self.bro_work_dir, 'ace'))
-        with open(os.path.join(self.bro_work_dir, 'ace', 'ace_local.bro'), 'w') as fp:
-            Popen(['sed', '-e', 's:bro/http";:bro/http_unittest";:', os.path.join(saq.SAQ_HOME, 'bro', 'ace_local.bro')], stdout=fp).wait()
-        shutil.copy(os.path.join(saq.SAQ_HOME, 'bro', 'ace_http.bro'), os.path.join(self.bro_work_dir, 'ace', 'ace_http.bro'))
-
-        self.bro_bin_path = '/opt/bro/bin/bro'
-
-    def tearDown(self, *args, **kwargs):
-        super().tearDown(*args, **kwargs)
-
-        if os.path.isdir(self.bro_work_dir):
-            shutil.rmtree(self.bro_work_dir)
-
-    def process_pcap(self, pcap_path):
-        # have bro process this pcap file of a download of a PDF file
-        logging.debug("processing pcap...")
-        Popen([self.bro_bin_path, '-C', '-r', pcap_path, os.path.join('ace', 'ace_http.bro')], cwd=self.bro_work_dir).wait()
+        os.mkdir(self.bro_http_dir)
 
 class BroHTTPTestCase(BroHTTPBaseTestCase):
     def test_startup(self):
