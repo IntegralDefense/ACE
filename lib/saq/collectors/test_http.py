@@ -10,10 +10,9 @@ from subprocess import Popen
 import saq
 from saq.collectors.test_bro import BroBaseTestCase
 from saq.collectors.http import BroHTTPStreamCollector
-from saq.collectors.test import CollectorBaseTestCase
 from saq.test import *
 
-class BroHTTPBaseTestCase(CollectorBaseTestCase, BroBaseTestCase):
+class BroHTTPBaseTestCase(BroBaseTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
