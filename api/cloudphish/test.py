@@ -1,9 +1,11 @@
 # vim: sw=4:ts=4:et
 
+import hashlib
 import logging
-import time
 import os, os.path
 import threading
+import time
+import tarfile
 
 from subprocess import Popen, PIPE
 
@@ -151,7 +153,7 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
         # we should still have a single entry in the cloudphish_analysis_results table
         # but it should be updated with the analysis results
         db.commit()
-        c.execute("""SELECT sha256_url, http_result_code, http_message, sha256_content, result, insert_date, uuid, status
+        c.execute("""SELECT sha256_url, http_result_code, http_message, HEX(sha256_content), result, insert_date, uuid, status
                      FROM cloudphish_analysis_results""")
         result = c.fetchall()
         self.assertEquals(len(result), 1)
@@ -164,6 +166,15 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
         self.assertIsNotNone(insert_date)
         self.assertIsNotNone(_uuid)
         self.assertEquals(status, STATUS_ANALYZED)
+
+        # and we should have an entry in the cloudphish_content_metadata table
+        c.execute("""SELECT node, name FROM cloudphish_content_metadata WHERE sha256_content = UNHEX(%s)""", sha256_content)
+        result = c.fetchall()
+        self.assertEquals(len(result), 1)
+        node, file_name = result[0]
+        self.assertEquals(node, saq.SAQ_NODE)
+        file_name = file_name.decode('unicode_internal')
+        self.assertEquals(file_name, 'Payment_Advice.pdf')
 
         # we should have seen the analysis mode change
         wait_for_log_count('changed from cloudphish to correlation', 1, 5)
@@ -183,3 +194,86 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
         self.assertEquals(company_id, saq.COMPANY_ID)
         self.assertIsNone(exclusive_uuid)
         self.assertEquals(storage_dir, old_storage_dir)
+
+        # now we make a second api call to the same url
+        result = self.client.get(url_for('cloudphish.submit', url=TEST_URL, ignore_filters='1'))
+        result = result.get_json()
+        self.assertIsNotNone(result)
+
+        # first check the result
+        for key in [ KEY_RESULT, KEY_DETAILS, KEY_STATUS, KEY_ANALYSIS_RESULT, KEY_HTTP_RESULT,
+                     KEY_HTTP_MESSAGE, KEY_SHA256_CONTENT, KEY_LOCATION, KEY_FILE_NAME ]:
+            self.assertTrue(key in result)
+        
+        self.assertEquals(result[KEY_RESULT], RESULT_OK)
+        self.assertEquals(result[KEY_STATUS], STATUS_ANALYZED)
+        self.assertEquals(result[KEY_ANALYSIS_RESULT], SCAN_RESULT_ALERT)
+        
+        # everything else should be None
+        self.assertEquals(result[KEY_HTTP_RESULT], 200)
+        self.assertEquals(result[KEY_HTTP_MESSAGE], 'OK')
+        self.assertEquals(result[KEY_SHA256_CONTENT], sha256_content)
+        self.assertEquals(result[KEY_LOCATION], saq.SAQ_NODE)
+        self.assertEquals(result[KEY_FILE_NAME], 'Payment_Advice.pdf')
+
+        # now attempt to download the binary by sha256
+        result = self.client.get(url_for('cloudphish.download', s=sha256_content))
+        # make sure we got the actual file
+        m = hashlib.sha256()
+        m.update(result.data)
+        sha256_result = m.hexdigest()
+        self.assertEquals(sha256_result.lower(), sha256_content.lower())
+        # and make sure we got the file name
+        filename_ok = False
+        for header in result.headers:
+            header_name, header_value = header
+            if header_name == 'Content-Disposition':
+                self.assertTrue('Payment_Advice.pdf' in header_value)
+                filename_ok = True
+
+        self.assertTrue(filename_ok)
+
+        # now attempt to download the alert itself
+        result = self.client.get(url_for('cloudphish.download_alert', s=sha256_content), follow_redirects=True)
+        # we should get back a tar file
+        tar_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'download.tar')
+        output_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], 'download')
+
+        try:
+            with open(tar_path, 'wb') as fp:
+                for chunk in result.response:
+                    fp.write(chunk)
+
+            with tarfile.open(name=tar_path, mode='r|') as tar:
+                tar.extractall(path=output_dir)
+
+            downloaded_root = RootAnalysis(storage_dir=output_dir)
+            downloaded_root.load()
+
+            self.assertTrue(isinstance(root.details, dict))
+            for key in [ KEY_DETAILS_URL, KEY_DETAILS_SHA256_URL, KEY_DETAILS_CONTEXT ]:
+                self.assertTrue(key in root.details)
+
+        finally:
+            try:
+                os.remove(tar_path)
+            except:
+                pass
+
+            try:
+                shutil.rmtree(output_dir)
+            except:
+                pass
+
+        # and then finally make sure we can clear the alert
+        result = self.client.get(url_for('cloudphish.clear_alert', url=TEST_URL))
+        self.assertEquals(result.status_code, 200)
+        
+        db.commit()
+        c.execute("SELECT result FROM cloudphish_analysis_results WHERE sha256_url = %s", (sha256_url,))
+        row = c.fetchone()
+        self.assertEquals(row[0], SCAN_RESULT_CLEAR)
+        
+        # and now this should return a 404
+        result = self.client.get(url_for('cloudphish.download_alert', s=sha256_content), follow_redirects=True)
+        self.assertEquals(result.status_code, 404)
