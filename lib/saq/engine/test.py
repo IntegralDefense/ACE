@@ -154,11 +154,11 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(len(engine.analysis_mode_mapping['test_empty']), 0)
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_test_delayed_analysis')
-        engine.enable_module('analysis_module_test_engine_locking')
-        engine.enable_module('analysis_module_test_final_analysis')
-        engine.enable_module('analysis_module_test_post_analysis')
+        engine.enable_module('analysis_module_basic_test', 'test_empty')
+        engine.enable_module('analysis_module_test_delayed_analysis', 'test_empty')
+        engine.enable_module('analysis_module_test_engine_locking', 'test_empty')
+        engine.enable_module('analysis_module_test_final_analysis', 'test_empty')
+        engine.enable_module('analysis_module_test_post_analysis', 'test_empty')
         engine.initialize()
         engine.initialize_modules()
     
@@ -1426,14 +1426,13 @@ class EngineTestCase(ACEEngineTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_basic_test')
+        engine.enable_module('analysis_module_basic_test', 'test_empty')
         engine.controlled_stop()
         engine.start()
-
-        # we should see this message over and over again
-        wait_for_log_count('queue sizes workload 1 delayed 0', 5, 10)
-        engine.stop()
         engine.wait()
+
+        # this should exit out since the workload entry is for test_single analysis mode
+        # but we don't support that with this engine so it shouldn't see it
 
     def test_local_analysis_mode_remote_pickup(self):
 
@@ -1457,10 +1456,7 @@ class EngineTestCase(ACEEngineTestCase):
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
-
-        # we should see this message over and over again
-        wait_for_log_count('queue sizes workload 1 delayed 0', 5)
-        engine.stop()
+        # this should exist out since we don't support this analysis mode with this engine instance
         engine.wait()
 
         # make sure our stuff is still there
@@ -1542,10 +1538,7 @@ class EngineTestCase(ACEEngineTestCase):
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
-
-        # we should see this message over and over again
-        wait_for_log_count('queue sizes workload 1 delayed 0', 5)
-        engine.stop()
+        # this should exit out since we do not support this analysis mode with this engine
         engine.wait()
 
         # make sure our stuff is still there
@@ -1566,11 +1559,9 @@ class EngineTestCase(ACEEngineTestCase):
 
         engine = TestEngine()
         engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
         engine.start()
-
         # we should see the same thing happen since the remote work is assigned to the other company
-        wait_for_log_count('queue sizes workload 1 delayed 0', 5)
-        engine.stop()
         engine.wait()
 
         # make sure our stuff is still there

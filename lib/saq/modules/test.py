@@ -501,3 +501,22 @@ class BrokenThreadedModuleTest(AnalysisModule):
     def execute_threaded(self):
         # just hangs for too long
         time.sleep(30)
+
+class ForcedDetectionTestAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class ForcedDetectionTestAnalyzer(AnalysisModule):
+    """Adds a detection point to every observable."""
+    @property
+    def valid_observable_types(self):
+        return None
+
+    @property
+    def generated_analysis_type(self):
+        return ForcedDetectionTestAnalysis
+        
+    def execute_analysis(self, observable):
+        analysis = self.create_analysis(observable)
+        observable.add_detection_point("test")
+        return True

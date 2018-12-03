@@ -39,6 +39,7 @@ fi
 data_dir="$(ace config -v global.data_dir)"
 if [ -d "$data_dir" ]
 then
+    echo "clearing $data_dir..."
     rm -rf "$data_dir"
     mkdir "$data_dir"
 fi
@@ -64,6 +65,7 @@ then
         saq.modules.test_http \
         api.analysis.test \
         api.engine.test \
+        api.cloudphish.test \
         test_ace_api \
 
         # TODO reintroduce these next two somehow
