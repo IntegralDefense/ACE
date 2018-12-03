@@ -50,6 +50,7 @@ __all__ = [
     'KEY_DETAILS_CONTEXT',
     'update_cloudphish_result',
     'update_content_metadata',
+    'get_content_metadata',
 ]
 
 # json schema
@@ -141,6 +142,16 @@ def update_content_metadata(sha256_content, node, file_name, db, c):
 INSERT INTO cloudphish_content_metadata ( sha256_content, node, name ) VALUES ( UNHEX(%s), %s, %s )
 ON DUPLICATE KEY UPDATE node = %s, name = %s""", ( sha256_content, node, file_name, node, file_name ), commit=True)
 
+@use_db
+def get_content_metadata(sha256_content, db, c):
+    c.execute("SELECT node, name FROM cloudphish_content_metadata WHERE sha256_content = UNHEX(%s)", 
+              sha256_content)
+    row = c.fetchone()
+    if row is None:
+        return None
+
+    return row[0], row[1].decode('unicode_internal')
+
 # global url filter
 url_filter = None
 
@@ -223,7 +234,7 @@ def _get_cached_analysis(url, db, c):
     if row:
         status, result, http_result, http_message, sha256_content, node, file_name = row
         if file_name:
-            file_name = file_name.decode('utf8', errors='ignore')
+            file_name = file_name.decode('unicode_internal')
 
         return CloudphishAnalysisResult(RESULT_OK,      # result
                                         None,           # details 

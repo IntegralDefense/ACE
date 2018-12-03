@@ -597,6 +597,7 @@ class CloudphishRequestAnalyzer(AnalysisModule):
             http_message = crawlphish_analysis.error_reason
 
         sha256_content = None
+        file_name = None
 
         # if we downloaded a file then we want to save it to our cache
         while crawlphish_analysis.file_name:
@@ -647,4 +648,4 @@ class CloudphishRequestAnalyzer(AnalysisModule):
                                  status=STATUS_ANALYZED)
 
         if sha256_content:
-            update_content_metadata(sha256_content, saq.SAQ_NODE, crawlphish_analysis.file_name)
+            update_content_metadata(sha256_content, saq.SAQ_NODE, file_name)
