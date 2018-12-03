@@ -382,7 +382,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         SAQ_NODE = CONFIG['global']['node']
         if SAQ_NODE == 'AUTO':
             SAQ_NODE = socket.getfqdn()
-        logging.info("node {}".format(SAQ_NODE))
     except Exception as e:
         sys.stderr.write("unable to get hostname: {}\n".format(e))
         sys.exit(1)

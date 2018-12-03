@@ -738,7 +738,6 @@ class ACEEngineTestCase(ACEBasicTestCase):
             if key.startswith('analysis_module_'):
                 saq.CONFIG[key]['enabled'] = 'no'
 
-
 class CloudphishServer(EngineProcess):
     def __init__(self):
         super().__init__(['python3', 'saq', '-L', 'etc/console_debug_logging.ini', '--start', 'cloudphish'])
@@ -750,10 +749,25 @@ class TestEngine(Engine):
     def __init__(self, *args, **kwargs):
         super().__init__(name='unittest', *args, **kwargs)
 
-    def enable_module(self, module_name):
+    def enable_module(self, module_name, analysis_mode=None):
         """Adds a module to be enabled."""
         saq.CONFIG[module_name]['enabled'] = 'yes'
-        saq.CONFIG['analysis_mode_test_empty'][module_name] = 'yes'
+        for key in saq.CONFIG.keys():
+            if not key.startswith('analysis_mode_'):
+                continue
+
+            if analysis_mode is None or 'analysis_mode_'.format(analysis_mode) == key:
+                saq.CONFIG[key][module_name] = 'yes'
+
+        #saq.CONFIG['analysis_mode_test_empty'][module_name] = 'yes'
 
     def set_analysis_pool_size(self, count):
         saq.CONFIG['engine']['analysis_pool_size_any'] = str(count)
+
+    def clear_analysis_pools(self):
+        sections = [s for s in saq.CONFIG['engine'].keys() if s.startswith('analysis_pool_size_')]
+        for section in sections:
+            del saq.CONFIG['engine'][s]
+
+    def add_analysis_pool(self, name, count):
+        saq.CONFIG['engine']['analysis_pool_size_{}'.format(name)] = str(count)

@@ -15,6 +15,7 @@ import saq
 from saq.analysis import Analysis, RootAnalysis
 from saq.cloudphish import *
 from saq.constants import *
+from saq.database import use_db, execute_with_retry
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 
@@ -512,3 +513,138 @@ class CloudphishAnalyzer(AnalysisModule):
                 report_exception()
 
         return True
+
+# 
+# this replaces the old cloudphish engine
+#
+
+class CloudphishRequestAnalyzer(AnalysisModule):
+    def _sanity_check(self):
+        """Returns True if we've got what we need in the details of the analysis, False otherwise."""
+        if self.root.alert_type != ANALYSIS_TYPE_CLOUDPHISH:
+            return False
+
+        # update the status of this cloudphish request in the database to
+        # indicate we've started analyzing it
+
+        # lots of sanity checking first
+        if not self.root.details or not isinstance(self.root.details, dict):
+            logging.error("missing or invalid details in {} (details = {})".format(self.root, self.root.details))
+            return False
+
+        if KEY_DETAILS_SHA256_URL not in self.root.details:
+            logging.error("missing key {} in details of {}".format(KEY_DETAILS_SHA256_URL, self.root))
+            return False
+
+        if not self.root.details[KEY_DETAILS_SHA256_URL]:
+            logging.error("missing value for {} in details of {}".format(KEY_DETAILS_SHA256_URL, self.root))
+            return False
+
+        return True
+        
+    def execute_pre_analysis(self):
+
+        if not self._sanity_check():
+            return
+
+        row_count = update_cloudphish_result(self.root.details[KEY_DETAILS_SHA256_URL], status=STATUS_ANALYZING)
+        if row_count != 1:
+            logging.warning("got rowcount {} for update to sha256_url {}".format(row_count, 
+                            self.root.details[KEY_DETAILS_SHA256_URL]))
+
+    def execute_post_analysis(self):
+
+        # make sure we've got what we need first
+        if not self._sanity_check():
+            return 
+
+        url = None
+        for o in self.root.observables:
+            if o.type == F_URL and o.has_directive(DIRECTIVE_CRAWL):
+                url = o
+                break
+
+        if not url:
+            logging.error("cannot find original url for {}".format(self.root))
+            return
+
+        # get the crawlphish analysis for this url
+        from saq.modules.url import CrawlphishAnalysisV2
+
+        sha256_url = self.root.details[KEY_DETAILS_SHA256_URL]
+        crawlphish_analysis = url.get_analysis(CrawlphishAnalysisV2)
+
+        if crawlphish_analysis is None:
+            # something went wrong with the analysis of the url
+            update_cloudphish_result(sha256_url, status=STATUS_ANALYZED, result=SCAN_RESULT_ERROR)
+            return
+
+        # update the database with the results
+        if crawlphish_analysis.filtered_status:
+            scan_result = SCAN_RESULT_PASS
+        elif not crawlphish_analysis.downloaded:
+            scan_result = SCAN_RESULT_ERROR
+        # did we find something to alert on?
+        elif self.root.has_detections():
+            scan_result = SCAN_RESULT_ALERT
+        else:
+            scan_result = SCAN_RESULT_CLEAR
+
+        http_result_code = crawlphish_analysis.status_code
+        http_message = crawlphish_analysis.status_code_reason
+
+        if scan_result == SCAN_RESULT_ERROR:
+            http_message = crawlphish_analysis.error_reason
+
+        sha256_content = None
+
+        # if we downloaded a file then we want to save it to our cache
+        while crawlphish_analysis.file_name:
+            # find the file observable added to this analysis
+            file_observable = crawlphish_analysis.find_observable(lambda o: o.type == F_FILE)
+
+            if not file_observable:
+                logging.info("nothing downloaded from {}".format(url_observable.value))
+            else:
+                logging.debug("found downloaded file {} for {}".format(file_observable, url))
+                file_observable.compute_hashes()
+                if not file_observable.sha256_hash:
+                    logging.error("missing sha256 hash for {}".format(file_observable))
+                    break
+
+                cache_dir = os.path.join(saq.CONFIG['cloudphish']['cache_dir'], 
+                                         file_observable.sha256_hash.lower()[0:2])
+
+                if not os.path.isdir(cache_dir):
+                    try:
+                        os.makedirs(cache_dir)
+                    except Exception as e:
+                        logging.error("unable to create directory {}: {}".format(cache_dir, e))
+                        report_exception()
+                        break
+
+                cache_path = os.path.join(cache_dir, file_observable.sha256_hash.lower())
+
+                if not os.path.exists(cache_path):
+                    src = os.path.join(self.root.storage_dir, file_observable.value)
+                    logging.debug("copying {} to {}".format(src, cache_path))
+
+                    try:
+                        shutil.copy(src, cache_path)
+                    except Exception as e:
+                        logging.error("unable to copy {} to {}: {}".format(src, cache_path, e))
+
+                sha256_content = file_observable.sha256_hash
+                file_name = os.path.basename(file_observable.value).encode('unicode_internal')
+
+            break
+
+        update_cloudphish_result(sha256_url, 
+                                 http_result_code=http_result_code,
+                                 http_message=http_message,
+                                 result=scan_result,
+                                 sha256_content=sha256_content,
+                                 status=STATUS_ANALYZED)
+
+        if sha256_content:
+            update_content_metadata(sha256_content, saq.SAQ_NODE, crawlphish_analysis.file_name)

@@ -64,7 +64,10 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
        to an empty tuple.
     
        To execute multi-statement transactions, sql is a list of parameterized
-       SQL statements, and params is a matching list of tuples of parameters."""
+       SQL statements, and params is a matching list of tuples of parameters.
+       
+       Returns the rowcount for a single statement, or a list of rowcount for multiple statements,
+       or the result of the function call."""
 
     assert callable(sql_or_func) or isinstance(sql_or_func, str) or isinstance(sql_or_func, list)
     assert params is None or isinstance(params, tuple) or ( 
@@ -87,17 +90,21 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
     count = 1
     while True:
         try:
-            result = None
+            results = []
             if callable(sql_or_func):
-                result = sql_or_func(db, cursor, *params)
+                results.append(sql_or_func(db, cursor, *params))
             else:
                 for (_sql, _params) in zip(sql_or_func, params):
                     cursor.execute(_sql, _params)
+                    results.append(cursor.rowcount)
 
             if commit:
                 db.commit()
 
-            return result
+            if len(results) == 1:
+                return results[0]
+            
+            return results
 
         except pymysql.err.OperationalError as e:
             # see http://stackoverflow.com/questions/25026244/how-to-get-the-mysql-type-of-error-with-pymysql

@@ -86,6 +86,9 @@ def create_app(testing=False):
     from .engine import engine_bp as engine_blueprint
     app.register_blueprint(engine_blueprint)
 
+    from .cloudphish import cloudphish_bp as cloudphish_blueprint
+    app.register_blueprint(cloudphish_blueprint)
+
     return app
 
 def json_request():

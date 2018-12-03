@@ -153,13 +153,12 @@ class Worker(object):
                 # if the control event is set then it means we're looking to exit when everything is done
                 if CURRENT_ENGINE.control_event.is_set():
                     if CURRENT_ENGINE.delayed_analysis_queue_is_empty and CURRENT_ENGINE.workload_queue_is_empty:
+                        logging.debug("both queues are empty - broke out of engine loop")
                         break # break out of the main loop
 
-                    # kind of expensive to run this so we check the logging level here
-                    if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
-                        logging.debug("queue sizes workload {} delayed {}".format(
-                                       CURRENT_ENGINE.workload_queue_size,
-                                       CURRENT_ENGINE.delayed_analysis_queue_size))
+                    logging.debug("queue sizes workload {} delayed {}".format(
+                                   CURRENT_ENGINE.workload_queue_size,
+                                   CURRENT_ENGINE.delayed_analysis_queue_size))
 
                 # if execute returns True it means it discovered and processed a work_item
                 # in that case we assume there is more work to do and we check again immediately
@@ -478,14 +477,20 @@ class Engine(object):
     @property
     @use_db
     def delayed_analysis_queue_size(self, db, c):
-        """Returns the size of the delayed analysis queue (for this node.)"""
-        if not self.is_local:
-            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid IS NULL", 
-                     (saq.SAQ_NODE_ID,))
-        else:
-            c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid = %s", 
-                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
+        """Returns the size of the delayed analysis queue (for this engine.)"""
+        where_clause = [ 'node_id = %s' ]
+        params = [ saq.SAQ_NODE_ID ]
 
+        if self.is_local:
+            where_clause.append('exclusive_uuid = %s')
+            params.append(self.exclusive_uuid)
+        else:
+            where_clause.append('exclusive_uuid IS NULL')
+
+        where_clause = ' AND '.join(where_clause)
+        params = tuple(params)
+
+        c.execute("SELECT COUNT(*) FROM delayed_analysis WHERE {}".format(where_clause), params)
         row = c.fetchone()
         return row[0]
 
@@ -493,46 +498,35 @@ class Engine(object):
     @use_db
     def workload_queue_size(self, db, c):
         """Returns the size of the workload queue (for this node.)"""
-        if not self.is_local:
-            c.execute("SELECT COUNT(*) FROM workload WHERE node_id = %s AND exclusive_uuid IS NULL", 
-                     (saq.SAQ_NODE_ID,))
-        else:
-            c.execute("SELECT COUNT(*) FROM workload WHERE node_id = %s AND exclusive_uuid = %s", 
-                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
+        where_clause = [ 'node_id = %s', 'company_id = %s' ]
+        params = [ saq.SAQ_NODE_ID, saq.COMPANY_ID ]
 
+        if self.is_local:
+            where_clause.append('exclusive_uuid = %s')
+            params.append(self.exclusive_uuid)
+        else:
+            where_clause.append('exclusive_uuid IS NULL')
+
+        if self.local_analysis_modes:
+            where_clause.append('workload.analysis_mode IN ( {} )'.format(','.join(['%s' for _ in self.local_analysis_modes])))
+            params.extend(self.local_analysis_modes)
+
+        where_clause = ' AND '.join(where_clause)
+        params = tuple(params)
+
+        c.execute("SELECT COUNT(*) FROM workload WHERE {}".format(where_clause), params)
         row = c.fetchone()
         return row[0]
 
-    # if you just want to check to see if the queues are empty
-    # then these queries are probably faster than counting all of them
-
     @property
-    @use_db
-    def delayed_analysis_queue_is_empty(self, db, c):
+    def delayed_analysis_queue_is_empty(self):
         """Returns True if the delayed analysis queue is empty, False otherwise."""
-        if not self.is_local:
-            c.execute("SELECT id FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid IS NULL LIMIT 1", 
-                     (saq.SAQ_NODE_ID,))
-        else:
-            c.execute("SELECT id FROM delayed_analysis WHERE node_id = %s AND exclusive_uuid = %s LIMIT 1", 
-                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
-
-        row = c.fetchone()
-        return row is None
+        return self.delayed_analysis_queue_size == 0
 
     @property
-    @use_db
-    def workload_queue_is_empty(self, db, c):
+    def workload_queue_is_empty(self):
         """Returns True if the work queue is empty, False otherwise."""
-        if not self.is_local:
-            c.execute("SELECT id FROM workload WHERE node_id = %s AND exclusive_uuid IS NULL LIMIT 1", 
-                     (saq.SAQ_NODE_ID,))
-        else:
-            c.execute("SELECT id FROM workload WHERE node_id = %s AND exclusive_uuid = %s LIMIT 1", 
-                     (saq.SAQ_NODE_ID, self.exclusive_uuid))
-
-        row = c.fetchone()
-        return row is None
+        return self.workload_queue_size == 0
 
     def _get_analysis_module_by_generated_analysis(self, analysis):
         """Internal function to return the loaded AnalysisModule by type or string of generated Analysis."""
@@ -1467,7 +1461,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                                      """, (self.root.uuid,))
 
                         row = c.fetchone()
-                        db.commit() # XXX I assume this releases whatever lock the SELECT statement holds
+                        db.commit()
 
                         if row is None:
                             # OK then it's time to clean this one up
