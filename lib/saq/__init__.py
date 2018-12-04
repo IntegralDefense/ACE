@@ -180,6 +180,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     global SEMAPHORES_ENABLED
     global SINGLE_THREADED
     global STATS_DIR
+    global TEMP_DIR
     global TOR_PROXY
     global YSS_BASE_DIR
     global YSS_SOCKET_DIR
@@ -192,6 +193,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     CONFIG = None
     CONFIG_PATHS = []
     DATA_DIR = None
+    TEMP_DIR = None
     DEFAULT_ENCODING = None
     SEMAPHORES_ENABLED = False
     PROXIES = {}
@@ -320,6 +322,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         sys.exit(1)
 
     DATA_DIR = CONFIG['global']['data_dir']
+    TEMP_DIR = CONFIG['global']['tmp_dir']
     COMPANY_NAME = CONFIG['global']['company_name']
     COMPANY_ID = CONFIG['global'].getint('company_id')
 
@@ -466,7 +469,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         os.path.join(SAQ_HOME, 'stats', 'metrics'),
         os.path.join(SAQ_HOME, CONFIG['splunk_logging']['splunk_log_dir']),
         os.path.join(SAQ_HOME, CONFIG['elk_logging']['elk_log_dir']),
-        os.path.join(SAQ_HOME, CONFIG['global']['tmp_dir']),
+        os.path.join(SAQ_HOME, TEMP_DIR),
         os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'], 'logs'),
         os.path.join(SAQ_HOME, maliciousdir) ]:
         try:

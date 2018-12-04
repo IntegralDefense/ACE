@@ -1,6 +1,7 @@
 # vim: ts=4:sw=4:et:cc=120
 
 import datetime
+import hashlib
 import io
 import logging
 import os.path
@@ -14,12 +15,13 @@ import saq
 from saq.analysis import RootAnalysis
 from saq.database import acquire_lock, use_db
 from saq.test import *
+from api.cloudphish.test import CloudphishTestCase, TEST_URL
 from saq.util import storage_dir_from_uuid, parse_event_time
 
 import pytz
 import tzlocal
 
-class APIWrapperTestCase(ACEEngineTestCase):
+class APIWrapperTestCase(ACEEngineTestCase, CloudphishTestCase):
 
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
@@ -324,3 +326,78 @@ class APIWrapperTestCase(ACEEngineTestCase):
             self.assertFalse(ace_api.clear(root.uuid, lock_uuid))
 
         self.assertTrue(os.path.exists(root.storage_dir))
+
+    def test_cloudphish_api(self):
+        import saq.cloudphish
+        submission_result = ace_api.cloudphish_submit(TEST_URL)
+        for key in [ saq.cloudphish.KEY_RESULT,
+                     saq.cloudphish.KEY_DETAILS,
+                     saq.cloudphish.KEY_STATUS,
+                     saq.cloudphish.KEY_ANALYSIS_RESULT,
+                     saq.cloudphish.KEY_HTTP_RESULT,
+                     saq.cloudphish.KEY_HTTP_MESSAGE,
+                     saq.cloudphish.KEY_SHA256_CONTENT,
+                     saq.cloudphish.KEY_SHA256_URL,
+                     saq.cloudphish.KEY_LOCATION,
+                     saq.cloudphish.KEY_FILE_NAME,
+                     saq.cloudphish.KEY_UUID, ]:
+            self.assertTrue(key in submission_result)
+
+        self.assertEquals(submission_result[saq.cloudphish.KEY_RESULT], saq.cloudphish.RESULT_OK)
+        self.assertIsNone(submission_result[saq.cloudphish.KEY_DETAILS])
+        self.assertEquals(submission_result[saq.cloudphish.KEY_STATUS], saq.cloudphish.STATUS_NEW)
+        self.assertEquals(submission_result[saq.cloudphish.KEY_ANALYSIS_RESULT], saq.cloudphish.SCAN_RESULT_UNKNOWN)
+        self.assertIsNone(submission_result[saq.cloudphish.KEY_HTTP_RESULT])
+        self.assertIsNone(submission_result[saq.cloudphish.KEY_HTTP_MESSAGE])
+        self.assertIsNone(submission_result[saq.cloudphish.KEY_SHA256_CONTENT])
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_SHA256_URL])
+        self.assertIsNone(submission_result[saq.cloudphish.KEY_LOCATION])
+        self.assertIsNone(submission_result[saq.cloudphish.KEY_FILE_NAME])
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_UUID])
+
+        # now we start an engine to work on cloudphish analysis
+        engine = TestEngine()
+        engine.clear_analysis_pools()
+        engine.add_analysis_pool('cloudphish', 1)
+        engine.local_analysis_modes.append('cloudphish')
+        engine.enable_module('analysis_module_crawlphish')
+        engine.enable_module('analysis_module_cloudphish_request_analyzer')
+        # force this analysis to become an alert
+        engine.enable_module('analysis_module_forced_detection')
+        engine.enable_module('analysis_module_detection')
+        engine.enable_module('analysis_module_alert')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        submission_result = ace_api.cloudphish_submit(TEST_URL)
+        self.assertEquals(submission_result[saq.cloudphish.KEY_RESULT], saq.cloudphish.RESULT_OK)
+        self.assertIsNone(submission_result[saq.cloudphish.KEY_DETAILS])
+        self.assertEquals(submission_result[saq.cloudphish.KEY_STATUS], saq.cloudphish.STATUS_ANALYZED)
+        self.assertEquals(submission_result[saq.cloudphish.KEY_ANALYSIS_RESULT], saq.cloudphish.SCAN_RESULT_ALERT)
+        self.assertEquals(submission_result[saq.cloudphish.KEY_HTTP_RESULT], 200)
+        self.assertEquals(submission_result[saq.cloudphish.KEY_HTTP_MESSAGE], 'OK')
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_SHA256_CONTENT])
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_SHA256_URL])
+        self.assertEquals(submission_result[saq.cloudphish.KEY_LOCATION], saq.SAQ_NODE)
+        self.assertEquals(submission_result[saq.cloudphish.KEY_FILE_NAME], 'Payment_Advice.pdf')
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_UUID])
+
+        # attempt to download the contents of the url
+        output_path = os.path.join(saq.TEMP_DIR, 'cloudphish.download')
+        download_result = ace_api.cloudphish_download(sha256=submission_result[saq.cloudphish.KEY_SHA256_URL], 
+                                                      output_path=output_path)
+        
+        # make sure we can download the file
+        with open(output_path, 'rb') as fp:
+            data = fp.read()
+        hasher = hashlib.sha256()
+        hasher.update(data)
+        self.assertEquals(hasher.hexdigest().lower(), submission_result[saq.cloudphish.KEY_SHA256_CONTENT].lower())
+
+        # make sure we can clear the alert for this url
+        self.assertTrue(ace_api.cloudphish_clear_alert(sha256=submission_result[saq.cloudphish.KEY_SHA256_URL]))
+
+        # and verify that
+        submission_result = ace_api.cloudphish_submit(TEST_URL)
+        self.assertEquals(submission_result[saq.cloudphish.KEY_ANALYSIS_RESULT], saq.cloudphish.SCAN_RESULT_CLEAR)

@@ -47,6 +47,10 @@ warnings.simplefilter('ignore', urllib3.exceptions.SecurityWarning)
 # get our custom logger we use for this library
 log = logging.getLogger(__name__)
 
+# what HTTP method to use
+METHOD_GET = 'get'
+METHOD_POST = 'post'
+
 def set_default_remote_host(remote_host):
     """Sets the default remote host used when no remote host is provided to the API calls."""
     global default_remote_host
@@ -78,21 +82,31 @@ def api_command(func):
     commands[func.__name__] = func
     return func
 
-def _execute_api_call(command, remote_host=None, ssl_verification=None, stream=False, data=None, files=None):
+def _execute_api_call(command, method=METHOD_GET, remote_host=None, ssl_verification=None, stream=False, 
+                      data=None, files=None, params=None):
+
     if remote_host is None:
         remote_host = default_remote_host
 
     if ssl_verification is None:
         ssl_verification = default_ssl_verification
 
-    if data is None:
-        # if we're not passing data then it's a GET
-        r = requests.get('https://{}/api/{}'.format(remote_host, command), verify=ssl_verification, stream=stream)
+    if method == METHOD_GET:
+        func = requests.get
     else:
-        # otherwise it's a POST
-        r = requests.post('https://{}/api/{}'.format(remote_host, command), verify=ssl_verification, stream=stream,
-                          data=data, files=files)
+        func = requests.post
 
+    kwargs = { 'stream': stream }
+    if params is not None:
+        kwargs['params'] = params
+    if ssl_verification is not None:
+        kwargs['verify'] = ssl_verification
+    if data is not None:
+        kwargs['data'] = data
+    if files is not None:
+        kwargs['files'] = filesj
+
+    r = func('https://{}/api/{}'.format(remote_host, command), **kwargs)
     r.raise_for_status()
     return r
 
@@ -177,7 +191,7 @@ def submit(
             'observables': observables,
             'tags': tags, 
         }),
-    }, files=files_params, *args, **kwargs).json()
+    }, files=files_params, method=METHOD_POST, *args, **kwargs).json()
 
 @api_command
 def get_analysis(uuid, *args, **kwargs):
@@ -257,6 +271,7 @@ def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
                     'overwrite': overwrite,
                     'sync': sync,
                 })},
+                method=METHOD_POST,
                 files=[('archive', (os.path.basename(tar_path), fp))]).json()
     finally:
         try:
@@ -267,6 +282,53 @@ def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
 @api_command
 def clear(uuid, lock_uuid, *args, **kwargs):
     return _execute_api_call('engine/clear/{}/{}'.format(uuid, lock_uuid), *args, **kwargs).status_code == 200
+
+@api_command
+def cloudphish_submit(url, reprocess=False, ignore_filters=False, *args, **kwargs):
+    return _execute_api_call('cloudphish/submit', data={
+        'url': url,
+        'reprocess': '1' if reprocess else '0',
+        'ignore_filters': '1' if ignore_filters else '0',
+    }, method=METHOD_POST, *args, **kwargs).json()
+
+@api_command
+def cloudphish_download(url=None, sha256=None, output_path=None, output_fp=None, *args, **kwargs):
+    if url is None and sha256 is None:
+        raise ValueError("you must supply either url or sha256 to cloudphish_download")
+
+    if output_path is None and output_fp is None:
+        output_fp = sys.stdout.buffer
+    elif output_fp is None:
+        output_fp = open(output_path, 'wb')
+
+    params = { }
+    if url:
+        params['url'] = url
+    if sha256:
+        params['s'] = sha256
+
+    r = _execute_api_call('cloudphish/download', params=params, stream=True, *args, **kwargs)
+    
+    size = 0
+    for chunk in r.iter_content(io.DEFAULT_BUFFER_SIZE):
+        if chunk:
+            output_fp.write(chunk)
+            size += len(chunk)
+
+    if output_path is not None:
+        output_fp.close()
+
+    return True
+
+@api_command
+def cloudphish_clear_alert(url=None, sha256=None, *args, **kwargs):
+    params = {}
+    if url is not None:
+        params['url'] = url
+    if sha256 is not None:
+        params['s'] = sha256
+
+    return _execute_api_call('cloudphish/clear_alert', params=params).status_code == 200
 
 if __name__ == '__main__':
     import argparse
@@ -287,3 +349,4 @@ if __name__ == '__main__':
         sys.stderr.write("unable to execute api call: {}\n".format(e))
         if hasattr(e, 'response'):
             print(e.response.text)
+
