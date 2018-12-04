@@ -104,7 +104,7 @@ def _execute_api_call(command, method=METHOD_GET, remote_host=None, ssl_verifica
     if data is not None:
         kwargs['data'] = data
     if files is not None:
-        kwargs['files'] = filesj
+        kwargs['files'] = files
 
     r = func('https://{}/api/{}'.format(remote_host, command), **kwargs)
     r.raise_for_status()
