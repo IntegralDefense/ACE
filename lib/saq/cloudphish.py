@@ -29,6 +29,7 @@ __all__ = [
     'KEY_HTTP_RESULT',
     'KEY_HTTP_MESSAGE',
     'KEY_SHA256_CONTENT',
+    'KEY_SHA256_URL',
     'KEY_LOCATION',
     'KEY_FILE_NAME',
     'STATUS_NEW',
@@ -74,8 +75,10 @@ KEY_ANALYSIS_RESULT = 'analysis_result'
 KEY_HTTP_RESULT = 'http_result'
 KEY_HTTP_MESSAGE = 'http_message'
 KEY_SHA256_CONTENT = 'sha256_content'
+KEY_SHA256_URL = 'sha256_url'
 KEY_LOCATION = 'location'
 KEY_FILE_NAME = 'file_name'
+KEY_UUID = 'uuid'
 
 STATUS_NEW = 'NEW'
 STATUS_ANALYZING = 'ANALYZING'
@@ -112,7 +115,7 @@ def update_cloudphish_result(
 
     if http_message is not None:
         sql.append('http_message = %s')
-        params.append(http_message)
+        params.append(http_message[:256])
 
     if sha256_content is not None:
         sql.append('sha256_content = UNHEX(%s)')
@@ -171,7 +174,7 @@ def hash_url(url):
 
 class CloudphishAnalysisResult(object):
     def __init__(self, result, details, status=None, analysis_result=None, http_result=None, http_message=None,
-                 sha256_content=None, location=None, file_name=None):
+                 sha256_content=None, sha256_url=None, location=None, file_name=None, uuid=None):
 
         self.result = result
         self.details = details
@@ -180,8 +183,10 @@ class CloudphishAnalysisResult(object):
         self.http_result = http_result
         self.http_message = http_message
         self.sha256_content = sha256_content
+        self.sha256_url = sha256_url
         self.location = location
         self.file_name = file_name
+        self.uuid = uuid
 
     def json(self):
         return { KEY_RESULT: self.result,
@@ -191,13 +196,16 @@ class CloudphishAnalysisResult(object):
                  KEY_HTTP_RESULT: self.http_result,
                  KEY_HTTP_MESSAGE: self.http_message,
                  KEY_SHA256_CONTENT: self.sha256_content,
+                 KEY_SHA256_URL: self.sha256_url,
                  KEY_LOCATION: self.location,
-                 KEY_FILE_NAME: self.file_name }
+                 KEY_FILE_NAME: self.file_name,
+                 KEY_UUID: self.uuid }
 
     def __str__(self):
-        return "CloudphishAnalysisResult(result:{},details:{},status:{},analysis_result:{},http_result:{},http_message:{},sha256_content:{},location:{},file_name:{})".format(
+        return "CloudphishAnalysisResult(result:{},details:{},status:{},analysis_result:{},http_result:{}," \
+               "http_message:{},sha256_content:{},sha256_url:{},location:{},file_name:{},uuid:{})".format(
             self.result, self.details, self.status, self.analysis_result, self.http_result, self.http_message,
-            self.sha256_content, self.location, self.file_name)
+            self.sha256_content, self.sha256_url, self.location, self.file_name, self.uuid)
     
     def __repr__(self):
         return str(self)
@@ -225,26 +233,29 @@ def _get_cached_analysis(url, db, c):
                      ar.http_message,
                      HEX(ar.sha256_content),
                      cm.node,
-                     cm.name
+                     cm.name,
+                     ar.uuid
                  FROM cloudphish_analysis_results AS ar
                  LEFT JOIN cloudphish_content_metadata AS cm ON ar.sha256_content = cm.sha256_content
                  WHERE sha256_url = UNHEX(%s)""", (sha256,))
 
     row = c.fetchone()
     if row:
-        status, result, http_result, http_message, sha256_content, node, file_name = row
+        status, result, http_result, http_message, sha256_content, node, file_name, uuid = row
         if file_name:
             file_name = file_name.decode('unicode_internal')
 
         return CloudphishAnalysisResult(RESULT_OK,      # result
                                         None,           # details 
-                                        status,         # status
-                                        result,         # analysis_results
-                                        http_result,    # http_result
-                                        http_message,   # http_message
-                                        sha256_content, # sha256_content
-                                        node,           # node (location)
-                                        file_name)
+                                        status=status,
+                                        analysis_result=result,
+                                        http_result=http_result,
+                                        http_message=http_message,
+                                        sha256_content=sha256_content,
+                                        sha256_url=sha256,
+                                        location=node,
+                                        file_name=file_name,
+                                        uuid=uuid)
 
     # if we have not then we return None
     return None

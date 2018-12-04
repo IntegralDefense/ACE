@@ -51,6 +51,7 @@ then
         saq.collectors.test \
         saq.collectors.test_http \
         saq.test_observables \
+        saq.test_crawlphish \
         saq.test_crypto \
         saq.test_analysis \
         saq.test_database \

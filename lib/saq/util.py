@@ -11,12 +11,21 @@ import saq
 from saq.constants import *
 
 CIDR_REGEX = re.compile(r'^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$')
+CIDR_WITH_NETMASK_REGEX = re.compile(r'^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$')
 URL_REGEX_B = re.compile(rb'(((?:(?:https?|ftp)://)[A-Za-z0-9\.\-]+)((?:\/[\+~%\/\.\w\-_]*)?\??(?:[\-\+=&;%@\.\w_:\?]*)#?(?:[\.\!\/\\\w:%\?&;=-]*))?(?<!=))', re.I)
 URL_REGEX_STR = re.compile(r'(((?:(?:https?|ftp)://)[A-Za-z0-9\.\-]+)((?:\/[\+~%\/\.\w\-_]*)?\??(?:[\-\+=&;%@\.\w_:\?]*)#?(?:[\.\!\/\\\w:%\?&;=-]*))?(?<!=))', re.I)
 
 def is_ipv4(value):
     """Returns True if the given value is a dotted-quad IP address or CIDR notation."""
     return CIDR_REGEX.match(value) is not None
+
+def add_netmask(value):
+    """Returns a CIDR notation value for the given ipv4 or CIDR notation (adds the network if it's missing.)"""
+    if CIDR_WITH_NETMASK_REGEX.match(value):
+        return value
+
+    # we assume it is a single host
+    return '{}/32'.format(value)
 
 def is_subdomain(src, dst):
     """Returns True if src is equal to or a subdomain of dst."""

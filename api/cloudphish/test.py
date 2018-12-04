@@ -8,13 +8,15 @@ import time
 import tarfile
 
 from subprocess import Popen, PIPE
+from unittest import TestCase
 
 import saq
 from api.test import APIBasicTestCase
 from saq.analysis import RootAnalysis
+from saq.brocess import query_brocess_by_fqdn
 from saq.constants import *
 from saq.cloudphish import *
-from saq.database import use_db, get_db_connection
+from saq.database import use_db, get_db_connection, initialize_node
 from saq.test import *
 
 import requests
@@ -23,8 +25,7 @@ from flask import url_for
 # part of our sample set of data
 TEST_URL = 'http://localhost:8080/Payment_Advice.pdf'
 
-class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
-
+class CloudphishTestCase(TestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -74,6 +75,8 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
     def tearDown(self, *args, **kwargs):
         super().tearDown(*args, **kwargs)
         self.stop_http_server()
+
+class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase, CloudphishTestCase):
 
     def test_http_server(self):
         # make sure our http server is working
@@ -153,7 +156,7 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
         # we should still have a single entry in the cloudphish_analysis_results table
         # but it should be updated with the analysis results
         db.commit()
-        c.execute("""SELECT sha256_url, http_result_code, http_message, HEX(sha256_content), result, insert_date, uuid, status
+        c.execute("""SELECT HEX(sha256_url), http_result_code, http_message, HEX(sha256_content), result, insert_date, uuid, status
                      FROM cloudphish_analysis_results""")
         result = c.fetchall()
         self.assertEquals(len(result), 1)
@@ -217,7 +220,7 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
         self.assertEquals(result[KEY_FILE_NAME], 'Payment_Advice.pdf')
 
         # now attempt to download the binary by sha256
-        result = self.client.get(url_for('cloudphish.download', s=sha256_content))
+        result = self.client.get(url_for('cloudphish.download', s=sha256_url))
         # make sure we got the actual file
         m = hashlib.sha256()
         m.update(result.data)
@@ -234,7 +237,7 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
         self.assertTrue(filename_ok)
 
         # now attempt to download the alert itself
-        result = self.client.get(url_for('cloudphish.download_alert', s=sha256_content), follow_redirects=True)
+        result = self.client.get(url_for('engine.download', uuid=_uuid))
         # we should get back a tar file
         tar_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'download.tar')
         output_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], 'download')
@@ -270,10 +273,71 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase):
         self.assertEquals(result.status_code, 200)
         
         db.commit()
-        c.execute("SELECT result FROM cloudphish_analysis_results WHERE sha256_url = %s", (sha256_url,))
+        c.execute("SELECT result FROM cloudphish_analysis_results WHERE sha256_url = UNHEX(%s)", (sha256_url,))
         row = c.fetchone()
         self.assertEquals(row[0], SCAN_RESULT_CLEAR)
+
+        # we should have a brocess entry for this http request
+        self.assertEquals(query_brocess_by_fqdn('localhost'), 1)
+
+    @use_db
+    def test_submit_invalid_url(self, db, c):
+        # try submitting something that is clearly not a URL
+        result = self.client.get(url_for('cloudphish.submit', url=b'\xFF\x80\x34\x01\x45', ignore_filters='1'))
+        self.assertEquals(result.status_code, 500)
+
+    def test_submit_ignore_filters(self):
+        # we add a url for something that should be blacklisted but we ignore the filters
+        with open(self.blacklist_path, 'w') as fp:
+            fp.write('localhost\n')
+
+        result = self.client.get(url_for('cloudphish.submit', url=TEST_URL, ignore_filters='1'))
+        result = result.get_json()
+        self.assertIsNotNone(result)
+
+        # first check the result
+        for key in [ KEY_RESULT, KEY_DETAILS, KEY_STATUS, KEY_ANALYSIS_RESULT, KEY_HTTP_RESULT,
+                     KEY_HTTP_MESSAGE, KEY_SHA256_CONTENT, KEY_LOCATION, KEY_FILE_NAME ]:
+            self.assertTrue(key in result)
         
-        # and now this should return a 404
-        result = self.client.get(url_for('cloudphish.download_alert', s=sha256_content), follow_redirects=True)
-        self.assertEquals(result.status_code, 404)
+        self.assertEquals(result[KEY_RESULT], RESULT_OK)
+        self.assertEquals(result[KEY_STATUS], STATUS_NEW)
+        self.assertEquals(result[KEY_ANALYSIS_RESULT], SCAN_RESULT_UNKNOWN)
+        
+        # everything else should be None
+        for key in [ KEY_DETAILS, KEY_HTTP_RESULT, KEY_HTTP_MESSAGE, KEY_SHA256_CONTENT, KEY_LOCATION, KEY_FILE_NAME ]:
+            self.assertIsNone(result[key])
+
+    def test_download_redirect(self):
+        # create a request to download the pdf
+        result = self.client.get(url_for('cloudphish.submit', url=TEST_URL, ignore_filters='1'))
+
+        # have the engine process it
+        engine = TestEngine()
+        engine.clear_analysis_pools()
+        engine.add_analysis_pool('cloudphish', 1)
+        engine.local_analysis_modes.append('cloudphish')
+        engine.enable_module('analysis_module_crawlphish')
+        engine.enable_module('analysis_module_cloudphish_request_analyzer')
+
+        # force this analysis to become an alert
+        engine.enable_module('analysis_module_forced_detection')
+        engine.enable_module('analysis_module_detection')
+        engine.enable_module('analysis_module_alert')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # get the sha256_content
+        submission_result = self.client.get(url_for('cloudphish.submit', url=TEST_URL, ignore_filters='1'))
+        submission_result = submission_result.get_json()
+        self.assertIsNotNone(submission_result[KEY_SHA256_URL])
+
+        # change what node we are
+        saq.SAQ_NODE = 'second_host'
+        initialize_node()
+        self.initialize_test_client()
+
+        # we should get a redirect back to the other node
+        result = self.client.get(url_for('cloudphish.download', s=submission_result[KEY_SHA256_URL]))
+        self.assertEquals(result.status_code, 302)
