@@ -4,6 +4,7 @@ import datetime
 import glob
 import os, os.path
 import pickle
+import shutil
 
 import saq.collectors
 
@@ -21,6 +22,10 @@ def _clear_persistence(collector):
         if os.path.exists(file_path):
             os.remove(file_path)
 
+def _clear_storage(collector):
+    if os.path.isdir(collector.storage_dir):
+        shutil.rmtree(collector.storage_dir)
+
 class TestCase(CollectorBaseTestCase):
 
     def test_startup(self):
@@ -35,6 +40,7 @@ class TestCase(CollectorBaseTestCase):
         # start with initial_search_offset at 0 to start pulling all binaries
         collector = CarbonBlackBinaryCollector(initial_search_offset=0, download_batch_size=1)
         _clear_persistence(collector)
+        _clear_storage(collector)
         collector.load_groups()
         collector.start()
 
@@ -90,6 +96,7 @@ class EngineTestCase(CollectorBaseTestCase, ACEEngineTestCase):
         collector = CarbonBlackBinaryCollector(initial_search_offset=0, download_batch_size=1, 
                                                test_mode=saq.collectors.TEST_MODE_SINGLE_SUBMISSION)
         _clear_persistence(collector)
+        _clear_storage(collector)
         collector.load_groups()
         collector.start()
 
@@ -128,6 +135,7 @@ class EngineTestCase(CollectorBaseTestCase, ACEEngineTestCase):
 
         collector = CarbonBlackBinaryCollector(initial_search_offset=0, download_batch_size=2)
         _clear_persistence(collector)
+        _clear_storage(collector)
         collector.load_groups()
         collector.start()
 
