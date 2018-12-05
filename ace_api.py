@@ -147,8 +147,12 @@ def submit(
     if event_time is None:
         event_time = datetime.datetime.now()
 
+    # no timezone yet?
     # convert to UTC and then to the correct datetime format string for ACE
-    formatted_event_time = LOCAL_TIMEZONE.localize(event_time).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
+    if event_time.tzinfo is None:
+        formatted_event_time = LOCAL_TIMEZONE.localize(event_time).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
+    else:
+        formatted_event_time = event_time.astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
 
     # make sure the observables are in the correct format
     for o in observables:
