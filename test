@@ -50,6 +50,9 @@ then
     PYTHONPATH=lib python3 -W ignore -m unittest -f -v \
         saq.collectors.test \
         saq.collectors.test_http \
+        saq.collectors.test_email \
+        saq.collectors.test_smtp \
+        saq.collectors.test_cb_binaries \
         saq.test_observables \
         saq.test_crawlphish \
         saq.test_crypto \

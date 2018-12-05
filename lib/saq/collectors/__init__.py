@@ -383,7 +383,6 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
 
                     log_function("unable to submit work item {} to {} via group {}: {}".format(
                                  submission, target, self, e))
-                    report_exception()
 
                     # if we are in full delivery mode then we need to try this one again later
                     if self.full_delivery:

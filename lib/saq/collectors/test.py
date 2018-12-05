@@ -33,7 +33,7 @@ class _custom_submission(Submission):
         tags=[],
         files=[])
 
-    def success(self):
+    def success(self, result):
         global success_event
         success_event.set()
 
@@ -422,7 +422,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
         class _custom_collector(Collector):
             def __init__(_self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
+                super().__init__(delete_files=True, *args, **kwargs)
                 self.work = self.create_submission()
                 self.work.files=[file_path]
 
