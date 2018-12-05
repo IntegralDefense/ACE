@@ -50,6 +50,7 @@ class CollectorBaseTestCase(ACEBasicTestCase):
             c.execute("DELETE FROM work_distribution_groups")
             c.execute("DELETE FROM incoming_workload")
             c.execute("DELETE FROM workload")
+            c.execute("UPDATE nodes SET last_update = SUBTIME(NOW(), '01:00:00')")
             db.commit()
 
 class CollectorTestCase(CollectorBaseTestCase):

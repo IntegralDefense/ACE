@@ -21,7 +21,7 @@ from saq.util import storage_dir_from_uuid, parse_event_time
 import pytz
 import tzlocal
 
-class APIWrapperTestCase(ACEEngineTestCase, CloudphishTestCase):
+class TestCase(ACEEngineTestCase, CloudphishTestCase):
 
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
@@ -79,7 +79,16 @@ class APIWrapperTestCase(ACEEngineTestCase, CloudphishTestCase):
     def _get_localized_submit_time(self):
         return ace_api.LOCAL_TIMEZONE.localize(self._get_submit_time()).astimezone(pytz.UTC)
 
-    def _submit(self):
+    def _submit(self, analysis_mode=None,
+                      tool=None,
+                      tool_instance=None,
+                      type=None,
+                      description=None,
+                      details=None,
+                      event_time=None,
+                      observables=None,
+                      tags=None):
+
         temp_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'submit_test.dat')
         temp_data = os.urandom(1024)
 
@@ -89,18 +98,18 @@ class APIWrapperTestCase(ACEEngineTestCase, CloudphishTestCase):
         try:
             with open(temp_path, 'rb') as fp:
                 return ace_api.submit(
-                    analysis_mode='test_empty', 
-                    tool='unittest_tool',
-                    tool_instance='unittest_tool_instance',
-                    type='unittest_type',
-                    description='testing',
-                    details={'hello': 'world'},
-                    event_time=self._get_submit_time(),
+                    analysis_mode='test_empty' if analysis_mode is None else analysis_mode, 
+                    tool='unittest_tool' if tool is None else tool,
+                    tool_instance='unittest_tool_instance' if tool_instance is None else tool_instance,
+                    type='unittest_type' if type is None else type,
+                    description='testing' if description is None else description,
+                    details={'hello': 'world'} if details is None else details,
+                    event_time=self._get_submit_time() if event_time is None else event_time,
                     observables=[
                             { 'type': 'ipv4', 'value': '1.2.3.4', 'time': self._get_submit_time(), 'tags': [ 'tag_1', 'tag_2' ], 'directives': [ 'no_scan' ], 'limited_analysis': ['basic_test'] },
                             { 'type': 'user', 'value': 'test_user', 'time': self._get_submit_time() },
-                    ],
-                    tags=[ 'alert_tag_1', 'alert_tag_2' ],
+                    ] if observables is None else observables,
+                    tags=[ 'alert_tag_1', 'alert_tag_2' ] if tags is None else tags,
                     files=[('sample.dat', io.BytesIO(b'Hello, world!')),
                            ('submit_test.dat', fp)])
         finally:
@@ -157,6 +166,36 @@ class APIWrapperTestCase(ACEEngineTestCase, CloudphishTestCase):
         self.assertEquals(row[1], uuid)
         self.assertEquals(row[2], saq.SAQ_NODE_ID)
         self.assertEquals(row[3], 'test_empty')
+
+    def test_submit_with_utc_timezone(self):
+        # make sure we can submit with a UTC timezone already set
+        result = self._submit(event_time=self._get_localized_submit_time())
+        self.assertIsNotNone(result)
+
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+
+        self.assertEquals(root.event_time, self._get_localized_submit_time())
+
+    def test_submit_with_other_timezone(self):
+        # make sure we can submit with another timezone already set
+        result = self._submit(event_time=self._get_localized_submit_time().astimezone(pytz.timezone('US/Eastern')))
+        self.assertIsNotNone(result)
+
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+
+        self.assertEquals(root.event_time, self._get_localized_submit_time())
 
     def test_get_analysis(self):
 

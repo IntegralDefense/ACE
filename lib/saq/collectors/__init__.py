@@ -29,6 +29,10 @@ NO_WORK_AVAILABLE = 2
 NO_NODES_AVAILABLE = 3
 NO_WORK_SUBMITTED = 4
 
+# test modes
+TEST_MODE_STARTUP = 'startup'
+TEST_MODE_SINGLE_SUBMISSION = 'single_submission'
+
 class Submission(object):
     """A single analysis submission.
        Keep in mind that this object gets serialized into a database blob via the pickle module.
@@ -63,8 +67,9 @@ class Submission(object):
     def __str__(self):
         return "{} ({})".format(self.description, self.analysis_mode)
 
-    def success(self):
+    def success(self, result):
         """Called by the RemoteNodeGroup when this has been successfully submitted to a remote node.
+           result is the result of the ace_api.submit command for the submission
            By default this deletes any files submitted."""
         pass
 
@@ -343,6 +348,9 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
 
             # simple flag to remember if we failed to send
             submission_failed = False
+
+            # the result of the submission (we pass to Submission.success later)
+            submission_result = None
                 
             self.coverage_counter += self.coverage
             if self.coverage_counter < 100:
@@ -363,8 +371,8 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
 
                 # attempt the send
                 try:
-                    result = target.submit(submission)
-                    logging.info("{} got submission result {} for {}".format(self, result, submission))
+                    submission_result = target.submit(submission)
+                    logging.info("{} got submission result {} for {}".format(self, submission_result, submission))
                     submission_success = True
                 except Exception as e:
                     log_function = logging.warning
@@ -375,6 +383,7 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
 
                     log_function("unable to submit work item {} to {} via group {}: {}".format(
                                  submission, target, self, e))
+                    report_exception()
 
                     # if we are in full delivery mode then we need to try this one again later
                     if self.full_delivery:
@@ -412,11 +421,13 @@ WHERE
                         submission.fail()
                     except Exception as e:
                         logging.error("call to {}.fail() failed: {}".format(submission, e))
+                        report_exception()
                 else:
                     try:
-                        submission.success()
+                        submission.success(submission_result)
                     except Exception as e:
                         logging.error("call to {}.success() failed: {}".format(submission, e))
+                        report_exception()
 
                 if submission.files:
                     try:
@@ -436,7 +447,7 @@ WHERE
                 self.name, self.coverage, self.full_delivery, self.database)
 
 class Collector(object):
-    def __init__(self):
+    def __init__(self, delete_files=False, test_mode=None):
         # often used as the "tool_instance" property of analysis
         self.fqdn = socket.getfqdn()
 
@@ -448,6 +459,22 @@ class Collector(object):
 
         # the directory that contains any files that to be transfered along with submissions
         self.incoming_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['incoming_dir'])
+
+        # the directory that can contain various forms of persistence for collections
+        self.persistence_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['persistence_dir'])
+
+        # if delete_files is True then any files copied for submission are deleted after being
+        # successfully added to the submission queue
+        # this is useful for collectors which are supposed to consume and clear the input
+        self.delete_files = delete_files
+
+        # test_mode gets set during unit testing
+        self.test_mode = test_mode
+        if self.test_mode is not None:
+            logging.info("*** COLLECTOR {} STARTED IN TEST MODE {} ***".format(self, self.test_mode))
+
+        # the total number of submissions sent to the RemoteNode objects (added to the incoming_workload table)
+        self.submission_count = 0
 
     @use_db
     def add_group(self, name, coverage, full_delivery, database, db, c):
@@ -485,13 +512,18 @@ class Collector(object):
         if not self.remote_node_groups:
             raise RuntimeError("no RemoteNodeGroup objects have been added to {}".format(self))
 
-        # make sure the incoming dir exists
-        if not os.path.isdir(self.incoming_dir):
-            try:
-                os.makedirs(self.incoming_dir)
-            except Exception as e:
-                logging.critical("unable to create incoming dir {}: {}".format(self.incoming_dir, e))
-                sys.exit(1)
+        # create any required directories
+        for dir_path in [ self.incoming_dir, self.persistence_dir ]:
+            if not os.path.isdir(dir_path):
+                try:
+                    logging.info("creating directory {}".format(dir_path))
+                    os.makedirs(dir_path)
+                except Exception as e:
+                    logging.critical("unable to create director {}: {}".format(dir_path, e))
+                    sys.exit(1)
+
+        # give subclasses a chance to do something before the main loop starts
+        self.initialize()
 
         self.collection_thread = threading.Thread(target=self.loop, name="Collector")
         self.collection_thread.start()
@@ -499,6 +531,9 @@ class Collector(object):
         # start the node groups
         for group in self.remote_node_groups:
             group.start()
+
+    def initialize(self):
+        pass
 
     def stop(self):
         self.shutdown_event.set()
@@ -533,7 +568,14 @@ class Collector(object):
 
     @use_db
     def execute(self, db, c):
-        next_submission = self.get_next_submission()
+
+        if self.test_mode == TEST_MODE_STARTUP:
+            next_submission = None
+        elif self.test_mode == TEST_MODE_SINGLE_SUBMISSION and self.submission_count > 0:
+            next_submission = None
+        else:
+            next_submission = self.get_next_submission()
+
         # did we not get anything to submit?
         if next_submission is None:
             # wait a second before we check again... TODO make the wait optional
@@ -583,11 +625,14 @@ class Collector(object):
             raise e
 
         # all is well -- delete the files we've copied into our incoming directory
-        for f in next_submission.files:
-            try:
-                os.remove(f)
-            except Exception as e:
-                logging.error("unable to delete file {}: {}".format(f, e))
+        if self.delete_files:
+            for f in next_submission.files:
+                try:
+                    os.remove(f)
+                except Exception as e:
+                    logging.error("unable to delete file {}: {}".format(f, e))
+
+        self.submission_count += 1
 
     def insert_workload(self, db, c, next_submission):
         c.execute("INSERT INTO incoming_workload ( mode, work ) VALUES ( %s, %s )",
