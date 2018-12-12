@@ -795,8 +795,58 @@ start_api_parser.add_argument('args', nargs=argparse.REMAINDER,
     help="Parameters to pass to the API command shell.")
 start_api_parser.set_defaults(func=start_api)
 
+
 # ============================================================================
-# start Carbon Black Binary Processor
+# start/stop the primary ACE engine
+#
+
+def ace(args):
+
+    from saq.engine import Engine
+    from saq.error import report_exception
+    from saq.process_server import initialize_process_server
+
+    daemon_name = 'ace'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {0}".format(daemon_name))
+            daemonize(daemon_name)
+
+        initialize_process_server()
+
+        try:
+            engine = Engine()
+            engine.start()
+            engine.wait()
+        except KeyboardInterrupt as e:
+            logging.info("caught user interrupt")
+            try:
+                engine.stop()
+                engine.wait()
+            except Exception as e:
+                logging.error("uncaught exception: {}".format(e))
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# ace-engine
+ace_engine_parser = subparsers.add_parser('ace-engine',
+    help="Start/Stop the Analysis Correlation Engine")
+ace_engine_parser.set_defaults(func=ace)
+
+# ============================================================================
+# start carbon black binary processor
 #
 
 def carbon_black(args):
