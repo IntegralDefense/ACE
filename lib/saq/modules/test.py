@@ -520,3 +520,22 @@ class ForcedDetectionTestAnalyzer(AnalysisModule):
         analysis = self.create_analysis(observable)
         observable.add_detection_point("test")
         return True
+
+class CloudphishDelayedTestAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class CloudphishDelayedTestAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_URL
+
+    @property
+    def generated_analysis_type(self):
+        return CloudphishDelayedTestAnalysis
+
+    def execute_analysis(self, url):
+        analysis = self.create_analysis(url)
+        # cause a timeout in the cloudphish test
+        time.sleep(5)
+        return True

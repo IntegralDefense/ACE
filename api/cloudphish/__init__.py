@@ -87,7 +87,6 @@ def download():
             return "Unknown URL", 404
 
         sha256_content = row[0]
-        logging.info("MARKER: {}".format(sha256_content))
 
     content_metadata = get_content_metadata(sha256_content)
     if not content_metadata:
