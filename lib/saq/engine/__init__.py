@@ -100,7 +100,7 @@ class Worker(object):
     def wait(self):
         while True:
             logging.info("waiting for {}...".format(self.process))
-            self.process.join(1)
+            self.process.join(5)
             if not self.process.is_alive():
                 return
 
@@ -222,7 +222,7 @@ class WorkerManager(object):
     def wait(self):
         while True:
             logging.info("waiting for {}".format(self.process))
-            self.process.join(5)
+            self.process.join(10)
             if not self.process.is_alive():
                 break
             
@@ -235,19 +235,20 @@ class WorkerManager(object):
         logging.info("worker manager started on pid {}".format(os.getpid()))
 
         # load the workers
-        for key in CURRENT_ENGINE.config.keys():
-            if key.startswith('analysis_pool_size_'):
-                mode = key[len('analysis_pool_size_'):]
-
-                for i in range(CURRENT_ENGINE.config.getint(key)):
-                    self.add_worker(mode)
+        for mode in CURRENT_ENGINE.analysis_pools.keys():
+            for i in range(CURRENT_ENGINE.analysis_pools[mode]):
+                self.add_worker(mode)
 
         # do we NOT have any defined analysis pools?
         if len(self.workers) == 0:
+            pool_count = cpu_count()
+            if CURRENT_ENGINE.pool_size_limit is not None and pool_count > CURRENT_ENGINE.pool_size_limit:
+                pool_count = CURRENT_ENGINE.pool_size_limit
+                
             logging.info("no analysis pools defined -- defaulting to {} workers assigned to any pool".format(
-                         cpu_count()))
+                        pool_count))
 
-            for core in range(cpu_count()):
+            for core in range(pool_count):
                 self.add_worker()
 
         # go ahead and start the workers for the first time
@@ -308,7 +309,15 @@ class Engine(object):
     # INITIALIZATION
     # ------------------------------------------------------------------------
 
-    def __init__(self, name='ace'):
+    def __init__(self, name='ace', local_analysis_modes=None, 
+                                   analysis_pools=None, 
+                                   pool_size_limit=None, 
+                                   default_analysis_mode=None):
+
+        assert local_analysis_modes is None or isinstance(local_analysis_modes, list)
+        assert analysis_pools is None or isinstance(analysis_pools, dict)
+        assert pool_size_limit is None or (isinstance(pool_size_limit, int) and pool_size_limit > 0)
+        assert default_analysis_mode is None or (isinstance(default_analysis_mode, str) and default_analysis_mode)
 
         global CURRENT_ENGINE
         CURRENT_ENGINE = self
@@ -351,6 +360,12 @@ class Engine(object):
         # used to start and stop the workers
         self.worker_control_event = Event()
 
+        # a list of analysis modules to enable specified by configuration section names
+        # this is typically used in unit testing
+        # if this list is not empty then ONLY these modules will be loaded regardless of configuration settings
+        self.locally_enabled_modules = []
+        self.locally_mapped_analysis_modes = {} # key = analysis_mode, value = set(config section names)
+
         # the modules that will perform the analysis
         self.analysis_modules = []
 
@@ -360,35 +375,45 @@ class Engine(object):
         # a mapping of analysis module configuration section headers to the load analysis modules
         self.analysis_module_mapping = {} # key = analysis_module_blah, value = AnalysisModule
 
-        # the list of analysis modes this engine will work on
+        # the list of analysis modes this engine supports
         # if this list is empty then it will work on any analysis mode
-        self.local_analysis_modes = [_.strip() for _ in self.config['local_analysis_modes'].split(',') if _]
+        # if the analysis_modes parameter is passed to the constructor then we use that instead
+        if local_analysis_modes is not None:
+            self.local_analysis_modes = local_analysis_modes
+        else:
+            self.local_analysis_modes = [_.strip() for _ in self.config['local_analysis_modes'].split(',') if _]
 
-        # the default analysis mode for RootAnalysis objects assigned to invalid analysis modes
-        self.default_analysis_mode = self.config['default_analysis_mode']
+        # load the analysis pool settings
+        # if we specified analysis_pools on the constructor then we use that instead
+        self.analysis_pools = {} # key = analysis_mode, value = int (count)
+        if analysis_pools is not None:
+            for analysis_mode in analysis_pools.keys():
+                self.add_analysis_pool(analysis_mode, analysis_pools[analysis_mode])
+        else:
+            self.analysis_pools = {}
+            for key in self.config.keys():
+                if not key.startswith('analysis_pool_size_'):
+                    continue
+
+                analysis_mode = key[len('analysis_pool_size_'):]
+                self.add_analysis_pool(analysis_mode, self.config.getint(key))
+
+        # the maximum size of the analysis pool if no analysis pools are defined
+        # default is None which means to use the cpu_count 
+        self.pool_size_limit = pool_size_limit
+
+        # the default analysis mode for RootAnalysis objects assigned to invalid (unknown) analysis modes
+        self._default_analysis_mode = None
+        # if we pass this in on the constructor we use that instead of what is in the configuration file
+        if default_analysis_mode is not None:
+            self.default_analysis_mode = default_analysis_mode
+        else:
+            self.default_analysis_mode = self.config['default_analysis_mode']
+
         # make sure this analysis mode is valid
         if 'analysis_mode_{}'.format(self.default_analysis_mode) not in saq.CONFIG:
             logging.critical("engine.default_analysis_mode value {} invalid (no such analysis mode defined)".format(
                               self.default_analysis_mode))
-
-        # and make sure we actually support this analysis mode locally
-        # if we don't when we issue a warning and support it
-        if self.local_analysis_modes:
-            if self.default_analysis_mode not in self.local_analysis_modes:
-                logging.warning("engine.default_analysis_mode is {} but is not listed in engine.local_analysis_modes".format(
-                                self.default_analysis_mode))
-                self.local_analysis_modes.append(self.default_analysis_mode)
-
-            # enumerate analysis pool and make sure we support the modes locally that we specify in the pools
-            for key in self.config.keys():
-                if key.startswith('analysis_pool_size_'):
-                    mode = key[len('analysis_pool_size_'):]
-
-                    # make sure we support this mode locally
-                    if mode not in self.local_analysis_modes:
-                        logging.warning("engine.{} specified but {} not in engine.local_analysis_modes".format(
-                                        key, mode))
-                        self.local_analysis_modes.append(mode)
 
         # things we do *not* want to analyze
         self.observable_exclusions = {} # key = o_type, value = [] of values
@@ -457,6 +482,14 @@ class Engine(object):
         # by default is is None which means the engine will process anything that does NOT have an exclusive_uuid
         self.exclusive_uuid = None
 
+        # we keep track of the invalid analysis modes we've seen so we don't warn about them a lot
+        self.invalid_analysis_modes_detected = set()
+
+        # when analysis fails (entirely) we record the details in the error_reports directory
+        # if this flag is True then we also save a copy of the RootAnalysis data structure as well
+        # NOTE this can take a lot of disk space
+        self.copy_analysis_on_error = False
+
     def __str__(self):
         return "Engine ({})".format(saq.SAQ_NODE)
 
@@ -473,6 +506,48 @@ class Engine(object):
         local."""
 
         return self.exclusive_uuid is not None
+
+    def enable_module(self, config_section, analysis_mode=None):
+        """Enables the module specified by the configuration section name.
+           Modules that are enabled this way are the ONLY modules that are loaded for the Engine.
+           If analysis_mode is not None then the module is also added to the given analysis mode
+           This is typically only used by unit tests."""
+
+        self.locally_enabled_modules.append(config_section)
+        if analysis_mode is not None:
+            if analysis_mode not in self.locally_mapped_analysis_modes:
+                self.locally_mapped_analysis_modes[analysis_mode] = set()
+            self.locally_mapped_analysis_modes[analysis_mode].add(config_section)
+
+    def add_analysis_pool(self, analysis_mode, count):
+        """Adds the given analysis pool to the engine with the given prioriy
+           mode and number of processes for the pool."""
+
+        # if a pool is specified for a mode that is not supported by this engine
+        # then we warn and ignore it
+        if self.local_analysis_modes and analysis_mode not in self.local_analysis_modes:
+            logging.critical("attempted to add analysis pool for mode {} " \
+                            "which is not supported by this engine ({})".format(
+                            analysis_mode, self.local_analysis_modes))
+            return
+
+        self.analysis_pools[analysis_mode] = count
+        logging.debug("added analysis pool mode {} count {}".format(analysis_mode, count))
+
+    @property
+    def default_analysis_mode(self):
+        return self._default_analysis_mode
+
+    @default_analysis_mode.setter
+    def default_analysis_mode(self, value):
+        # if we're controlling which analysis modes we support then we need to make sure we support the default
+        if self.local_analysis_modes:
+            if value not in self.local_analysis_modes:
+                logging.debug("added default analysis mode {} to list of supported modes".format(value))
+                self.local_analysis_modes.append(value)
+
+        self._default_analysis_mode = value
+        logging.debug("set default analysis mode to {}".format(value))
 
     @property
     @use_db
@@ -586,26 +661,116 @@ class Engine(object):
         self.analysis_modules = []
 
         # the mapping of analysis mode to the list of analysis modules that should run for that mode
-        self.analysis_mode_mapping = {}
+        self.analysis_mode_mapping = {} # key = analysis_mode, value = list(analysis modules)
+        # NOTE inititally set() is used to prevent duplicates, later that is turned into a list
 
         # quick mapping of analysis module section name to the loaded AnalysisModule
-        self.analysis_module_mapping = {} # key = analysis_module_name, value = AnalysisModule
+        self.analysis_module_mapping = {} # key = config_section_name, value = AnalysisModule
 
+        # assign the analysis_modes to the analysis modules that should run in them
         for section in saq.CONFIG.sections():
-            if not section.startswith('analysis_module_'):
-                continue
+            if section.startswith('analysis_mode_'):
+                mode = section[len('analysis_mode_'):]
+                # make sure every analysis mode defines cleanup
+                if 'cleanup' not in saq.CONFIG[section]:
+                    logging.critical("{} missing cleanup key in configuration file".format(section))
 
-            # is this module in the list of disabled modules?
-            # these are always disabled regardless of any other setting
-            if section in saq.CONFIG['disabled_modules'] and saq.CONFIG['disabled_modules'].getboolean(section):
-                logging.debug("{} is disabled".format(section))
-                continue
+                # is this mode supported by this engine?
+                if self.local_analysis_modes and mode not in self.local_analysis_modes:
+                    logging.info("analysis mode {} is not supported by the engine (only supports {})".format(
+                                 mode, self.local_analysis_modes))
+                    continue
 
-            # is this module disabled globally?
-            # modules that are disable globally are not used anywhere
-            if not saq.CONFIG.getboolean(section, 'enabled'):
-                logging.debug("analysis module {} disabled (globally)".format(section))
-                continue
+                self.analysis_mode_mapping[mode] = set()
+
+                # iterate each module group this mode uses
+                for group_name in [_.strip() for _ in saq.CONFIG[section]['module_groups'].split(',') if _.strip()]:
+                    group_section = 'module_group_{}'.format(group_name)
+                    if group_section not in saq.CONFIG:
+                        logging.critical("{} defines invalid module group {}".format(section, group_name))
+                        continue
+
+                    # add each analysis module this group specifies to this mode
+                    for module_section in saq.CONFIG[group_section].keys():
+                        # make sure this is in the configuration
+                        if module_section not in saq.CONFIG:
+                            logging.critical("{} references invalid analysis module {}".format(
+                                             group_section, module_section))
+                            continue
+                            
+                        #if module_section not in self.analysis_module_mapping:
+                            #logging.debug("{} specified for {} but is disabled globally".format(
+                                          #module_section, group_section))
+                            #continue
+
+                        self.analysis_mode_mapping[mode].add(module_section)
+                        #logging.info("added {} to {}".format(module_section, section))
+
+                # and then add any other modules specified for this mode (besides the groups)
+                # NOTE this can also disable individual modules specified in
+                # groups by setting the value to "no" instead of "yes"
+                for key_name in saq.CONFIG[section].keys():
+                    if not key_name.startswith('analysis_module_'):
+                        continue
+
+                    analysis_module_name = key_name[len('analysis_module_'):]
+                    # make sure this is in the configuration
+                    if key_name not in saq.CONFIG:
+                        logging.critical("{} references invalid analysis module {}".format(section, analysis_module_name))
+                        continue
+
+                    # are we adding or removing?
+                    if saq.CONFIG[section].getboolean(key_name):
+                        self.analysis_mode_mapping[mode].add(key_name)
+                        #logging.info("added {} to {}".format(analysis_module_name, section))
+                    else:
+                        if key_name in self.analysis_mode_mapping[mode]:
+                            self.analysis_mode_mapping[mode].discard(key_name)
+                            #logging.debug("removed {} from analysis mode {}".format(analysis_module_name, mode))
+
+                # same for locally (manually) mapped ones
+                if mode in self.locally_mapped_analysis_modes:
+                    for analysis_module_section in self.locally_mapped_analysis_modes[mode]:
+                        logging.debug("manual map for mode {} to {}".format(mode, analysis_module_section))
+                        self.analysis_mode_mapping[mode].add(analysis_module_section)
+
+        # at this point self.analysis_mode_mapping[mode] each contain a list of
+        # analysis module config sections names to load
+
+        # get a list of all the analysis modules that should be loaded for the
+        # modes specified in the configuration file
+        analysis_module_sections = set()
+        for mode in self.analysis_mode_mapping.keys():
+            for section in self.analysis_mode_mapping[mode]:
+                analysis_module_sections.add(section)
+
+        # this is overridden by locally enabled modules
+        for section in self.locally_enabled_modules:
+            analysis_module_sections.add(section)
+
+        logging.debug("loading {} analysis modules...".format(len(analysis_module_sections)))
+
+        for section in analysis_module_sections:
+            # if there no locally enabled modules then check configuration
+            # settings for which modules are enabled/disabled
+            if not self.locally_enabled_modules:
+
+                # is this module in the list of disabled modules?
+                # these are always disabled regardless of any other setting
+                if section in saq.CONFIG['disabled_modules'] and saq.CONFIG['disabled_modules'].getboolean(section):
+                    logging.debug("{} is disabled".format(section))
+                    continue
+
+                # is this module disabled globally?
+                # modules that are disable globally are not used anywhere
+                if not saq.CONFIG.getboolean(section, 'enabled'):
+                    logging.debug("analysis module {} disabled (globally)".format(section))
+                    continue
+
+            else:
+                # otherwise check to see if this module is enabled locally
+                if section not in self.locally_enabled_modules:
+                    continue
 
             module_name = saq.CONFIG[section]['module']
             try:
@@ -660,66 +825,25 @@ class Engine(object):
 
             logging.info("loaded analysis module from {}".format(section))
 
-        # now assign the analysis_modes to the analysis modules that should run in them
-        for section in saq.CONFIG.sections():
-            if section.startswith('analysis_mode_'):
-                mode = section[len('analysis_mode_'):]
-                # make sure every analysis mode defines cleanup
-                if 'cleanup' not in saq.CONFIG[section]:
-                    logging.critical("{} missing cleanup key in configuration file".format(section))
+        # for each analysis mode mapping, remap the list of analysis module configuration sections names
+        # to the actual loaded modules
+        for mode in self.analysis_mode_mapping.keys():
+            self.analysis_mode_mapping[mode] = [self.analysis_module_mapping[s] 
+                                                for s in self.analysis_mode_mapping[mode]
+                                                if s in self.analysis_module_mapping]
 
-                self.analysis_mode_mapping[mode] = []
+            # TODO check for unit testing first
+            func = logging.debug
+            #if not self.analysis_mode_mapping[mode]:
+                #func = logging.warning
 
-                # iterate each module group this mode uses
-                for group_name in [_.strip() for _ in saq.CONFIG[section]['module_groups'].split(',') if _.strip()]:
-                    group_section = 'module_group_{}'.format(group_name)
-                    if group_section not in saq.CONFIG:
-                        logging.critical("{} defines invalid module group {}".format(section, group_name))
-                        continue
-
-                    # add each analysis module this group specifies to this mode
-                    for module_section in saq.CONFIG[group_section].keys():
-                        # make sure this is in the configuration
-                        if module_section not in saq.CONFIG:
-                            logging.critical("{} references invalid analysis module {}".format(
-                                             group_section, module_section))
-                            continue
-                            
-                        if module_section not in self.analysis_module_mapping:
-                            logging.debug("{} specified for {} but is disabled globally".format(
-                                          module_section, group_section))
-                            continue
-
-                        self.analysis_mode_mapping[mode].append(self.analysis_module_mapping[module_section])
-                        logging.info("added {} to {}".format(module_section, section))
-
-                # and then add any other modules specified for this mode (besides the groups)
-                # NOTE this can also disable individual modules specified in
-                # groups by setting the value to "no" instead of "yes"
-                for key_name in saq.CONFIG[section].keys():
-                    if key_name.startswith('analysis_module_'):
-                        analysis_module_name = key_name[len('analysis_module_'):]
-                        # make sure this is in the configuration
-                        if key_name not in saq.CONFIG:
-                            logging.critical("{} references invalid analysis module {}".format(section, analysis_module_name))
-                            continue
-
-                        # make sure the module was loaded
-                        if key_name not in self.analysis_module_mapping:
-                            logging.debug("{} specified for {} but is disabled globally".format(
-                                           analysis_module_name, section))
-                            continue
-
-                        # are we adding or removing?
-                        if saq.CONFIG[section].getboolean(key_name):
-                            self.analysis_mode_mapping[mode].append(self.analysis_module_mapping[key_name])
-                            logging.info("added {} to {}".format(analysis_module_name, section))
-                        else:
-                            if self.analysis_module_mapping[key_name] in self.analysis_mode_mapping[mode]:
-                                self.analysis_mode_mapping[mode].remove(self.analysis_module_mapping[key_name])
-                                logging.debug("removed {} from analysis mode {}".format(analysis_module_name, mode))
+            func("analysis mode {} has {} modules loaded".format(mode, len(self.analysis_mode_mapping[mode])))
 
         logging.debug("finished loading {} modules".format(len(self.analysis_modules)))
+
+        for mode in self.analysis_mode_mapping.keys():
+            for _module in self.analysis_mode_mapping[mode]:
+                logging.info("mode {} activated module {}".format(mode, _module))
 
     #
     # MAINTENANCE
@@ -817,7 +941,7 @@ class Engine(object):
 
     def stop(self):
         """Immediately stop the engine."""
-        logging.warning("stopping {} NOW".format(self))
+        logging.info("stopping {} NOW".format(self))
         self.immediate_event.set()
 
     def controlled_stop(self):
@@ -1062,7 +1186,7 @@ class Engine(object):
         try:
             while True:
                 if self.sigterm_received:
-                    logging.warning("recevied SIGTERM -- shutting down")
+                    logging.info("recevied SIGTERM -- shutting down")
                     self.stop()
                     break
 
@@ -1592,20 +1716,21 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 report_exception()
 
         # if analysis failed, copy all the details to error_reports for review
-        error_report_stats_dir = None
-        if error_report_path and os.path.isdir(self.root.storage_dir):
-            analysis_dir = '{}.ace'.format(error_report_path)
-            try:
-                shutil.copytree(self.root.storage_dir, analysis_dir)
-                logging.warning("copied analysis from {} to {} for review".format(self.root.storage_dir, analysis_dir))
-            except Exception as e:
-                logging.error("unable to copy from {} to {}: {}".format(self.root.storage_dir, analysis_dir, e))
+        if self.copy_analysis_on_error:
+            error_report_stats_dir = None
+            if error_report_path and os.path.isdir(self.root.storage_dir):
+                analysis_dir = '{}.ace'.format(error_report_path)
+                try:
+                    shutil.copytree(self.root.storage_dir, analysis_dir)
+                    logging.info("copied analysis from {} to {} for review".format(self.root.storage_dir, analysis_dir))
+                except Exception as e:
+                    logging.error("unable to copy from {} to {}: {}".format(self.root.storage_dir, analysis_dir, e))
 
-            try:
-                error_report_stats_dir = os.path.join(analysis_dir, 'stats')
-                os.mkdir(error_report_stats_dir)
-            except Exception as e:
-                logging.error("unable to create error reporting stats dir {}: {}".format(error_report_stats_dir, e))
+                try:
+                    error_report_stats_dir = os.path.join(analysis_dir, 'stats')
+                    os.mkdir(error_report_stats_dir)
+                except Exception as e:
+                    logging.error("unable to create error reporting stats dir {}: {}".format(error_report_stats_dir, e))
 
         # save module execution time metrics
         try:
@@ -1639,9 +1764,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 with open(os.path.join(subdir_name, '{}.stats'.format(key)), 'a') as fp:
                     fp.write(output_line)
 
-                if error_report_stats_dir:
-                    with open(os.path.join(error_report_stats_dir, '{}.stats'.format(key)), 'a') as fp:
-                        fp.write(output_line)
+                #if error_report_stats_dir:
+                    #with open(os.path.join(error_report_stats_dir, '{}.stats'.format(key)), 'a') as fp:
+                        #fp.write(output_line)
 
         except Exception as e:
             logging.error("unable to record statistics: {}".format(e))
@@ -1650,16 +1775,20 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         return
 
     def get_analysis_modules_by_mode(self, analysis_mode):
-        """Returns the list of analysis modules configured for the given mode."""
+        """Returns the list of analysis modules configured for the given mode sorted alphabetically by configuration section name."""
         if analysis_mode is None:
-            return self.analysis_mode_mapping[self.default_analysis_mode]
+            result = self.analysis_mode_mapping[self.default_analysis_mode]
         else:
             try:
-                return self.analysis_mode_mapping[analysis_mode]
+                result = self.analysis_mode_mapping[analysis_mode]
             except KeyError:
-                logging.warning("invalid analysis mode {} - defaulting to {}".format(
-                                analysis_mode, self.default_analysis_mode))
-                return self.analysis_mode_mapping[self.default_analysis_mode]
+                if analysis_mode not in self.invalid_analysis_modes_detected:
+                    logging.warning("invalid analysis mode {} - defaulting to {}".format(
+                                    analysis_mode, self.default_analysis_mode))
+                    self.invalid_analysis_modes_detected.add(analysis_mode)
+                result = self.analysis_mode_mapping[self.default_analysis_mode]
+
+        return sorted(result, key=lambda x: x.config_section)
 
     # ------------------------------------------------------------------------
     # This is the main processing loop of analysis in ACE.

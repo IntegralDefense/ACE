@@ -189,7 +189,7 @@ class RemoteConnection(object):
                 # have we read enough bytes to start writing to file?
                 if self.stderr_fp is None and bytes_read > STDERR_BYTE_LIMIT:
                     logging.debug("switch to file storage for stderr")
-                    self.stderr_fp = tempfile.TemporaryFile(suffix='stderr_', dir=saq.CONFIG['global']['tmp_dir'])
+                    self.stderr_fp = tempfile.TemporaryFile(suffix='stderr_', dir=saq.TEMP_DIR)
 
                 # we are writing to file at this point?
                 if self.stderr_fp:

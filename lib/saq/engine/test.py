@@ -25,9 +25,9 @@ from saq.observables import create_observable
 from saq.test import *
 from saq.util import storage_dir_from_uuid
 
-class EngineTestCase(ACEEngineTestCase):
+class TestCase(ACEEngineTestCase):
 
-    def test_engine_controlled_stop(self):
+    def test_controlled_stop(self):
 
         engine = Engine()
 
@@ -39,7 +39,7 @@ class EngineTestCase(ACEEngineTestCase):
             engine.stop()
             engine.wait()
 
-    def test_engine_immediate_stop(self):
+    def test_immediate_stop(self):
 
         engine = Engine()
 
@@ -51,7 +51,7 @@ class EngineTestCase(ACEEngineTestCase):
             engine.stop()
             engine.wait()
 
-    def test_engine_signal_terminate(self):
+    def test_signal_terminate(self):
 
         engine = Engine()
 
@@ -72,9 +72,9 @@ class EngineTestCase(ACEEngineTestCase):
             engine.stop()
             engine.wait()
 
-    def test_engine_single_process(self):
-        """Test starting and stopping in single-process mode."""
+    def test_single_process(self):
 
+        # test starting and stopping in single-process mode
         engine = Engine()
 
         try:
@@ -83,12 +83,14 @@ class EngineTestCase(ACEEngineTestCase):
             pass
 
     def test_engine_default_pools(self):
-        """Test starting with no analysis pools defined."""
+
+        # test starting with no analysis pools defined
         engine = Engine()
         engine.start()
         engine.stop()
         engine.wait()
 
+        # we should see this log message
         regex = re.compile(r'no analysis pools defined -- defaulting to (\d+) workers assigned to any pool')
         results = search_log_regex(regex)
         self.assertEquals(len(results), 1)
@@ -143,8 +145,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertIsInstance(_is_local, int)
         self.assertEquals(_is_local, 1)
 
-    def test_engine_analysis_modes(self):
-        """Tests analysis mode module loading."""
+    def test_analysis_modes(self):
 
         engine = TestEngine()
         engine.initialize()
@@ -173,13 +174,13 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(len(engine.analysis_mode_mapping['test_disabled']), 4)
         self.assertTrue('analysis_module_basic_test' not in [m.config_section for m in engine.analysis_mode_mapping['test_disabled']])
 
-    def test_engine_single_process_analysis(self):
+    def test_single_process_analysis(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
-        root.analysis_mode = 'test_empty'
+        root.analysis_mode = 'test_single'
         root.save()
         root.schedule()
 
@@ -195,19 +196,18 @@ class EngineTestCase(ACEEngineTestCase):
         analysis = observable.get_analysis(BasicTestAnalysis)
         self.assertIsNotNone(analysis)
 
-    def test_engine_multi_process_analysis(self):
+    def test_multi_process_analysis(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
-        root.analysis_mode = 'test_empty'
+        root.analysis_mode = 'test_single'
         root.save()
         root.schedule()
 
         engine = TestEngine()
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -219,11 +219,10 @@ class EngineTestCase(ACEEngineTestCase):
         analysis = observable.get_analysis(BasicTestAnalysis)
         self.assertIsNotNone(analysis)
 
-    def test_engine_missing_analysis_mode(self):
+    def test_missing_analysis_mode(self):
 
-        # we're not setting the analysis mode here
         root = create_root_analysis(uuid=str(uuid.uuid4()))
-        root.analysis_mode = None
+        root.analysis_mode = None # <-- no analysis mode here
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
@@ -231,13 +230,13 @@ class EngineTestCase(ACEEngineTestCase):
         root.schedule()
 
         engine = TestEngine()
+        engine.default_analysis_mode = 'test_single' # <-- default to test_single
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()
 
-        # the analysis mode should default to test_empty
+        # the analysis mode should default to test_single
         root = RootAnalysis(storage_dir=root.storage_dir)
         root.load()
         self.assertIsNone(root.analysis_mode)
@@ -247,19 +246,24 @@ class EngineTestCase(ACEEngineTestCase):
         analysis = observable.get_analysis(BasicTestAnalysis)
         self.assertIsNotNone(analysis)
 
-    def test_engine_invalid_analysis_mode(self):
+    def test_invalid_analysis_mode(self):
+
+        # an invalid analysis mode happens when you submit an analysis to an engine
+        # that supports any analysis mode but doesn't have any configuration settings
+        # for the one that was submitted
+        # in that case we use the default_analysis_mode
 
         # we're setting the analysis mode to an invalid value
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='invalid')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='foobar')
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
+        engine = TestEngine(local_analysis_modes=[])
+        engine.default_analysis_mode = 'test_single'
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -274,7 +278,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertIsNotNone(analysis)
         self.assertTrue(log_count('invalid analysis mode') > 0)
 
-    def test_engine_multi_process_multi_analysis(self):
+    def test_multi_process_multi_analysis(self):
 
         uuids = []
 
@@ -283,7 +287,7 @@ class EngineTestCase(ACEEngineTestCase):
             root.storage_dir = storage_dir_from_uuid(root.uuid)
             root.initialize_storage()
             observable = root.add_observable(F_TEST, 'test_1')
-            root.analysis_mode = 'test_empty'
+            root.analysis_mode = 'test_single'
             root.save()
             root.schedule()
             uuids.append((root.uuid, observable.id))
@@ -304,14 +308,67 @@ class EngineTestCase(ACEEngineTestCase):
             analysis = observable.get_analysis(BasicTestAnalysis)
             self.assertIsNotNone(analysis)
 
+    def test_no_enabled_modules(self):
 
-    def test_engine_no_analysis(self):
+        # by default the analysis modules specified for the unit tests are disabled (globally)
+        # so just starting up an engine should load no modules at all
+        # even though there are modules enabled for the "test_groups" analysis mode
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        self.assertEquals(log_count('loading module '), 0)
+
+    def test_globally_enabled_modules(self):
+
+        # if we globally enable ALL modules then we should see the correct modules get loaded
+        for section in saq.CONFIG.keys():
+            if not section.startswith('analysis_module_'):
+                continue
+
+            saq.CONFIG[section]['enabled'] = 'yes'
+
+        # the config file specifies test_empty,test_single,test_groups,test_disabled,test_cleanup as the 
+        # locally supported analysis modes
+        # so we should see only the modules assigned to these modes get loaded here
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # there should be 13 analysis modules loaded
+        self.assertEquals(log_count('loading module '), 13)
+
+    def test_locally_enabled_modules(self):
+        
+        # if we enable modules locally then ONLY those should get loaded
+        # first we change the config to globally enable all modules
+        for section in saq.CONFIG.keys():
+            if not section.startswith('analysis_module_'):
+                continue
+
+            saq.CONFIG[section]['enabled'] = 'yes'
+
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        # this is the only module that should get loaded
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # even though 5 are specified and globally enabled, only 1 is loaded
+        self.assertEquals(log_count('loading module '), 1)
+        self.assertEquals(log_count('loading module analysis_module_basic_test'), 1)
+
+    def test_no_analysis(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
+        # this test should return False instead of an Analysis
         observable = root.add_observable(F_TEST, 'test_2')
-        root.analysis_mode = 'test_empty'
+        root.analysis_mode = 'test_single'
         root.save()
         root.schedule()
 
@@ -327,12 +384,11 @@ class EngineTestCase(ACEEngineTestCase):
 
         from saq.modules.test import BasicTestAnalysis
         
+        # so this should come back as False
         self.assertTrue(isinstance(observable.get_analysis(BasicTestAnalysis), bool))
         self.assertFalse(observable.get_analysis(BasicTestAnalysis))
 
-    def test_engine_no_analysis_no_return(self):
-        engine = TestEngine()
-        engine.enable_module('analysis_module_basic_test')
+    def test_no_analysis_no_return(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
         root.storage_dir = storage_dir_from_uuid(root.uuid)
@@ -341,6 +397,8 @@ class EngineTestCase(ACEEngineTestCase):
         root.save()
         root.schedule()
 
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -355,9 +413,12 @@ class EngineTestCase(ACEEngineTestCase):
         # execute_final_analysis defaults to returning False
         self.assertFalse(observable.get_analysis(BasicTestAnalysis))
 
-    def test_engine_delayed_analysis_single(self):
+        # you should also get a warning log
+        wait_for_log_count('is not returning a boolean value', 1, 5)
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_delayed_analysis_single(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, '0:01|0:05')
@@ -365,7 +426,6 @@ class EngineTestCase(ACEEngineTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.set_analysis_pool_size(1)
         engine.enable_module('analysis_module_test_delayed_analysis')
         engine.controlled_stop()
         engine.start()
@@ -376,17 +436,18 @@ class EngineTestCase(ACEEngineTestCase):
         root = create_root_analysis(uuid=root.uuid, storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
         analysis = root.get_observable(observable.id).get_analysis(DelayedAnalysisTestAnalysis)
+        self.assertIsNotNone(analysis)
         self.assertTrue(analysis.initial_request)
         self.assertTrue(analysis.delayed_request)
         self.assertEquals(analysis.request_count, 2)
         self.assertTrue(analysis.completed)
 
-    def test_engine_delayed_analysis_multiple(self):
+    def test_delayed_analysis_multiple(self):
 
         uuids = []
         
         for i in range(3):
-            root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+            root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
             root.storage_dir = storage_dir_from_uuid(root.uuid)
             root.initialize_storage()
             observable = root.add_observable(F_TEST, '0:01|0:05')
@@ -395,7 +456,6 @@ class EngineTestCase(ACEEngineTestCase):
             uuids.append((root.uuid, observable.id))
 
         engine = TestEngine()
-        engine.set_analysis_pool_size(2)
         engine.enable_module('analysis_module_test_delayed_analysis')
         engine.controlled_stop()
         engine.start()
@@ -412,14 +472,14 @@ class EngineTestCase(ACEEngineTestCase):
             self.assertEquals(analysis.request_count, 2)
             self.assertTrue(analysis.completed)
         
-    def test_engine_delayed_analysis_timing(self):
-        root_1 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_delayed_analysis_timing(self):
+        root_1 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root_1.initialize_storage()
         o_1 = root_1.add_observable(F_TEST, '0:04|0:10')
         root_1.save()
         root_1.schedule()
 
-        root_2 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root_2 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root_2.initialize_storage()
         o_2 = root_2.add_observable(F_TEST, '0:01|0:10')
         root_2.save()
@@ -452,9 +512,8 @@ class EngineTestCase(ACEEngineTestCase):
         
         self.assertLess(analysis_2.complete_time, analysis_1.complete_time)
 
-    def test_engine_unix_signals(self):
+    def test_unix_signals(self):
         engine = TestEngine()
-        engine.set_analysis_pool_size(1)
         engine.start()
 
         # tell ACE to reload the configuration and then reload all the workers
@@ -467,11 +526,11 @@ class EngineTestCase(ACEEngineTestCase):
         engine.wait()
 
     @track_io
-    def test_engine_io_count(self):
+    def test_io_count(self):
         self.assertEquals(_get_io_write_count(), 0)
         self.assertEquals(_get_io_read_count(), 0)
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
         root.save() 
@@ -480,8 +539,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(_get_io_write_count(), 1)
         self.assertEquals(_get_io_read_count(), 0)
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
@@ -504,11 +562,11 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(_get_io_read_count(), 3) 
 
     @track_io
-    def test_engine_delayed_analysis_io_count(self):
+    def test_delayed_analysis_io_count(self):
         self.assertEquals(_get_io_write_count(), 0)
         self.assertEquals(_get_io_read_count(), 0)
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         observable = root.add_observable(F_TEST, '00:01|00:05')
         root.save() 
@@ -517,8 +575,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(_get_io_write_count(), 1)
         self.assertEquals(_get_io_read_count(), 0)
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_test_delayed_analysis')
         engine.controlled_stop()
         engine.start()
@@ -547,7 +604,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertTrue(analysis.delayed_request)
         self.assertEquals(_get_io_read_count(), 5) 
 
-    def test_engine_autorefresh(self):
+    def test_autorefresh(self):
         saq.CONFIG['engine']['auto_refresh_frequency'] = '3'
         engine = TestEngine()
         engine.start()
@@ -555,17 +612,16 @@ class EngineTestCase(ACEEngineTestCase):
         engine.controlled_stop()
         engine.wait()
 
-    def test_engine_final_analysis(self):
+    def test_final_analysis(self):
         """Test final analysis execution."""
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test')
         root.save() 
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_test_final_analysis')
         engine.controlled_stop()
         engine.start()
@@ -584,11 +640,11 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(log_count('entering final analysis for '), 2)
 
     @track_io
-    def test_engine_final_analysis_io_count(self):
+    def test_final_analysis_io_count(self):
         self.assertEquals(_get_io_write_count(), 0)
         self.assertEquals(_get_io_read_count(), 0)
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test')
         root.save() 
@@ -597,8 +653,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(_get_io_write_count(), 1)
         self.assertEquals(_get_io_read_count(), 0)
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_test_final_analysis')
         engine.controlled_stop()
         engine.start()
@@ -609,12 +664,12 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(log_count('entering final analysis for '), 2)
 
     @track_io
-    def test_engine_final_analysis_io_count_2(self):
+    def test_final_analysis_io_count_2(self):
         """Same thing as before but we test with multiple observables."""
         self.assertEquals(_get_io_write_count(), 0)
         self.assertEquals(_get_io_read_count(), 0)
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         observable_1 = root.add_observable(F_TEST, 'test_01')
         observable_2 = root.add_observable(F_TEST, 'test_02')
@@ -624,8 +679,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(_get_io_write_count(), 1)
         self.assertEquals(_get_io_read_count(), 0)
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_test_final_analysis')
         engine.controlled_stop()
         engine.start()
@@ -636,16 +690,15 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(log_count('entering final analysis for '), 3)
 
     # ensure that post analysis is executed even if delayed analysis times out
-    def test_engine_delayed_analysis_timeout(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_delayed_analysis_timeout(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         test_observable = root.add_observable(F_TEST, '0:01|0:01')
         root.save()
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_test_delayed_analysis_timeout')
-        engine.enable_module('analysis_module_test_post_analysis')
-        engine.set_analysis_pool_size(1)
+        engine.enable_module('analysis_module_test_delayed_analysis_timeout', 'test_groups')
+        engine.enable_module('analysis_module_test_post_analysis', 'test_groups')
         engine.start()
 
         # wait for delayed analysis to time out
@@ -657,18 +710,17 @@ class EngineTestCase(ACEEngineTestCase):
         # post analysis should have executed
         self.assertEquals(log_count('execute_post_analysis called'), 1)
 
-    def test_engine_wait_for_analysis(self):
+    def test_wait_for_analysis(self):
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_1')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
-        engine.enable_module('analysis_module_test_wait_b')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_b', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -683,16 +735,15 @@ class EngineTestCase(ACEEngineTestCase):
 
         self.assertEquals(log_count("depends on"), 1)
 
-    def test_engine_wait_for_disabled_analysis(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_wait_for_disabled_analysis(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_1')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
         #engine.enable_module('analysis_module_test_wait_b')
         engine.controlled_stop()
         engine.start()
@@ -709,17 +760,16 @@ class EngineTestCase(ACEEngineTestCase):
         #self.assertEquals(log_count("requested to wait for disabled (or missing) module"), 1)
         self.clear_error_reports()
 
-    def test_engine_wait_for_analysis_circ_dep(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_wait_for_analysis_circ_dep(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_2')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
-        engine.enable_module('analysis_module_test_wait_b')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_b', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -734,17 +784,16 @@ class EngineTestCase(ACEEngineTestCase):
 
         self.assertEquals(log_count("CIRCULAR DEPENDENCY ERROR"), 1)
 
-    def test_engine_wait_for_analysis_missing_analysis(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_wait_for_analysis_missing_analysis(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_3')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
-        engine.enable_module('analysis_module_test_wait_b')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_b', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -760,18 +809,17 @@ class EngineTestCase(ACEEngineTestCase):
         # we would only see this log if A waited on B
         #self.assertEquals(log_count("did not generate analysis to resolve dep"), 1)
 
-    def test_engine_wait_for_analysis_circ_dep_chained(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_wait_for_analysis_circ_dep_chained(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_4')
         root.save()
         root.schedule()
         
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
-        engine.enable_module('analysis_module_test_wait_b')
-        engine.enable_module('analysis_module_test_wait_c')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_b', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_c', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -787,18 +835,17 @@ class EngineTestCase(ACEEngineTestCase):
 
         self.assertEquals(log_count("CIRCULAR DEPENDENCY ERROR"), 1)
 
-    def test_engine_wait_for_analysis_chained(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_wait_for_analysis_chained(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_5')
         root.save()
         root.schedule()
         
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
-        engine.enable_module('analysis_module_test_wait_b')
-        engine.enable_module('analysis_module_test_wait_c')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_b', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_c', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -814,17 +861,16 @@ class EngineTestCase(ACEEngineTestCase):
 
         self.assertEquals(log_count("CIRCULAR DEPENDENCY ERROR"), 0)
 
-    def test_engine_wait_for_analysis_delayed(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_wait_for_analysis_delayed(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_6')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
-        engine.enable_module('analysis_module_test_wait_b')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_b', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -837,24 +883,23 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertIsNotNone(test_observable.get_analysis(WaitAnalysis_A))
         self.assertIsNotNone(test_observable.get_analysis(WaitAnalysis_B))
 
-    def test_engine_wait_for_analysis_rejected(self):
+    def test_wait_for_analysis_rejected(self):
 
         from saq.modules.test import WaitAnalysis_A, WaitAnalysis_B, WaitAnalysis_C, \
                                      WaitAnalyzerModule_B
 
         
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_engine_032a')
         test_observable.exclude_analysis(WaitAnalyzerModule_B)
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_wait_a')
-        engine.enable_module('analysis_module_test_wait_b')
-        engine.enable_module('analysis_module_test_wait_c')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_wait_a', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_b', 'test_groups')
+        engine.enable_module('analysis_module_test_wait_c', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -867,16 +912,15 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertFalse(test_observable.get_analysis(WaitAnalysis_B))
         self.assertIsNotNone(test_observable.get_analysis(WaitAnalysis_C))
 
-    def test_engine_post_analysis_after_false_return(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_post_analysis_after_false_return(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_test_post_analysis')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_test_post_analysis', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -889,54 +933,54 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertFalse(test_observable.get_analysis(PostAnalysisTestResult))
         self.assertEquals(log_count('execute_post_analysis called'), 1)
 
-    def test_engine_maximum_cumulative_analysis_warning_time(self):
+    def test_maximum_cumulative_analysis_warning_time(self):
         # setting this to zero should cause it to happen right away
         saq.CONFIG['global']['maximum_cumulative_analysis_warning_time'] = '0'
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_1')
         root.save()
         root.schedule()
         
-        engine = TestEngine()
-        engine.enable_module('analysis_module_basic_test')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
         
         self.assertEquals(log_count('ACE has been analyzing'), 1)
 
-    def test_engine_maximum_cumulative_analysis_fail_time(self):
+    def test_maximum_cumulative_analysis_fail_time(self):
         # setting this to zero should cause it to happen right away
         saq.CONFIG['global']['maximum_cumulative_analysis_fail_time'] = '0'
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_1')
         root.save()
         root.schedule()
         
-        engine = TestEngine()
-        engine.enable_module('analysis_module_basic_test')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
 
         self.assertEquals(log_count('ACE took too long to analyze'), 1)
 
-    def test_engine_maximum_analysis_time(self):
+    def test_maximum_analysis_time(self):
         # setting this to zero should cause it to happen right away
         saq.CONFIG['global']['maximum_analysis_time'] = '0'
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_4')
         root.save()
         root.schedule()
         
-        engine = TestEngine()
-        engine.enable_module('analysis_module_basic_test')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -944,15 +988,15 @@ class EngineTestCase(ACEEngineTestCase):
         # will fire again in final analysis
         self.assertEquals(log_count('excessive time - analysis module'), 2)
 
-    def test_engine_is_module_enabled(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_is_module_enabled(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test')
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.enable_module('analysis_module_dependency_test')
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_dependency_test', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -968,8 +1012,7 @@ class EngineTestCase(ACEEngineTestCase):
         for key in analysis.details[KEY_FAIL].keys():
             self.assertFalse(analysis.details[KEY_FAIL][key])
 
-    def test_engine_analysis_mode_priority(self):
-        saq.CONFIG['engine']['analysis_pool_size_test_empty'] = '1'
+    def test_analysis_mode_priority(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
         root.initialize_storage()
@@ -978,14 +1021,14 @@ class EngineTestCase(ACEEngineTestCase):
         root.schedule()
         test_1_uuid = root.uuid
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_2')
         root.save()
         root.schedule()
         test_2_uuid = root.uuid
 
-        engine = TestEngine()
+        engine = TestEngine(analysis_pools={'test_groups': 1})
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
@@ -996,7 +1039,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(len(results), 2)
         self.assertEquals(results.index('got work item RootAnalysis({})'.format(test_2_uuid)), 0)
 
-    def test_engine_analysis_mode_no_priority(self):
+    def test_analysis_mode_no_priority(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
         root.initialize_storage()
@@ -1005,16 +1048,15 @@ class EngineTestCase(ACEEngineTestCase):
         root.schedule()
         test_1_uuid = root.uuid
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test_2')
         root.save()
         root.schedule()
         test_2_uuid = root.uuid
 
-        engine = TestEngine()
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -1025,10 +1067,10 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(len(results), 2)
         self.assertEquals(results.index('got work item RootAnalysis({})'.format(test_1_uuid)), 0)
 
-    def test_engine_merge(self):
+    def test_merge(self):
 
         # first analysis
-        root_1 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root_1 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root_1.initialize_storage()
         test_observable_1 = root_1.add_observable(F_TEST, 'test_1')
         existing_user_observable = root_1.add_observable(F_USER, 'admin')
@@ -1036,7 +1078,7 @@ class EngineTestCase(ACEEngineTestCase):
         root_1.schedule()
 
         # second analysis we want to merge into the first
-        root_2 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root_2 = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root_2.initialize_storage()
         test_observable_2 = root_2.add_observable(F_TEST, 'merge_test_1')
         root_2.save()
@@ -1096,23 +1138,24 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertEquals(len(instance_copy), 1)
         self.assertEquals(instance_copy[0].id, existing_observable.id)
 
-    def test_engine_error_reporting(self):
+    def test_error_reporting(self):
         # trigger the failure this way
         saq.CONFIG['global']['maximum_cumulative_analysis_fail_time'] = '0'
 
         # remember what was already in the error reporting directory
         def _enum_error_reporting():
-            return set(os.listdir(os.path.join(saq.SAQ_HOME, 'error_reports')))
+            return set(os.listdir(os.path.join(saq.DATA_DIR, 'error_reports')))
 
         existing_reports = _enum_error_reporting()
 
-        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_3')
         root.save()
         root.schedule()
 
         engine = TestEngine()
+        engine.copy_analysis_on_error = True
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
@@ -1129,7 +1172,7 @@ class EngineTestCase(ACEEngineTestCase):
         file_path = None
         dir_path = None
         for _file in new_reports:
-            path = os.path.join(os.path.join(saq.SAQ_HOME, 'error_reports', _file))
+            path = os.path.join(os.path.join(saq.DATA_DIR, 'error_reports', _file))
             if os.path.isfile(path):
                 file_path = path
             if os.path.isdir(path):
@@ -1148,7 +1191,7 @@ class EngineTestCase(ACEEngineTestCase):
         shutil.rmtree(dir_path)
         os.remove(file_path)
 
-    def test_engine_stats(self):
+    def test_stats(self):
         # clear engine statistics
         if os.path.exists(os.path.join(saq.MODULE_STATS_DIR, 'unittest')):
             shutil.rmtree(os.path.join(saq.MODULE_STATS_DIR, 'unittest'))
@@ -1178,7 +1221,7 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertGreater(os.path.getsize(os.path.join(os.path.join(saq.MODULE_STATS_DIR, 'unittest', 
                                                                      subdir, stats_files[0]))), 0)
 
-    def test_engine_exclusion(self):
+    def test_exclusion(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
@@ -1298,15 +1341,14 @@ class EngineTestCase(ACEEngineTestCase):
 
     def test_cleanup_with_delayed_analysis(self):
         # we are set to cleanup, however, we don't because we have delayed analysis
-        saq.CONFIG['analysis_mode_test_empty']['cleanup'] = 'yes'
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        saq.CONFIG['analysis_mode_test_groups']['cleanup'] = 'yes'
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         observable = root.add_observable(F_TEST, '00:01|00:05')
         root.save()
         root.schedule()
     
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(analysis_pools={'test_groups': 1})
         engine.enable_module('analysis_module_test_delayed_analysis')
         engine.controlled_stop()
         engine.start()
@@ -1317,19 +1359,15 @@ class EngineTestCase(ACEEngineTestCase):
 
     def test_local_analysis_mode_single(self):
 
-        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
-        root.analysis_mode = 'test_empty'
         root.save()
         root.schedule()
 
-        engine = TestEngine()
+        engine = TestEngine(local_analysis_modes=['test_groups'], pool_size_limit=1)
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -1343,20 +1381,22 @@ class EngineTestCase(ACEEngineTestCase):
 
     def test_local_analysis_mode_missing_default(self):
 
-        # we specify test_single as the supported local analysis mode, but the default is test_empty
-        saq.CONFIG['engine']['local_analysis_modes'] = 'test_single'
+        # when we specify a default analysis mode that is not in the locally supported modes of the engine
+        # it should automatically get added to the list of locally supported modes
 
+        # we specify test_single as the supported local analysis mode, but the default is test_empty
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
-        root.analysis_mode = 'test_empty'
+        root.analysis_mode = 'test_single'
         root.save()
         root.schedule()
 
-        engine = TestEngine()
+        engine = TestEngine(local_analysis_modes=['test_empty'], 
+                            default_analysis_mode='test_single', 
+                            pool_size_limit=1)
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -1375,46 +1415,16 @@ class EngineTestCase(ACEEngineTestCase):
 
     def test_local_analysis_mode_missing_pool(self):
 
-        # we specify test_single as the default and the local mode
-        saq.CONFIG['engine']['local_analysis_modes'] = 'test_single'
-        saq.CONFIG['engine']['default_analysis_mode'] = 'test_single'
+        # test_empty is specified as the only supported mode
+        # but we specify a pool for test_single
+        # this is a configuration error
+        engine = TestEngine(local_analysis_modes=['test_empty'], 
+                            default_analysis_mode='test_empty',
+                            analysis_pools={'test_single': 1})
 
-        # we also specify an analysis pool for test_empty
-        saq.CONFIG['engine']['analysis_pool_size_test_empty'] = '1'
-
-        root = create_root_analysis(uuid=str(uuid.uuid4()))
-        root.storage_dir = storage_dir_from_uuid(root.uuid)
-        root.initialize_storage()
-        observable = root.add_observable(F_TEST, 'test_1')
-        root.analysis_mode = 'test_empty'
-        root.save()
-        root.schedule()
-
-        engine = TestEngine()
-        engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
-        engine.controlled_stop()
-        engine.start()
-        engine.wait()
-
-        root.load()
-        observable = root.get_observable(observable.id)
-        self.assertIsNotNone(observable)
-        from saq.modules.test import BasicTestAnalysis
-        analysis = observable.get_analysis(BasicTestAnalysis)
-        self.assertIsNotNone(analysis)
-
-        # XXX - do we really need the engine process?
-        # the engine.local_analysis_modes doesn't get modified until it's running on a new process
-        wait_for_log_count('engine.analysis_pool_size_test_empty specified but test_empty not in engine.local_analysis_modes', 1, 5)
-        #self.assertEquals(len(engine.local_analysis_modes), 2)
-        #self.assertTrue('test_single' in engine.local_analysis_modes)
-        #self.assertTrue('test_empty' in engine.local_analysis_modes)
+        wait_for_log_count('attempted to add analysis pool for mode test_single which is not supported by this engine', 1, 5)
 
     def test_local_analysis_mode_not_local(self):
-
-        # we say we only support test_empty analysis modes
-        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
@@ -1425,7 +1435,8 @@ class EngineTestCase(ACEEngineTestCase):
         root.save()
         root.schedule()
 
-        engine = TestEngine()
+        # we say we only support test_empty analysis modes
+        engine = TestEngine(local_analysis_modes=['test_empty'])
         engine.enable_module('analysis_module_basic_test', 'test_empty')
         engine.controlled_stop()
         engine.start()
@@ -1435,10 +1446,6 @@ class EngineTestCase(ACEEngineTestCase):
         # but we don't support that with this engine so it shouldn't see it
 
     def test_local_analysis_mode_remote_pickup(self):
-
-        # we say we only support test_empty analysis modes
-        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
-        saq.CONFIG['engine']['analysis_pool_size_test_empty'] = '1'
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
@@ -1452,7 +1459,10 @@ class EngineTestCase(ACEEngineTestCase):
         # remember the old storage dir
         old_storage_dir = root.storage_dir
 
-        engine = TestEngine()
+        # we say we only support test_empty analysis modes
+        engine = TestEngine(local_analysis_modes=['test_empty'],
+                            analysis_pools={'test_empty': 1})
+
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
@@ -1517,10 +1527,6 @@ class EngineTestCase(ACEEngineTestCase):
         self.assertIsNotNone(row)
         other_company_id = row[0]
 
-        # we say we only support test_empty analysis modes
-        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty'
-        saq.CONFIG['engine']['analysis_pool_size_test_empty'] = '1'
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
@@ -1534,7 +1540,9 @@ class EngineTestCase(ACEEngineTestCase):
         # remember the old storage dir
         old_storage_dir = root.storage_dir
 
-        engine = TestEngine()
+        # we say we only support test_empty analysis modes
+        engine = TestEngine(local_analysis_modes=['test_empty'], 
+                            analysis_pools={'test_empty': 1})
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
@@ -1557,7 +1565,8 @@ class EngineTestCase(ACEEngineTestCase):
         saq.CONFIG['engine']['local_analysis_modes'] = 'test_single'
         saq.CONFIG['engine']['analysis_pool_size_test_single'] = '1'
 
-        engine = TestEngine()
+        engine = TestEngine(local_analysis_modes=['test_single'],
+                            analysis_pools={'test_single': 1})
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
@@ -1592,8 +1601,7 @@ class EngineTestCase(ACEEngineTestCase):
 
         # when an Engine starts up it updates the node_modes database with the list of analysis modes it locally supports
         # configure to support two modes
-        saq.CONFIG['engine']['local_analysis_modes'] = 'test_empty,test_single'
-        engine = TestEngine()
+        engine = TestEngine(local_analysis_modes=['test_empty', 'test_single'])
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -1612,8 +1620,7 @@ class EngineTestCase(ACEEngineTestCase):
 
         # when an Engine starts up it updates the node_modes database with the list of analysis modes it locally supports
         # configure to support two modes
-        saq.CONFIG['engine']['local_analysis_modes'] = ''
-        engine = TestEngine()
+        engine = TestEngine(local_analysis_modes=[])
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -1737,17 +1744,15 @@ class EngineTestCase(ACEEngineTestCase):
 
     def test_threaded_analysis_module(self):
         
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
-        root.analysis_mode = 'test_empty'
         root.save()
         root.schedule()
 
-        engine = TestEngine()
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_threaded_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         # we should see this execute at least once
@@ -1756,20 +1761,18 @@ class EngineTestCase(ACEEngineTestCase):
 
     def test_threaded_analysis_module_broken(self):
         
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
-        root.analysis_mode = 'test_empty'
         root.save()
         root.schedule()
 
         # have this fail after 1 second of waiting
         saq.EXECUTION_THREAD_LONG_TIMEOUT = 1
 
-        engine = TestEngine()
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_threaded_test_broken')
-        engine.set_analysis_pool_size(1)
         engine.start()
         wait_for_log_count('is not stopping', 1, 6)
         wait_for_log_count('failing to stop - process dying', 1, 10)
@@ -1779,17 +1782,15 @@ class EngineTestCase(ACEEngineTestCase):
     def test_engine_worker_recovery(self):
         
         # make sure the engine detects dead workers and replaces them
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_worker_death')
-        root.analysis_mode = 'test_empty'
         root.save()
         root.schedule()
         
-        engine = TestEngine()
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.start()
         # we should see it die
         wait_for_log_count('detected death of', 1, 5)
@@ -1803,10 +1804,9 @@ class EngineTestCase(ACEEngineTestCase):
 
         exclusive_uuid = str(uuid.uuid4())
         
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
-        root.analysis_mode = 'test_empty'
         root.save()
         root.schedule(exclusive_uuid)
 
@@ -1817,9 +1817,8 @@ class EngineTestCase(ACEEngineTestCase):
         
         # this engine should NOT process the work item
         # since the exclusive_uuid is NOT set
-        engine = TestEngine()
+        engine = TestEngine(pool_size_limit=1)
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.start()
         # we should see this a bunch of times
         wait_for_log_count('workload.exclusive_uuid IS NULL', 3, 5)
@@ -1828,10 +1827,9 @@ class EngineTestCase(ACEEngineTestCase):
         engine.wait()
 
         # this engine should process the work item
-        engine = TestEngine()
+        engine = TestEngine(pool_size_limit=1)
         engine.exclusive_uuid = exclusive_uuid
         engine.enable_module('analysis_module_basic_test')
-        engine.set_analysis_pool_size(1)
         engine.controlled_stop()
         engine.start()
         engine.wait()

@@ -76,8 +76,11 @@ class CloudphishTestCase(TestCase):
         super().tearDown(*args, **kwargs)
         self.stop_http_server()
 
-class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase, CloudphishTestCase):
+class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 
+    #def setUp(self, *args, **kwargs):
+        #super().setUp(*args, **kwargs)
+    
     def test_http_server(self):
         # make sure our http server is working
         r = requests.get(TEST_URL)
@@ -139,16 +142,13 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase, CloudphishTestC
             self.assertTrue(key in root.details)
 
         # now we start an engine to work on cloudphish analysis
-        engine = TestEngine()
-        engine.clear_analysis_pools()
-        engine.add_analysis_pool('cloudphish', 1)
-        engine.local_analysis_modes.append('cloudphish')
-        engine.enable_module('analysis_module_crawlphish')
-        engine.enable_module('analysis_module_cloudphish_request_analyzer')
+        engine = TestEngine(analysis_pools={ANALYSIS_MODE_CLOUDPHISH: 1}, local_analysis_modes=[ANALYSIS_MODE_CLOUDPHISH])
+        engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
         # force this analysis to become an alert
-        engine.enable_module('analysis_module_forced_detection')
-        engine.enable_module('analysis_module_detection')
-        engine.enable_module('analysis_module_alert')
+        engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -313,17 +313,14 @@ class CloudphishAPITestCase(APIBasicTestCase, ACEEngineTestCase, CloudphishTestC
         result = self.client.get(url_for('cloudphish.submit', url=TEST_URL, ignore_filters='1'))
 
         # have the engine process it
-        engine = TestEngine()
-        engine.clear_analysis_pools()
-        engine.add_analysis_pool('cloudphish', 1)
-        engine.local_analysis_modes.append('cloudphish')
-        engine.enable_module('analysis_module_crawlphish')
-        engine.enable_module('analysis_module_cloudphish_request_analyzer')
+        engine = TestEngine(analysis_pools={ANALYSIS_MODE_CLOUDPHISH: 1}, local_analysis_modes=[ANALYSIS_MODE_CLOUDPHISH])
+        engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
 
         # force this analysis to become an alert
-        engine.enable_module('analysis_module_forced_detection')
-        engine.enable_module('analysis_module_detection')
-        engine.enable_module('analysis_module_alert')
+        engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()

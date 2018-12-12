@@ -16,7 +16,7 @@ class EmailCollector(Collector):
         super().__init__(delete_files=True, *args, **kwargs)
 
         # the location of the incoming emails
-        self.email_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['email']['email_dir'])
+        self.email_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['email']['email_dir'])
 
         # the list of emails that we need to process
         self.stream_list = collections.deque()

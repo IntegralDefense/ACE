@@ -6,6 +6,7 @@ import os, os.path
 import pickle
 import shutil
 
+import saq
 import saq.collectors
 
 from saq.test import *
@@ -28,6 +29,20 @@ def _clear_storage(collector):
 
 class TestCase(CollectorBaseTestCase):
 
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+
+        # make sure we have a connection to carbon black
+        import cbapi_legacy as cbapi
+        cb_url = saq.CONFIG['carbon_black']['url']
+        cb_token = saq.CONFIG['carbon_black']['token']
+        cb = cbapi.CbApi(cb_url, token=cb_token, ssl_verify=False) # XXX <-- get rid of that
+
+        try:
+            info = cb.info()
+        except Exception as e:
+            self.skipTest("carbon black not available at {}".format(cb_url))
+    
     def test_startup(self):
         collector = CarbonBlackBinaryCollector(test_mode=saq.collectors.TEST_MODE_STARTUP)
         collector.load_groups()
@@ -82,15 +97,29 @@ class TestCase(CollectorBaseTestCase):
         self.assertEquals(new_collector.current_result_count, collector.current_result_count)
 
 class EngineTestCase(CollectorBaseTestCase, ACEEngineTestCase):
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+
+        # make sure we have a connection to carbon black
+        import cbapi_legacy as cbapi
+        cb_url = saq.CONFIG['carbon_black']['url']
+        cb_token = saq.CONFIG['carbon_black']['token']
+        cb = cbapi.CbApi(cb_url, token=cb_token, ssl_verify=False) # XXX <-- get rid of that
+
+        try:
+            info = cb.info()
+        except Exception as e:
+            self.skipTest("carbon black not available at {}".format(cb_url))
+
     def test_complete_processing(self):
 
         # testing a carbon black binary analysis from start to finish
 
         self.start_api_server()
 
-        engine = TestEngine()
-        engine.clear_analysis_pools()
-        engine.add_analysis_pool('binary', 1)
+        engine = TestEngine(local_analysis_modes=['binary'], 
+                            analysis_pools={'binary': 1},
+                            default_analysis_mode='binary')
         engine.start()
 
         collector = CarbonBlackBinaryCollector(initial_search_offset=0, download_batch_size=1, 
@@ -128,9 +157,7 @@ class EngineTestCase(CollectorBaseTestCase, ACEEngineTestCase):
 
         self.start_api_server()
 
-        engine = TestEngine()
-        engine.clear_analysis_pools()
-        engine.add_analysis_pool('binary', 1)
+        engine = TestEngine(local_analysis_modes=['binary'], analysis_pools={'binary': 1})
         engine.start()
 
         collector = CarbonBlackBinaryCollector(initial_search_offset=0, download_batch_size=2)

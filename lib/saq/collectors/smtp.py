@@ -15,7 +15,7 @@ class BroSMTPStreamCollector(Collector):
         super().__init__(delete_files=True, *args, **kwargs)
 
         # the location of the incoming smtp streams
-        self.bro_smtp_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['bro']['smtp_dir'])
+        self.bro_smtp_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['bro']['smtp_dir'])
 
         # the list of streams (connection ids) that we need to process
         self.stream_list = collections.deque()

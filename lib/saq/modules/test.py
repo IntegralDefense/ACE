@@ -279,10 +279,11 @@ class FinalAnalysisTestAnalyzer(AnalysisModule):
         return F_TEST
 
     def execute_analysis(self, test):
-        pass
+        return True
 
     def execute_final_analysis(self, test):
         analysis = self.create_analysis(test)
+        return True
 
 class PostAnalysisTestResult(TestAnalysis):
     def initialize_details(self):
@@ -360,8 +361,7 @@ class WaitAnalyzerModule_A(AnalysisModule):
             return self.execute_analysis_test_engine_032a(test)
         
     def execute_analysis_01(self, test):
-        # NOTE the execution order of modules happens to (currently) be the order they are defined 
-        # in the configuration file
+        # NOTE the execution order of modules is alphabetically by the config section name of the module
         analysis = self.wait_for_analysis(test, WaitAnalysis_B)
         if not analysis:
             return False

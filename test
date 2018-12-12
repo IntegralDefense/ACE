@@ -103,13 +103,18 @@ PYTHONPATH=lib python3 -W ignore -m unittest -f -v $1
 
 if [ -f logs/unittest.log ]
 then
-    grep MARKER logs/unittest.log
+    GREP_COLORS='mt=01;103' grep --color=always \\[WARNING\\] logs/unittest.log
+    GREP_COLORS='mt=01;31' grep --color=always \\[ERROR\\] logs/unittest.log
+    GREP_COLORS='mt=01;32' grep --color=always MARKER logs/unittest.log
 fi
 
-if [ $( ls error_reports | wc -l ) -gt "0" ]
+if [ -d $data_dir/error_reports ]
 then
-    echo
-    echo "*** ERRORS REPORTED ** "
-    echo
-    cat error_reports/* 2> /dev/null
+    if [ $( ls $data_dir/error_reports | wc -l ) -gt "0" ]
+    then
+        echo
+        echo "*** ERRORS REPORTED ** "
+        echo
+        cat $data_dir/error_reports/* 2> /dev/null
+    fi
 fi

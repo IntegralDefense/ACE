@@ -100,6 +100,7 @@ class MailboxEmailAnalyzer(AnalysisModule):
     def required_directives(self):
         return [ DIRECTIVE_ORIGINAL_EMAIL ]
 
+    # TODO I think this maybe should be a post analysis thing?
     def execute_analysis(self, _file):
         # this is ONLY for analysis of type "mailbox"
         if self.root.alert_type != ANALYSIS_TYPE_MAILBOX:
@@ -111,10 +112,10 @@ class MailboxEmailAnalyzer(AnalysisModule):
         if self.root.whitelisted:
             return False
 
-        # TODO can we wait for analysis in post analysis function?
+        email_analysis = self.wait_for_analysis(_file, EmailAnalysis)
+
         analysis = self.create_analysis(_file)
 
-        email_analysis = self.wait_for_analysis(_file, EmailAnalysis)
         if email_analysis is None:
             self.root.description = '{} unparsable email'.format(MAILBOX_ALERT_PREFIX)
         else:
@@ -128,6 +129,8 @@ class MailboxEmailAnalyzer(AnalysisModule):
             # merge the email analysis into the details of the root analysis
             # XXX remove this
             self.root.details.update(email_analysis.details)
+
+        return True
 
 class BroSMTPStreamAnalysis(Analysis):
     def initialize_details(self):
@@ -1163,7 +1166,7 @@ class EmailAnalyzer(AnalysisModule):
 
             try:
                 src_path = os.path.join(self.root.storage_dir, _file.value)
-                dst_path = os.path.join(saq.SAQ_HOME, 'review', 'rfc822', str(uuid.uuid4()))
+                dst_path = os.path.join(saq.DATA_DIR, 'review', 'rfc822', str(uuid.uuid4()))
                 shutil.copy(src_path, dst_path)
             except Exception as e:
                 logging.error("unable to save file for review: {}".format(e))
@@ -2288,7 +2291,7 @@ class EmailLoggingAnalyzer(AnalysisModule):
 
         # splunk log settings
         self.splunk_log_enabled = self.config.getboolean('splunk_log_enabled')
-        self.splunk_log_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['splunk_logging']['splunk_log_dir'], 
+        self.splunk_log_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['splunk_logging']['splunk_log_dir'], 
                                            self.config['splunk_log_subdir'])
 
         # JSON log settings (for elasticsearch)
@@ -2484,7 +2487,7 @@ class EmailLoggingAnalyzer(AnalysisModule):
         if not self.json_log_enabled:
             return
 
-        target_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['elk_logging']['elk_log_dir'], 
+        target_path = os.path.join(saq.DATA_DIR, saq.CONFIG['elk_logging']['elk_log_dir'], 
                                    datetime.datetime.now().strftime(self.json_log_path_format)).format(pid=os.getpid())
 
         # has the current JSON path

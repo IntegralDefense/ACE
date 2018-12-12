@@ -971,7 +971,7 @@ class OLEVBA_Analyzer_v1_1(AnalysisModule):
         try:
 
             # we create a temporary directory to hold the output data
-            output_dir = tempfile.mkdtemp(suffix='.ole', dir=os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir']))
+            output_dir = tempfile.mkdtemp(suffix='.ole', dir=saq.TEMP_DIR)
             # keep track of these so we can remove them later
             self.output_dirs.append(output_dir)
             
@@ -1030,7 +1030,7 @@ class OLEVBA_Analyzer_v1_1(AnalysisModule):
             # remove me later... XXX
             import uuid
             _uuid = str(uuid.uuid4())
-            _path = os.path.join(saq.SAQ_HOME, 'review', 'misc', _uuid)
+            _path = os.path.join(saq.DATA_DIR, 'review', 'misc', _uuid)
             with open(_path, 'w') as fp:
                 fp.write(json_data)
 

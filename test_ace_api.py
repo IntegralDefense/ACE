@@ -13,6 +13,7 @@ import ace_api
 
 import saq
 from saq.analysis import RootAnalysis
+from saq.constants import *
 from saq.database import acquire_lock, use_db
 from saq.test import *
 from api.cloudphish.test import CloudphishTestCase, TEST_URL
@@ -21,7 +22,7 @@ from saq.util import storage_dir_from_uuid, parse_event_time
 import pytz
 import tzlocal
 
-class TestCase(ACEEngineTestCase, CloudphishTestCase):
+class TestCase(ACEEngineTestCase):
 
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
@@ -366,6 +367,8 @@ class TestCase(ACEEngineTestCase, CloudphishTestCase):
 
         self.assertTrue(os.path.exists(root.storage_dir))
 
+class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
+
     def test_cloudphish_api(self):
         import saq.cloudphish
         submission_result = ace_api.cloudphish_submit(TEST_URL)
@@ -395,16 +398,14 @@ class TestCase(ACEEngineTestCase, CloudphishTestCase):
         self.assertIsNotNone(submission_result[saq.cloudphish.KEY_UUID])
 
         # now we start an engine to work on cloudphish analysis
-        engine = TestEngine()
-        engine.clear_analysis_pools()
-        engine.add_analysis_pool('cloudphish', 1)
-        engine.local_analysis_modes.append('cloudphish')
-        engine.enable_module('analysis_module_crawlphish')
-        engine.enable_module('analysis_module_cloudphish_request_analyzer')
+        engine = TestEngine(analysis_pools={ANALYSIS_MODE_CLOUDPHISH: 1}, 
+                            local_analysis_modes=[ANALYSIS_MODE_CLOUDPHISH])
+        engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
         # force this analysis to become an alert
-        engine.enable_module('analysis_module_forced_detection')
-        engine.enable_module('analysis_module_detection')
-        engine.enable_module('analysis_module_alert')
+        engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()

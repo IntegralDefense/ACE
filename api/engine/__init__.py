@@ -40,8 +40,7 @@ def download(uuid):
     logging.info("received request to download {} to {}".format(uuid, request.remote_addr))
 
     # create the tar file we're going to send back
-    fp, path = tempfile.mkstemp(prefix="download_{}".format(uuid), suffix='.tar', 
-                                dir=os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir']))
+    fp, path = tempfile.mkstemp(prefix="download_{}".format(uuid), suffix='.tar', dir=saq.TEMP_DIR)
 
     try:
         tar = tarfile.open(fileobj=os.fdopen(fp, 'wb'), mode='w|')
@@ -119,7 +118,7 @@ def upload(uuid):
     logging.debug("target directory for {} is {}".format(uuid, target_dir))
 
     # save the tar file so we can extract it
-    fp, tar_path = tempfile.mkstemp(suffix='.tar', prefix='upload_{}'.format(uuid), dir=saq.CONFIG['global']['tmp_dir'])
+    fp, tar_path = tempfile.mkstemp(suffix='.tar', prefix='upload_{}'.format(uuid), dir=saq.TEMP_DIR)
     os.close(fp)
 
     try:
