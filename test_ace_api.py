@@ -386,7 +386,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
             self.assertTrue(key in submission_result)
 
         self.assertEquals(submission_result[saq.cloudphish.KEY_RESULT], saq.cloudphish.RESULT_OK)
-        self.assertIsNone(submission_result[saq.cloudphish.KEY_DETAILS])
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_DETAILS])
         self.assertEquals(submission_result[saq.cloudphish.KEY_STATUS], saq.cloudphish.STATUS_NEW)
         self.assertEquals(submission_result[saq.cloudphish.KEY_ANALYSIS_RESULT], saq.cloudphish.SCAN_RESULT_UNKNOWN)
         self.assertIsNone(submission_result[saq.cloudphish.KEY_HTTP_RESULT])
@@ -412,7 +412,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 
         submission_result = ace_api.cloudphish_submit(TEST_URL)
         self.assertEquals(submission_result[saq.cloudphish.KEY_RESULT], saq.cloudphish.RESULT_OK)
-        self.assertIsNone(submission_result[saq.cloudphish.KEY_DETAILS])
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_DETAILS])
         self.assertEquals(submission_result[saq.cloudphish.KEY_STATUS], saq.cloudphish.STATUS_ANALYZED)
         self.assertEquals(submission_result[saq.cloudphish.KEY_ANALYSIS_RESULT], saq.cloudphish.SCAN_RESULT_ALERT)
         self.assertEquals(submission_result[saq.cloudphish.KEY_HTTP_RESULT], 200)

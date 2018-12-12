@@ -1570,8 +1570,7 @@ class Workload(Base):
     insert_date = Column(
         TIMESTAMP, 
         nullable=False, 
-        index=True,
-        server_default=text('CURRENT_TIMESTAMP'))
+        index=True)
 
     company_id = Column(
         Integer,
@@ -1605,8 +1604,9 @@ INSERT INTO workload (
     analysis_mode,
     company_id,
     exclusive_uuid,
-    storage_dir )
-VALUES ( %s, %s, %s, %s, %s, %s )""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
+    storage_dir,
+    insert_date )
+VALUES ( %s, %s, %s, %s, %s, %s, NOW() )""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
     db.commit()
     logging.info("added {} to workload with analysis mode {} company_id {} exclusive_uuid {}".format(
                   root.uuid, root.analysis_mode, root.company_id, exclusive_uuid))
@@ -1628,8 +1628,7 @@ class Lock(Base):
     lock_time = Column(
         TIMESTAMP, 
         nullable=False, 
-        index=True,
-        server_default=text('CURRENT_TIMESTAMP'))
+        index=True)
 
     lock_owner = Column(
         String(512),
@@ -1645,7 +1644,7 @@ def acquire_lock(_uuid, lock_uuid=None, lock_owner=None, db=None, c=None):
         if lock_uuid is None:
             lock_uuid = str(uuid.uuid4())
 
-        execute_with_retry(db, c, "INSERT INTO locks ( uuid, lock_uuid, lock_owner ) VALUES ( %s, %s, %s )", 
+        execute_with_retry(db, c, "INSERT INTO locks ( uuid, lock_uuid, lock_owner, lock_time ) VALUES ( %s, %s, %s, NOW() )", 
                           ( _uuid, lock_uuid, lock_owner ), commit=True)
 
         logging.debug("locked {} with {}".format(_uuid, lock_uuid))
@@ -1759,8 +1758,7 @@ class DelayedAnalysis(Base):
     insert_date = Column(
         TIMESTAMP, 
         nullable=False, 
-        index=True,
-        server_default=text('CURRENT_TIMESTAMP'))
+        index=True)
 
     delayed_until = Column(
         TIMESTAMP, 
@@ -1787,8 +1785,8 @@ def add_delayed_analysis_request(root, observable, analysis_module, next_analysi
                      #root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE_ID, exclusive_uuid, root.storage_dir))
 
         execute_with_retry(db, c, """
-                           INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node_id, exclusive_uuid, storage_dir ) 
-                           VALUES ( %s, %s, %s, %s, %s, %s, %s )""", 
+                           INSERT INTO delayed_analysis ( uuid, observable_uuid, analysis_module, delayed_until, node_id, exclusive_uuid, storage_dir, insert_date ) 
+                           VALUES ( %s, %s, %s, %s, %s, %s, %s, NOW() )""", 
                           ( root.uuid, observable.id, analysis_module.config_section, next_analysis, saq.SAQ_NODE_ID, exclusive_uuid, root.storage_dir ))
         db.commit()
 
@@ -1831,8 +1829,8 @@ def initialize_node(db, c):
         logging.debug("got existing node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))
 
     if saq.SAQ_NODE_ID is None:
-        execute_with_retry(db, c, """INSERT INTO nodes ( name, location, company_id, is_local ) 
-                                     VALUES ( %s, %s, %s, %s )""", 
+        execute_with_retry(db, c, """INSERT INTO nodes ( name, location, company_id, is_local, last_update ) 
+                                     VALUES ( %s, %s, %s, %s, NOW() )""", 
                           (saq.SAQ_NODE, saq.API_PREFIX, saq.COMPANY_ID, True),
                           commit=True)
 
