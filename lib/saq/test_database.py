@@ -34,7 +34,7 @@ class DatabaseTestCase(ACEBasicTestCase):
         _uuid = str(uuid.uuid4())
         _lock_uuid = str(uuid.uuid4())
         execute_with_retry(db, c, [ 
-            'INSERT INTO locks ( uuid ) VALUES ( %s )',
+            'INSERT INTO locks ( uuid, lock_time ) VALUES ( %s, NOW() )',
             'UPDATE locks SET lock_uuid = %s WHERE uuid = %s',
             'DELETE FROM locks WHERE uuid = %s',
         ], [ 
@@ -52,7 +52,7 @@ class DatabaseTestCase(ACEBasicTestCase):
         # simple insert statement with commit option
         with get_db_connection() as db:
             c = db.cursor()
-            execute_with_retry(db, c, 'INSERT INTO locks ( uuid ) VALUES ( %s )', (_uuid,), commit=True)
+            execute_with_retry(db, c, 'INSERT INTO locks ( uuid, lock_time ) VALUES ( %s, NOW() )', (_uuid,), commit=True)
 
         # check it on another connection
         with get_db_connection() as db:
@@ -66,7 +66,7 @@ class DatabaseTestCase(ACEBasicTestCase):
         # and then this one should fail since we did not commit it
         with get_db_connection() as db:
             c = db.cursor()
-            execute_with_retry(db, c, 'INSERT INTO locks ( uuid ) VALUES ( %s )', (_uuid,), commit=False)
+            execute_with_retry(db, c, 'INSERT INTO locks ( uuid, lock_time ) VALUES ( %s, NOW() )', (_uuid,), commit=False)
 
         with get_db_connection() as db:
             c = db.cursor()
@@ -83,7 +83,7 @@ class DatabaseTestCase(ACEBasicTestCase):
 
         with get_db_connection() as db:
             c = db.cursor()
-            c.execute("INSERT INTO locks ( uuid, lock_uuid ) VALUES ( %s, %s )", ( _uuid, _lock_uuid ))
+            c.execute("INSERT INTO locks ( uuid, lock_uuid, lock_time ) VALUES ( %s, %s, NOW() )", ( _uuid, _lock_uuid ))
             db.commit()
 
         # one of these threads will get a deadlock
@@ -93,7 +93,7 @@ class DatabaseTestCase(ACEBasicTestCase):
             try:
                 with get_db_connection() as db:
                     c = db.cursor()
-                    c.execute("INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    c.execute("INSERT INTO locks ( uuid, lock_time ) VALUES ( %s, NOW() )", (_uuid,))
                     # wait for signal to continue
                     time.sleep(2)
                     c.execute("UPDATE locks SET lock_owner = 'whatever'")
@@ -111,7 +111,7 @@ class DatabaseTestCase(ACEBasicTestCase):
                     c.execute("UPDATE locks SET lock_owner = 'whatever'")
                     # wait for signal to continue
                     time.sleep(2)
-                    c.execute("INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    c.execute("INSERT INTO locks ( uuid, lock_time ) VALUES ( %s, NOW() )", (_uuid,))
                     db.commit()
             except pymysql.err.OperationalError as e:
                 if e.args[0] == 1213 or e.args[0] == 1205:
@@ -140,7 +140,7 @@ class DatabaseTestCase(ACEBasicTestCase):
 
         with get_db_connection() as db:
             c = db.cursor()
-            c.execute("INSERT INTO locks ( uuid, lock_uuid ) VALUES ( %s, %s )", ( _uuid, _lock_uuid ))
+            c.execute("INSERT INTO locks ( uuid, lock_uuid, lock_time ) VALUES ( %s, %s, NOW() )", ( _uuid, _lock_uuid ))
             db.commit()
 
         # one of these threads will get a deadlock
@@ -150,7 +150,7 @@ class DatabaseTestCase(ACEBasicTestCase):
             try:
                 with get_db_connection() as db:
                     c = db.cursor()
-                    execute_with_retry(db, c, "INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    execute_with_retry(db, c, "INSERT INTO locks ( uuid, lock_time ) VALUES ( %s, NOW() )", (_uuid,))
                     # wait for signal to continue
                     time.sleep(2)
                     execute_with_retry(db, c, "UPDATE locks SET lock_owner = 'whatever'")
@@ -168,7 +168,7 @@ class DatabaseTestCase(ACEBasicTestCase):
                     execute_with_retry(db, c, "UPDATE locks SET lock_owner = 'whatever'")
                     # wait for signal to continue
                     time.sleep(2)
-                    execute_with_retry(db, c, "INSERT INTO locks ( uuid ) VALUES ( %s )", (_uuid,))
+                    execute_with_retry(db, c, "INSERT INTO locks ( uuid, lock_time ) VALUES ( %s, NOW() )", (_uuid,))
                     db.commit()
             except pymysql.err.OperationalError as e:
                 if e.args[0] == 1213 or e.args[0] == 1205:
