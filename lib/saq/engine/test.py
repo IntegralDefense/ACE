@@ -1193,8 +1193,8 @@ class TestCase(ACEEngineTestCase):
 
     def test_stats(self):
         # clear engine statistics
-        if os.path.exists(os.path.join(saq.MODULE_STATS_DIR, 'unittest')):
-            shutil.rmtree(os.path.join(saq.MODULE_STATS_DIR, 'unittest'))
+        if os.path.exists(os.path.join(saq.MODULE_STATS_DIR, 'ace')):
+            shutil.rmtree(os.path.join(saq.MODULE_STATS_DIR, 'ace'))
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
@@ -1209,16 +1209,16 @@ class TestCase(ACEEngineTestCase):
         engine.wait()
 
         # there should be one subdir in the engine's stats dir
-        self.assertEquals(len(os.listdir(os.path.join(saq.MODULE_STATS_DIR, 'unittest'))), 1)
-        subdir = os.listdir(os.path.join(saq.MODULE_STATS_DIR, 'unittest'))
+        self.assertEquals(len(os.listdir(os.path.join(saq.MODULE_STATS_DIR, 'ace'))), 1)
+        subdir = os.listdir(os.path.join(saq.MODULE_STATS_DIR, 'ace'))
         subdir = subdir[0]
 
         # this should have a single stats file in it
-        stats_files = os.listdir(os.path.join(os.path.join(saq.MODULE_STATS_DIR, 'unittest', subdir)))
+        stats_files = os.listdir(os.path.join(os.path.join(saq.MODULE_STATS_DIR, 'ace', subdir)))
         self.assertEquals(len(stats_files), 1)
 
         # and it should not be empty
-        self.assertGreater(os.path.getsize(os.path.join(os.path.join(saq.MODULE_STATS_DIR, 'unittest', 
+        self.assertGreater(os.path.getsize(os.path.join(os.path.join(saq.MODULE_STATS_DIR, 'ace', 
                                                                      subdir, stats_files[0]))), 0)
 
     def test_exclusion(self):

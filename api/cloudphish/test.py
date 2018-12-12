@@ -100,9 +100,10 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         self.assertEquals(result[KEY_RESULT], RESULT_OK)
         self.assertEquals(result[KEY_STATUS], STATUS_NEW)
         self.assertEquals(result[KEY_ANALYSIS_RESULT], SCAN_RESULT_UNKNOWN)
+        self.assertIsNotNone(result[KEY_DETAILS])
         
         # everything else should be None
-        for key in [ KEY_DETAILS, KEY_HTTP_RESULT, KEY_HTTP_MESSAGE, KEY_SHA256_CONTENT, KEY_LOCATION, KEY_FILE_NAME ]:
+        for key in [ KEY_HTTP_RESULT, KEY_HTTP_MESSAGE, KEY_SHA256_CONTENT, KEY_LOCATION, KEY_FILE_NAME ]:
             self.assertIsNone(result[key])
 
         # we should have a single entry in the cloudphish_analysis_results table
@@ -303,9 +304,10 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         self.assertEquals(result[KEY_RESULT], RESULT_OK)
         self.assertEquals(result[KEY_STATUS], STATUS_NEW)
         self.assertEquals(result[KEY_ANALYSIS_RESULT], SCAN_RESULT_UNKNOWN)
+        self.assertIsNotNone(result[KEY_DETAILS])
         
         # everything else should be None
-        for key in [ KEY_DETAILS, KEY_HTTP_RESULT, KEY_HTTP_MESSAGE, KEY_SHA256_CONTENT, KEY_LOCATION, KEY_FILE_NAME ]:
+        for key in [ KEY_HTTP_RESULT, KEY_HTTP_MESSAGE, KEY_SHA256_CONTENT, KEY_LOCATION, KEY_FILE_NAME ]:
             self.assertIsNone(result[key])
 
     def test_download_redirect(self):

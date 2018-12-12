@@ -36,7 +36,7 @@ def _get_url_and_hash():
             return url, hash_url(url)
         except Exception as e:
             error_message = "(encoded) url {} has non-ascii characters".format(url.encode('unicode_escape'))
-            logging.error(error_message)
+            logging.info(error_message)
             abort(Response(error_message, 500))
 
     # otherwise, did the user pass in the sha256 hash of the url instead?
