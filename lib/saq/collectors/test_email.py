@@ -15,8 +15,7 @@ class EmailCollectorBaseTestCase(CollectorBaseTestCase):
         super().setUp(*args, **kwargs)
 
         # use a different directory for incoming emails
-        saq.CONFIG['email']['email_dir'] = 'var/incoming/amc_unittest'
-        self.email_dir = saq.CONFIG['email']['email_dir']
+        self.email_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['email']['email_dir'])
 
         # clear it out
         if os.path.isdir(self.email_dir):

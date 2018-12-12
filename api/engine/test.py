@@ -34,8 +34,8 @@ class APIEngineTestCase(APIBasicTestCase):
         result = self.client.get(url_for('engine.download', uuid=root.uuid))
 
         # we should get back a tar file
-        tar_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'download.tar')
-        output_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], 'download')
+        tar_path = os.path.join(saq.TEMP_DIR, 'download.tar')
+        output_dir = os.path.join(saq.TEMP_DIR, 'download')
 
         try:
             with open(tar_path, 'wb') as fp:
@@ -70,7 +70,7 @@ class APIEngineTestCase(APIBasicTestCase):
     def test_upload(self):
         
         # first create something to upload
-        root = create_root_analysis(uuid=str(uuid.uuid4()), storage_dir=os.path.join(saq.CONFIG['global']['tmp_dir'], 'test_upload'))
+        root = create_root_analysis(uuid=str(uuid.uuid4()), storage_dir=os.path.join(saq.TEMP_DIR, 'test_upload'))
         root.initialize_storage()
         root.details = { 'hello': 'world' }
         with open(os.path.join(root.storage_dir, 'test.dat'), 'w') as fp:
@@ -79,7 +79,7 @@ class APIEngineTestCase(APIBasicTestCase):
         root.save()
 
         # create a tar file of the entire thing
-        fp, tar_path = tempfile.mkstemp(suffix='.tar', prefix='upload_{}'.format(root.uuid), dir=saq.CONFIG['global']['tmp_dir'])
+        fp, tar_path = tempfile.mkstemp(suffix='.tar', prefix='upload_{}'.format(root.uuid), dir=saq.TEMP_DIR)
         tar = tarfile.open(fileobj=os.fdopen(fp, 'wb'), mode='w|')
         tar.add(root.storage_dir, '.')
         tar.close()

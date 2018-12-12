@@ -15,7 +15,7 @@ from saq.util import storage_dir_from_uuid
 
 import pytz
 
-class HTTPModuleTestCase(ACEModuleTestCase):
+class TestCase(ACEModuleTestCase):
     def test_bro_http_analyzer(self):
         saq.CONFIG['analysis_mode_http']['cleanup'] = 'no'
 
@@ -34,8 +34,8 @@ class HTTPModuleTestCase(ACEModuleTestCase):
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.enable_module('analysis_module_bro_http_analyzer')
+        engine = TestEngine(analysis_pools={ANALYSIS_MODE_HTTP: 1}, local_analysis_modes=[ANALYSIS_MODE_HTTP])
+        engine.enable_module('analysis_module_bro_http_analyzer', ANALYSIS_MODE_HTTP)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -122,8 +122,8 @@ class HTTPModuleTestCase(ACEModuleTestCase):
 
         # make sure we have a job ready
 
-        engine = TestEngine()
-        engine.enable_module('analysis_module_bro_http_analyzer')
+        engine = TestEngine(analysis_pools={ANALYSIS_MODE_HTTP: 1}, local_analysis_modes=[ANALYSIS_MODE_HTTP])
+        engine.enable_module('analysis_module_bro_http_analyzer', ANALYSIS_MODE_HTTP)
         engine.controlled_stop()
         engine.start()
         engine.wait()

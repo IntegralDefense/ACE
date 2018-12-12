@@ -4,7 +4,8 @@
 #
 
 import datetime
-import os.path
+import logging
+import os, os.path
 import re
 
 import saq
@@ -14,6 +15,18 @@ CIDR_REGEX = re.compile(r'^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]
 CIDR_WITH_NETMASK_REGEX = re.compile(r'^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$')
 URL_REGEX_B = re.compile(rb'(((?:(?:https?|ftp)://)[A-Za-z0-9\.\-]+)((?:\/[\+~%\/\.\w\-_]*)?\??(?:[\-\+=&;%@\.\w_:\?]*)#?(?:[\.\!\/\\\w:%\?&;=-]*))?(?<!=))', re.I)
 URL_REGEX_STR = re.compile(r'(((?:(?:https?|ftp)://)[A-Za-z0-9\.\-]+)((?:\/[\+~%\/\.\w\-_]*)?\??(?:[\-\+=&;%@\.\w_:\?]*)#?(?:[\.\!\/\\\w:%\?&;=-]*))?(?<!=))', re.I)
+
+def create_directory(path):
+    """Creates the given directory if it does not already exist.
+       Returns True on success, False otherwise and logs the error message."""
+    try:
+        if not os.path.isdir(path):
+            os.makedirs(path)
+
+        return True
+    except Exception as e:
+        logging.error("unable to create directory {}: {}".format(path, e))
+        return False
 
 def is_ipv4(value):
     """Returns True if the given value is a dotted-quad IP address or CIDR notation."""

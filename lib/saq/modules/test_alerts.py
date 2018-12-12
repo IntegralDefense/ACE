@@ -11,23 +11,22 @@ from saq.database import use_db
 from saq.constants import *
 from saq.test import *
 
-class AlertModuleTestCase(ACEModuleTestCase):
+class TestCase(ACEModuleTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
         self.disable_all_modules()
 
     @use_db
-    def test_engine_detection(self, db, c):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_detection(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_7')
         root.save()
         root.schedule()
     
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(local_analysis_modes=['test_groups', saq.CONFIG['analysis_module_detection']['target_mode']])
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection')
+        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -39,21 +38,20 @@ class AlertModuleTestCase(ACEModuleTestCase):
         self.assertEquals(root.analysis_mode, saq.CONFIG['analysis_module_detection']['target_mode'])
 
         # make sure we detected the change in modes
-        self.assertTrue(log_count('analysis mode for RootAnalysis({}) changed from test_empty to correlation'.format(root.uuid)) > 0)
+        self.assertTrue(log_count('analysis mode for RootAnalysis({}) changed from test_groups to correlation'.format(root.uuid)) > 0)
         self.assertEquals(log_count('completed analysis RootAnalysis({})'.format(root.uuid)), 2)
 
     @use_db
-    def test_engine_no_detection(self, db, c):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_no_detection(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
         root.save()
         root.schedule()
     
         engine = TestEngine()
-        engine.set_analysis_pool_size(1)
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection')
+        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -62,25 +60,24 @@ class AlertModuleTestCase(ACEModuleTestCase):
         root.load()
 
         # the analysis mode should be the same
-        self.assertEquals(root.analysis_mode, 'test_empty')
+        self.assertEquals(root.analysis_mode, 'test_groups')
 
         # make sure we detected the change in modes
         self.assertEquals(log_count('analysis mode for RootAnalysis({}) changed from test_empty to correlation'.format(root.uuid)), 0)
         self.assertEquals(log_count('completed analysis RootAnalysis({})'.format(root.uuid)), 1)
 
     @use_db
-    def test_engine_alert(self, db, c):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_alert(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_7')
         root.save()
         root.schedule()
     
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
+        engine = TestEngine(local_analysis_modes=['test_groups', saq.CONFIG['analysis_module_alert']['target_mode']])
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection')
-        engine.enable_module('analysis_module_alert')
+        engine.enable_module('analysis_module_detection', 'test_groups')
+        engine.enable_module('analysis_module_alert', saq.CONFIG['analysis_module_alert']['target_mode'])
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -91,17 +88,16 @@ class AlertModuleTestCase(ACEModuleTestCase):
         self.assertIsNotNone(row)
 
     @use_db
-    def test_engine_no_alert(self, db, c):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_no_alert(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_1')
         root.save()
         root.schedule()
     
         engine = TestEngine()
-        engine.set_analysis_pool_size(1)
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection')
+        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -111,8 +107,8 @@ class AlertModuleTestCase(ACEModuleTestCase):
         self.assertIsNone(c.fetchone())
 
     @use_db
-    def test_engine_existing_alert(self, db, c):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_existing_alert(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_7')
         root.save()
@@ -126,10 +122,9 @@ class AlertModuleTestCase(ACEModuleTestCase):
     
         # now analyze the alert that's already in the database
         engine = TestEngine()
-        engine.set_analysis_pool_size(1)
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection')
-        engine.enable_module('analysis_module_alert')
+        engine.enable_module('analysis_module_detection', 'test_groups')
+        engine.enable_module('analysis_module_alert', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -143,18 +138,17 @@ class AlertModuleTestCase(ACEModuleTestCase):
         #self.assertEquals(log_count('uuid {} already exists in alerts table'.format(root.uuid)), 1)
 
     @use_db
-    def test_engine_whitelisted(self, db, c):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
+    def test_whitelisted(self, db, c):
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_8')
         root.save()
         root.schedule()
 
         engine = TestEngine()
-        engine.set_analysis_pool_size(1)
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection')
-        engine.enable_module('analysis_module_alert')
+        engine.enable_module('analysis_module_detection', 'test_groups')
+        engine.enable_module('analysis_module_alert', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()

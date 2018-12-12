@@ -147,6 +147,7 @@ ON DUPLICATE KEY UPDATE node = %s, name = %s""", ( sha256_content, node, file_na
 
 @use_db
 def get_content_metadata(sha256_content, db, c):
+    assert isinstance(sha256_content, str) and sha256_content
     c.execute("SELECT node, name FROM cloudphish_content_metadata WHERE sha256_content = UNHEX(%s)", 
               sha256_content)
     row = c.fetchone()

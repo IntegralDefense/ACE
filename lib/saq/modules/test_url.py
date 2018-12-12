@@ -14,7 +14,7 @@ from saq.test import *
 LOCAL_PORT = 43124
 web_server = None
 
-class URLAnalysisModuleTestCase(ACEModuleTestCase):
+class TestCase(ACEModuleTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -44,7 +44,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         ACEModuleTestCase.tearDown(self)
         saq.PROXIES = self.old_proxies
 
-    def test_crawlphish_000_basic_download(self):
+    def test_basic_download(self):
         from saq.modules.url import CrawlphishAnalysisV2
 
         root = create_root_analysis()
@@ -55,7 +55,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_crawlphish')
+        engine.enable_module('analysis_module_crawlphish', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -77,7 +77,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertTrue(file_observable.has_directive(DIRECTIVE_EXTRACT_URLS))
         self.assertTrue(file_observable.has_relationship(R_DOWNLOADED_FROM))
 
-    def test_crawlphish_001_download_404(self):
+    def test_download_404(self):
         """We should not extract URLs from data downloaded from URLs that returned a 404."""
         from saq.modules.url import CrawlphishAnalysisV2
 
@@ -89,7 +89,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_crawlphish')
+        engine.enable_module('analysis_module_crawlphish', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -110,7 +110,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
 
     @unittest.skip
     @force_alerts
-    def test_live_browser_000_basic(self):
+    def test_live_browser_basic(self):
         """Basic test of LiveBrowserAnalysis."""
 
         from saq.modules.url import CrawlphishAnalysisV2
@@ -124,8 +124,8 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_crawlphish')
-        engine.enable_module('analysis_module_live_browser_analyzer')
+        engine.enable_module('analysis_module_crawlphish', 'test_groups')
+        engine.enable_module('analysis_module_live_browser_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -146,7 +146,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertEquals(file_observable.value, 'crawlphish/localhost_0/localhost_000.png')
 
     @force_alerts
-    def test_live_browser_001_404(self):
+    def test_live_browser_404(self):
         """We should not download screenshots for URLs that returned a 404 error message."""
 
         from saq.modules.url import CrawlphishAnalysisV2
@@ -161,8 +161,8 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_crawlphish')
-        engine.enable_module('analysis_module_live_browser_analyzer')
+        engine.enable_module('analysis_module_crawlphish', 'test_groups')
+        engine.enable_module('analysis_module_live_browser_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -174,7 +174,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         file_observables = analysis.get_observables_by_type(F_FILE)
         self.assertEquals(len(file_observables), 0)
 
-    def test_protected_url_000_outlook_safelinks(self):
+    def test_protected_url_outlook_safelinks(self):
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
@@ -184,7 +184,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.enable_module('analysis_module_protected_url_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -202,7 +202,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         extracted_url = extracted_url[0]
         self.assertTrue(extracted_url.has_directive(DIRECTIVE_CRAWL))
 
-    def test_protected_url_001_dropbox(self):
+    def test_protected_url_dropbox(self):
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
@@ -218,7 +218,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.enable_module('analysis_module_protected_url_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -250,7 +250,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         extracted_url = extracted_url[0]
         self.assertTrue(extracted_url.has_directive(DIRECTIVE_CRAWL))
 
-    def test_protected_url_002_google_drive(self):
+    def test_protected_url_google_drive(self):
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
@@ -260,7 +260,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.enable_module('analysis_module_protected_url_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -278,7 +278,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         extracted_url = extracted_url[0]
         self.assertTrue(extracted_url.has_directive(DIRECTIVE_CRAWL))
 
-    def test_protected_url_003_sharepoint(self):
+    def test_protected_url_sharepoint(self):
         root = create_root_analysis()
         root.initialize_storage()
         # taken from an actual sample
@@ -288,7 +288,7 @@ class URLAnalysisModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_protected_url_analyzer')
+        engine.enable_module('analysis_module_protected_url_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()

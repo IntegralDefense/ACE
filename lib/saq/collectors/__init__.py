@@ -23,6 +23,9 @@ from saq.database import use_db, \
 
 from saq.error import report_exception
 
+import urllib3.exceptions
+import requests.exceptions
+
 # some constants used as return values
 WORK_SUBMITTED = 1
 NO_WORK_AVAILABLE = 2
@@ -298,7 +301,7 @@ ORDER BY
         # now we trim our list of analysis modes down to what is available
         # if we don't have a node that supports any mode
         if not any_mode_nodes:
-            available_modes = [m for m in available_modes if m in remote_nodes.keys()]
+            available_modes = [m for m in available_modes if m in analysis_mode_mapping.keys()]
             logging.debug("available_modes = {} after checking available nodes".format(available_modes))
 
         if not available_modes:
@@ -379,7 +382,11 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
                     if not self.full_delivery:
                         log_function = logging.debug
                     else:
-                        report_exception()
+                        if not isinstance(e, urllib3.exceptions.MaxRetryError) \
+                        and not isinstance(e, urllib3.exceptions.NewConnectionError) \
+                        and not isinstance(e, requests.exceptions.ConnectionError):
+                            # if it's not a connection issue then report it
+                            report_exception()
 
                     log_function("unable to submit work item {} to {} via group {}: {}".format(
                                  submission, target, self, e))

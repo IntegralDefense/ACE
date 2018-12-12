@@ -701,7 +701,7 @@ class CrawlphishAnalyzer(AnalysisModule):
 
         # did we successfully start a download?
         if proxy_result.error_reason is not None:
-            logging.debug("unable to download {}".format(formatted_url))
+            logging.debug("unable to download {}: {}".format(formatted_url, proxy_result.error_reason))
             return True
 
         # for each url we download we use a file name inside a directory with the following format

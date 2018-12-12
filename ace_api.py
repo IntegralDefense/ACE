@@ -82,8 +82,16 @@ def api_command(func):
     commands[func.__name__] = func
     return func
 
-def _execute_api_call(command, method=METHOD_GET, remote_host=None, ssl_verification=None, stream=False, 
-                      data=None, files=None, params=None):
+def _execute_api_call(command, 
+                      method=METHOD_GET, 
+                      remote_host=None, 
+                      ssl_verification=None, 
+                      stream=False, 
+                      data=None, 
+                      files=None, 
+                      params=None,
+                      proxies=None,
+                      timeout=None):
 
     if remote_host is None:
         remote_host = default_remote_host
@@ -105,6 +113,10 @@ def _execute_api_call(command, method=METHOD_GET, remote_host=None, ssl_verifica
         kwargs['data'] = data
     if files is not None:
         kwargs['files'] = files
+    if proxies is not None:
+        kwargs['proxies'] = proxies
+    if timeout is not None:
+        kwargs['timeout'] = timeout
 
     r = func('https://{}/api/{}'.format(remote_host, command), **kwargs)
     r.raise_for_status()
@@ -288,12 +300,22 @@ def clear(uuid, lock_uuid, *args, **kwargs):
     return _execute_api_call('engine/clear/{}/{}'.format(uuid, lock_uuid), *args, **kwargs).status_code == 200
 
 @api_command
-def cloudphish_submit(url, reprocess=False, ignore_filters=False, *args, **kwargs):
-    return _execute_api_call('cloudphish/submit', data={
+def cloudphish_submit(url, reprocess=False, ignore_filters=False, context={}, *args, **kwargs):
+
+    # make sure the following keys are not in the context
+    for key in [ 'url', 'reprocess', 'ignore_filters' ]:
+        if key in context:
+            raise ValueError("context cannot contain the keys url, reprocess or ignore_filters")
+
+    data = {
         'url': url,
         'reprocess': '1' if reprocess else '0',
-        'ignore_filters': '1' if ignore_filters else '0',
-    }, method=METHOD_POST, *args, **kwargs).json()
+        'ignore_filters': '1' if ignore_filters else '0'
+    }
+
+    data.update(context)
+
+    return _execute_api_call('cloudphish/submit', data=data, method=METHOD_POST, *args, **kwargs).json()
 
 @api_command
 def cloudphish_download(url=None, sha256=None, output_path=None, output_fp=None, *args, **kwargs):

@@ -16,15 +16,12 @@ class BroSMTPBaseTestCase(BroBaseTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
-        # change the bro smtp dir
-        saq.CONFIG['bro']['smtp_dir'] = 'var/bro/smtp_unittest'
-
-        self.bro_smtp_dir = saq.CONFIG['bro']['smtp_dir']
+        self.bro_smtp_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['bro']['smtp_dir'])
 
         if os.path.exists(self.bro_smtp_dir):
             shutil.rmtree(self.bro_smtp_dir)
 
-        os.mkdir(self.bro_smtp_dir)
+        os.makedirs(self.bro_smtp_dir)
 
 class BroSMTPTestCase(BroSMTPBaseTestCase):
     def test_startup(self):

@@ -18,8 +18,8 @@ from saq.database import get_db_connection
 from saq.test import *
 from saq.util import storage_dir_from_uuid
 
-class EmailModuleTestCase(ACEModuleTestCase):
-    def test_email_mailbox(self):
+class TestCase(ACEModuleTestCase):
+    def test_mailbox(self):
         import saq.modules.email
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
@@ -32,9 +32,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_mailbox_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -49,7 +49,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertIsNotNone(root.details['email'])
         self.assertTrue(root.description.startswith(saq.modules.email.MAILBOX_ALERT_PREFIX))
 
-    def test_email_no_mailbox(self):
+    def test_no_mailbox(self):
         # make sure that when we analyze emails in non-mailbox analysis that we don't treat it like it came from mailbox
         root = create_root_analysis(alert_type='not-mailbox') # <-- different alert_type
         root.initialize_storage()
@@ -62,9 +62,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_mailbox_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -77,7 +77,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # and we should NOT have the email details merged in since it's not a mailbox analysis
         self.assertFalse('email' in root.details)
 
-    def test_email_mailbox_whitelisted(self):
+    def test_mailbox_whitelisted(self):
         # make sure that we do not process whitelisted emails
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
@@ -91,9 +91,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_mailbox_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -108,7 +108,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # and we should be whitelisted at this point
         self.assertTrue(root.whitelisted)
 
-    def test_email_mailbox_submission(self):
+    def test_mailbox_submission(self):
         from flask import url_for
         from saq.analysis import _JSONEncoder
         from saq.modules.email import EmailAnalysis
@@ -143,10 +143,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # make sure we don't clean up the anaysis so we can check it
         saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
 
-        engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_mailbox_email_analyzer')
+        engine = TestEngine(local_analysis_modes=['email'])
+        engine.enable_module('analysis_module_file_type', 'email')
+        engine.enable_module('analysis_module_email_analyzer', 'email')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'email')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -178,11 +178,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.save()
         root.schedule()
 
-        engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_bro_smtp_analyzer')
+        engine = TestEngine(local_analysis_modes=[ANALYSIS_MODE_EMAIL])
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_bro_smtp_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -243,10 +242,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # make sure we don't clean up the anaysis so we can check it
         saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
 
-        engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_bro_smtp_analyzer')
+        engine = TestEngine(local_analysis_modes=[ANALYSIS_MODE_EMAIL])
+        engine.enable_module('analysis_module_file_type', 'email')
+        engine.enable_module('analysis_module_email_analyzer', 'email')
+        engine.enable_module('analysis_module_bro_smtp_analyzer', 'email')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -258,10 +257,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         analysis = observable.get_analysis(BroSMTPStreamAnalysis)
         self.assertIsNotNone(analysis)
 
-    def test_email_splunk_logging(self):
+    def test_splunk_logging(self):
 
         # clear splunk logging directory
-        splunk_log_dir = os.path.join(saq.CONFIG['splunk_logging']['splunk_log_dir'], 'smtp')
+        splunk_log_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['splunk_logging']['splunk_log_dir'], 'smtp')
         if os.path.isdir(splunk_log_dir):
             shutil.rmtree(splunk_log_dir)
             os.mkdir(splunk_log_dir)
@@ -276,11 +275,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.set_analysis_pool_size(1)
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        engine.enable_module('analysis_module_url_extraction')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -330,7 +328,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
                                   'cc,env_mail_from,env_rcpt_to,extracted_urls,first_received,headers,last_received,mail_from,'
                                   'mail_to,message_id,originating_ip,path,reply_to,size,subject,user_agent,archive_path,x_mailer')
 
-    def test_email_update_brocess(self):
+    def test_update_brocess(self):
 
         # make sure we update the brocess database when we can scan email
 
@@ -346,9 +344,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -386,9 +384,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -400,7 +398,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
             count = c.fetchone()
             self.assertEquals(count[0], 2)
 
-    def test_email_elk_logging(self):
+    def test_elk_logging(self):
 
         # clear elk logging directory
         elk_log_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['elk_logging']['elk_log_dir'])
@@ -418,10 +416,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        engine.enable_module('analysis_module_url_extraction')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -443,7 +441,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
             self.assertTrue(field in log_entry)
 
-    def test_email_archive_1(self):
+    def test_archive_1(self):
 
         # clear email archive
         with get_db_connection('email_archive') as db:
@@ -471,11 +469,11 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -507,7 +505,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
                 value = row[0]
                 self.assertEquals(value, field_value)
 
-    def test_email_archive_2(self):
+    def test_archive_2(self):
 
         # clear email archive
         with get_db_connection('email_archive') as db:
@@ -535,12 +533,12 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        engine.enable_module('analysis_module_pdf_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.enable_module('analysis_module_pdf_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -571,7 +569,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
                 value = row[0]
                 self.assertEquals(value, field_value)
 
-    def test_email_email_pivot(self):
+    def test_email_pivot(self):
 
         # process the email first -- we'll find it when we pivot
 
@@ -586,11 +584,11 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -618,7 +616,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_url_email_pivot_analyzer')
+        engine.enable_module('analysis_module_url_email_pivot_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -641,7 +639,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertEquals(len(entry['remediation_history']), 0)
         self.assertFalse(entry['remediated'])
 
-    def test_email_email_pivot_excessive_emails(self):
+    def test_email_pivot_excessive_emails(self):
 
         # process the email first -- we'll find it when we pivot
 
@@ -656,11 +654,11 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -691,7 +689,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_url_email_pivot_analyzer')
+        engine.enable_module('analysis_module_url_email_pivot_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -705,7 +703,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # this should not have the details since it exceeded the limit
         self.assertIsNone(analysis.emails)
 
-    def test_email_message_id(self):
+    def test_message_id(self):
 
         # make sure we extract the correct message-id
         # this test email has an attachment that contains a message-id
@@ -721,8 +719,8 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -739,7 +737,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         
         self.assertEquals(message_id.value, "<MW2PR16MB224997B938FB40AA00214DACA8590@MW2PR16MB2249.namprd16.prod.outlook.com>")
 
-    def test_email_basic_email_parsing(self):
+    def test_basic_email_parsing(self):
 
         # parse a basic email message
 
@@ -753,8 +751,8 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -790,7 +788,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertIsInstance(email_analysis.attachments, list)
         self.assertEquals(len(email_analysis.attachments), 0)
         
-    def test_email_o365_journal_email_parsing(self):
+    def test_o365_journal_email_parsing(self):
 
         # parse an office365 journaled message
 
@@ -804,8 +802,8 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -842,7 +840,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertEquals(len(email_analysis.attachments), 0)
 
     # tests the whitelisting capabilities
-    def test_email_whitelisting_000_mail_from(self):
+    def test_whitelisting_000_mail_from(self):
 
         import saq
         whitelist_path = os.path.join('var', 'tmp', 'brotex.whitelist')
@@ -864,8 +862,8 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -878,7 +876,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertFalse(email_analysis)
 
     # tests the whitelisting capabilities
-    def test_email_whitelisting_001_mail_to(self):
+    def test_whitelisting_001_mail_to(self):
 
         import saq
         whitelist_path = os.path.join('var', 'tmp', 'brotex.whitelist')
@@ -900,8 +898,8 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -915,7 +913,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
     # XXX move this to the site-specific test
     @unittest.skip
-    def test_email_live_browser_no_render(self):
+    def test_live_browser_no_render(self):
 
         # we usually render HTML attachments to emails
         # but not if it has a tag of "no_render" assigned by a yara rule
@@ -930,9 +928,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_yara_scanner_v3_4', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()

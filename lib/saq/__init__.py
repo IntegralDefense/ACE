@@ -19,6 +19,7 @@ import ace_api
 from saq.constants import *
 from saq.network_semaphore import initialize_fallback_semaphores
 from saq.sla import SLA
+from saq.util import create_directory
 
 import pytz
 import requests
@@ -321,8 +322,8 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         sys.stderr.write("ERROR: unable to load configuration: {0}".format(str(e)))
         sys.exit(1)
 
-    DATA_DIR = CONFIG['global']['data_dir']
-    TEMP_DIR = CONFIG['global']['tmp_dir']
+    DATA_DIR = os.path.join(SAQ_HOME, CONFIG['global']['data_dir'])
+    TEMP_DIR = os.path.join(DATA_DIR, CONFIG['global']['tmp_dir'])
     COMPANY_NAME = CONFIG['global']['company_name']
     COMPANY_ID = CONFIG['global'].getint('company_id')
 
@@ -432,6 +433,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     CA_CHAIN_PATH = os.path.join(SAQ_HOME, CONFIG['SSL']['ca_chain_path'])
     ace_api.set_default_ssl_ca_path(CA_CHAIN_PATH)
 
+    # XXX this should probably move to the yara scanning module
     # set the location we'll be running yss out of
     YSS_BASE_DIR = os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'])
     if not os.path.exists(YSS_BASE_DIR):
@@ -448,50 +450,38 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     # initialize fallback semaphores
     initialize_fallback_semaphores()
 
+    # XXX get rid of this
     try:
         maliciousdir = CONFIG.get("global", "malicious")
     except:
         maliciousdir = "malicious"
 
-    STATS_DIR = os.path.join(SAQ_HOME, 'stats')
+    STATS_DIR = os.path.join(DATA_DIR, 'stats')
     MODULE_STATS_DIR = os.path.join(STATS_DIR, 'modules')
 
     # make sure some key directories exists
     for dir_path in [ 
-        os.path.join(SAQ_HOME, CONFIG['global']['data_dir'], CONFIG['global']['node']),
-        os.path.join(SAQ_HOME, 'var', 'locks'),
-        os.path.join(SAQ_HOME, 'var', 'incoming'),
-        os.path.join(SAQ_HOME, 'review', 'rfc822'),
-        os.path.join(SAQ_HOME, 'review', 'misc'),
+        # anaysis data
+        os.path.join(DATA_DIR, CONFIG['global']['node']),
+        #os.path.join(SAQ_HOME, 'var', 'locks'), # XXX remove
+        os.path.join(DATA_DIR, 'review', 'rfc822'),
+        os.path.join(DATA_DIR, 'review', 'misc'),
+        os.path.join(DATA_DIR, CONFIG['global']['error_reporting_dir']),
         STATS_DIR,
         MODULE_STATS_DIR,
-        os.path.join(SAQ_HOME, 'stats', 'brocess'),
-        os.path.join(SAQ_HOME, 'stats', 'metrics'),
-        os.path.join(SAQ_HOME, CONFIG['splunk_logging']['splunk_log_dir']),
-        os.path.join(SAQ_HOME, CONFIG['elk_logging']['elk_log_dir']),
-        os.path.join(SAQ_HOME, TEMP_DIR),
-        os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'], 'logs'),
-        os.path.join(SAQ_HOME, maliciousdir) ]:
+        os.path.join(STATS_DIR, 'brocess'), # get rid of this
+        os.path.join(STATS_DIR, 'metrics'),
+        os.path.join(DATA_DIR, CONFIG['splunk_logging']['splunk_log_dir']),
+        os.path.join(DATA_DIR, DATA_DIR, CONFIG['elk_logging']['elk_log_dir']),
+        os.path.join(TEMP_DIR),
+        os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'], 'logs'), ]: # XXX this should be in YSS
+        #os.path.join(SAQ_HOME, maliciousdir) ]: # XXX remove
         try:
             if not os.path.isdir(dir_path):
                 os.makedirs(dir_path)
         except Exception as e:
             logging.error("unable to create required directory {}: {}".format(dir_path, str(e)))
             sys.exit(1)
-
-    # make sure the collection directory for each enabled engine exists
-    for section in CONFIG.keys():
-        if section.startswith('engine_'):
-            engine_config = CONFIG[section]
-            if 'collection_dir' in engine_config:
-                collection_dir = os.path.join(SAQ_HOME, engine_config['collection_dir'])
-                if not os.path.isdir(collection_dir):
-                    logging.info("creating collection directory {} for {}".format(collection_dir, section))
-                    try:
-                        os.makedirs(collection_dir)
-                    except Exception as e:
-                        logging.error("unable to create directory {}: {}".format(collection_dir, e))
-                        sys.exit(1)
 
     # clear out any proxy environment variables if they exist
     for proxy_key in [ 'http_proxy', 'https_proxy', 'ftp_proxy' ]:

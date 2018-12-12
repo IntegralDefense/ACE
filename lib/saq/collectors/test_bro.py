@@ -14,12 +14,11 @@ class BroBaseTestCase(CollectorBaseTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
-        self.bro_work_dir = tempfile.mkdtemp(dir=os.path.join(saq.SAQ_HOME, 'var', 'tmp'))
+        self.bro_work_dir = tempfile.mkdtemp(dir=os.path.join(saq.TEMP_DIR))
 
         os.mkdir(os.path.join(self.bro_work_dir, 'ace'))
         with open(os.path.join(self.bro_work_dir, 'ace', 'ace_local.bro'), 'w') as fp:
-            Popen(['sed', '-e', 's:bro/http";:bro/http_unittest";:', 
-                          '-e', 's:bro/smtp";:bro/smtp_unittest";:', 
+            Popen(['sed', '-e', 's:data/var:data_unittest/var:', 
                   os.path.join(saq.SAQ_HOME, 'bro', 'ace_local.bro')], stdout=fp).wait()
 
         shutil.copy(os.path.join(saq.SAQ_HOME, 'bro', 'ace_http.bro'), os.path.join(self.bro_work_dir, 'ace', 'ace_http.bro'))

@@ -53,6 +53,9 @@ class CollectorBaseTestCase(ACEBasicTestCase):
             c.execute("UPDATE nodes SET last_update = SUBTIME(NOW(), '01:00:00')")
             db.commit()
 
+        # default engines to support any analysis mode
+        saq.CONFIG['engine']['local_analysis_modes'] = ''
+
 class CollectorTestCase(CollectorBaseTestCase):
     def create_submission(self):
         return Submission(
@@ -359,7 +362,10 @@ class CollectorTestCase(CollectorBaseTestCase):
         self.assertEquals(c.fetchone()[0], 0)
 
     @use_db
-    def test_cleanup(self, db, c):
+    def test_submission_success_fail(self, db, c):
+
+        # make sure the collector calls success() on successful submission
+        # and fail() on failed submission
 
         global success_event
         success_event = threading.Event()
@@ -377,13 +383,13 @@ class CollectorTestCase(CollectorBaseTestCase):
             def get_next_submission(_self):
                 if not _self.success_tested:
                     if _self.success_signal:
-                        return _custom_submission()
                         _self.success_tested = True
+                        return _custom_submission()
 
                 if not _self.fail_tested:
                     if _self.fail_signal:
-                        return _custom_submission()
                         _self.fail_tested = True
+                        return _custom_submission()
 
                 return None
 
@@ -416,7 +422,7 @@ class CollectorTestCase(CollectorBaseTestCase):
     @use_db
     def test_cleanup_files(self, db, c):
 
-        fp, file_path = tempfile.mkstemp(dir=saq.CONFIG['global']['tmp_dir'])
+        fp, file_path = tempfile.mkstemp(dir=saq.TEMP_DIR)
         os.write(fp, b'Hello, world!')
         os.close(fp)
 

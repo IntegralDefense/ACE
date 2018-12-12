@@ -16,15 +16,12 @@ class BroHTTPBaseTestCase(BroBaseTestCase):
     def setUp(self, *args, **kwargs):
         super().setUp(*args, **kwargs)
 
-        # change the bro http dir
-        saq.CONFIG['bro']['http_dir'] = 'var/bro/http_unittest'
-
-        self.bro_http_dir = saq.CONFIG['bro']['http_dir']
+        self.bro_http_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['bro']['http_dir'])
 
         if os.path.exists(self.bro_http_dir):
             shutil.rmtree(self.bro_http_dir)
 
-        os.mkdir(self.bro_http_dir)
+        os.makedirs(self.bro_http_dir)
 
 class BroHTTPTestCase(BroHTTPBaseTestCase):
     def test_startup(self):
