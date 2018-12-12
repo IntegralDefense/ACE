@@ -491,7 +491,7 @@ class Engine(object):
         self.copy_analysis_on_error = False
 
     def __str__(self):
-        return "Engine ({})".format(saq.SAQ_NODE)
+        return "Engine ({} - {})".format(saq.SAQ_NODE, self.name)
 
     def set_local(self):
         """Sets the Engine into "local" mode."""
@@ -510,14 +510,21 @@ class Engine(object):
     def enable_module(self, config_section, analysis_mode=None):
         """Enables the module specified by the configuration section name.
            Modules that are enabled this way are the ONLY modules that are loaded for the Engine.
-           If analysis_mode is not None then the module is also added to the given analysis mode
+           If analysis_mode is not None then the module is also added to the given analysis mode.
+           Analysis mode can either be a single mode name, or a tuple of mode names.
            This is typically only used by unit tests."""
 
         self.locally_enabled_modules.append(config_section)
         if analysis_mode is not None:
-            if analysis_mode not in self.locally_mapped_analysis_modes:
-                self.locally_mapped_analysis_modes[analysis_mode] = set()
-            self.locally_mapped_analysis_modes[analysis_mode].add(config_section)
+            if isinstance(analysis_mode, str):
+                analysis_modes = (analysis_mode,)
+            else:
+                analysis_modes = analysis_mode
+
+            for analysis_mode in analysis_modes:
+                if analysis_mode not in self.locally_mapped_analysis_modes:
+                    self.locally_mapped_analysis_modes[analysis_mode] = set()
+                self.locally_mapped_analysis_modes[analysis_mode].add(config_section)
 
     def add_analysis_pool(self, analysis_mode, count):
         """Adds the given analysis pool to the engine with the given prioriy
@@ -1071,7 +1078,7 @@ class Engine(object):
                                                           minutes=0 if timeout_minutes is None else timeout_minutes,
                                                           seconds=0 if timeout_seconds is None else timeout_seconds)
                 if datetime.datetime.now() > timeout:
-                    logging.error("delayed analysis for {} in {} has timed out".format(observable, analysis_module))
+                    logging.warning("delayed analysis for {} in {} has timed out".format(observable, analysis_module))
                     return False
 
                 logging.info("delayed analysis for {} in {} has been waiting for {} seconds".format(
@@ -1540,6 +1547,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         # at this point self.root is set and loaded
         # remember what the analysis mode was before we started analysis
         current_analysis_mode = self.root.analysis_mode
+        logging.debug("analyzing {} in analysis_mode {}".format(self.root, self.root.analysis_mode))
 
         try:
             self.analyze(work_item)

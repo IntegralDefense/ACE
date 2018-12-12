@@ -1671,7 +1671,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         # does this analysis already exist?
         # usually this is because you copied and pasted another AnalysisModule and didn't change the generated_analysis_type function
         if analysis.module_path in self.analysis:
-            logging.debug("replacing analysis {} with empty analysis - means you returned False from execute_analysis but you still added analysis".format(
+            logging.warning("replacing analysis {} with empty analysis - means you returned False from execute_analysis but you still added analysis".format(
                 self.analysis[analysis.module_path]))
             return
 

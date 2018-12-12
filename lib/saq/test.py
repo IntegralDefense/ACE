@@ -769,6 +769,8 @@ class ACEEngineTestCase(ACEBasicTestCase):
             if key.startswith('analysis_module_'):
                 saq.CONFIG[key]['enabled'] = 'no'
 
+        logging.debug("disabled all modules")
+
 class CloudphishServer(EngineProcess):
     def __init__(self):
         super().__init__(['python3', 'saq', '-L', 'etc/console_debug_logging.ini', '--start', 'cloudphish'])
@@ -777,5 +779,4 @@ class ACEModuleTestCase(ACEEngineTestCase):
     pass
 
 class TestEngine(Engine):
-    def __init__(self, *args, **kwargs):
-        super().__init__(name='unittest', *args, **kwargs)
+    pass

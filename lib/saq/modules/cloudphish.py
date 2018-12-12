@@ -174,6 +174,31 @@ class CloudphishAnalysis(Analysis):
 
         return self.query_result[KEY_FILE_NAME]
 
+    @property
+    def uuid(self):
+        if self.query_result is None:
+            return None
+
+        if KEY_UUID not in self.query_result:
+            return None
+
+        return self.query_result[KEY_UUID]
+
+    @property
+    def context(self):
+        if self.query_result is None:
+            return None
+
+        if KEY_DETAILS not in self.query_result:
+            return None
+
+        if self.query_result[KEY_DETAILS] is None:
+            return None
+
+        if KEY_DETAILS_CONTEXT not in self.query_result[KEY_DETAILS]:
+            return None
+
+        return self.query_result[KEY_DETAILS][KEY_DETAILS_CONTEXT]
 
     def generate_summary(self):
         if self.query_result is None:
@@ -253,9 +278,10 @@ class CloudphishAnalyzer(AnalysisModule):
     def execute_analysis(self, url):
         analysis = url.get_analysis(CloudphishAnalysis)
         if analysis is None:
-            analysis = self.create_analysis(url)
             try:
+                # do basic URL sanity checks
                 parsed_url = urlparse(url.value)
+            
                 #if parsed_url.hostname and '.' not in parsed_url.hostname:
                     #logging.debug("ignoring invalid FQDN {} in url {}".format(parsed_url.hostname, url.value))
                     #return False
@@ -264,9 +290,13 @@ class CloudphishAnalyzer(AnalysisModule):
                 if parsed_url.scheme not in [ 'http', 'https', 'ftp' ]:
                     logging.debug("{} is not a supported scheme for cloudphish".format(parsed_url.scheme))
                     return False
+
+                # URL seems ok
+                analysis = self.create_analysis(url)
                 
-            except:
-                pass # why pass? XXX
+            except Exception as e:
+                logging.debug("possible invalid URL: {}: {}".format(url.value, e))
+                return False
 
         # start the clock XXX isn't this built-in to the delay analysis system?
         if analysis.query_start is None:
@@ -309,6 +339,8 @@ class CloudphishAnalyzer(AnalysisModule):
                                                  proxies=saq.PROXIES if self.use_proxy else None,
                                                  timeout=self.timeout)
 
+            logging.debug("got result {} for cloudphish query {}".format(response, url))
+
             #response = requests.request('POST', self.get_submit_url(), params = { 
                    #'url': url.value, 
                    #'c': self.root.uuid, # context
@@ -325,7 +357,7 @@ class CloudphishAnalyzer(AnalysisModule):
             logging.warning("cloudphish request failed: {}".format(e))
             analysis.result = RESULT_ERROR
             analysis.result_details = 'REQUEST FAILED ({})'.format(e)
-            return False
+            return True
 
         # check the results first
         # if the analysis isn't ready yet then we come back later
@@ -345,14 +377,19 @@ class CloudphishAnalyzer(AnalysisModule):
                 logging.info("waiting for cloudphish analysis of {} ({})".format(
                              url.value, response[KEY_STATUS]))
 
-                # TODO use the timeout here
-                return self.delay_analysis(url, analysis, seconds=self.frequency)
+                if not self.delay_analysis(url, analysis, seconds=self.frequency, timeout_seconds=self.query_timeout):
+                    # analysis timed out
+                    analysis.result = RESULT_ERROR
+                    analysis.result_details = 'QUERY TIMED OUT'
+                    return True
 
         # sha256 E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855 is the hash for the empty string
         # we ignore this case
         if response[KEY_SHA256_CONTENT] and response[KEY_SHA256_CONTENT].upper() == \
         'E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855':
             logging.debug("ignoring result of 0 length data for {}".format(url.value))
+            analysis.result = RESULT_ERROR
+            analysis.result_details = 'EMPTY CONTENT'
             return False
 
         # save the analysis results

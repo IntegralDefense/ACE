@@ -32,6 +32,7 @@ __all__ = [
     'KEY_SHA256_URL',
     'KEY_LOCATION',
     'KEY_FILE_NAME',
+    'KEY_UUID',
     'STATUS_NEW',
     'STATUS_ANALYZING',
     'STATUS_ANALYZED',
@@ -246,8 +247,17 @@ def _get_cached_analysis(url, db, c):
         if file_name:
             file_name = file_name.decode('unicode_internal')
 
+        root_details = None
+        try:
+            root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+            root.load()
+            root_details = root.details
+        except Exception as e:
+            logging.error("unable to load cloudphish analysis {}: {}".format(uuid, e))
+            report_exception()
+
         return CloudphishAnalysisResult(RESULT_OK,      # result
-                                        None,           # details 
+                                        root_details,   # details 
                                         status=status,
                                         analysis_result=result,
                                         http_result=http_result,
