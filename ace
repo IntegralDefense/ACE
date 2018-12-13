@@ -815,7 +815,7 @@ def ace(args):
 
     elif args.start:
         if args.daemon:
-            logging.info("starting daemon {0}".format(daemon_name))
+            logging.info("starting daemon {}".format(daemon_name))
             daemonize(daemon_name)
 
         initialize_process_server()
@@ -844,6 +844,67 @@ def ace(args):
 ace_engine_parser = subparsers.add_parser('ace-engine',
     help="Start/Stop the Analysis Correlation Engine")
 ace_engine_parser.set_defaults(func=ace)
+
+# ============================================================================
+# start/stop the carbon black binary collector
+#
+
+def cb_binary_collector(args):
+
+    from saq.collectors.cb_binaries import CarbonBlackBinaryCollector
+    from saq.error import report_exception
+
+    daemon_name = 'cb_binary'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {}".format(daemon_name))
+            daemonize(daemon_name)
+
+        try:
+            kwargs = {}
+            if args.download_batch_size is not None:
+                kwargs['download_batch_size'] = args.download_batch_size
+            if args.initial_search_offset is not None:
+                kwargs['initial_search_offset'] = args.initial_search_offset
+            if args.storage_dir is not None:
+                kwargs['storage_dir'] = args.storage_dir
+            collector = CarbonBlackBinaryCollector(**kwargs)
+            collector.load_groups()
+            collector.start()
+        except KeyboardInterrupt as e:
+            logging.info("caught user interrupt")
+            try:
+                collector.stop()
+                collector.wait()
+            except Exception as e:
+                logging.error("uncaught exception: {}".format(e))
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+# cb-binary-collector
+cb_binary_collector_parser = subparsers.add_parser('cb-binary-collector',
+    help="Start/Stop the Carbon Black Binary Collector")
+cb_binary_collector_parser.add_argument('--download-batch-size', type=int, default=None,
+    help="The total number of carbon black binaries to download at once.")
+cb_binary_collector_parser.add_argument('--initial-search-offset', type=int, default=None,
+    help="The initial offset to use (in hours) if running this for the first time.")
+#cb_binary_collector_parser.add_argument('--search-offset', type=int, default=None,
+    #help="The number of minutes to look back for new binaries.")
+cb_binary_collector_parser.add_argument('--storage-dir',  default=None,
+    help="The directory to store the binaries in. Relative directories are relative to DATA_DIR.")
+cb_binary_collector_parser.set_defaults(func=cb_binary_collector)
 
 # ============================================================================
 # start carbon black binary processor
