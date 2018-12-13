@@ -1590,12 +1590,18 @@ class Workload(Base):
 
 @use_db
 def add_workload(root, exclusive_uuid=None, db=None, c=None):
-    """Adds the given work item to the workload queue."""
+    """Adds the given work item to the workload queue.
+       This will create an node entry if one does not exist for the current engine.
+       If no engine is loaded then a local engine is assumed."""
     # if we don't specify an analysis mode then we default to whatever the engine default is
     # NOTE you should always specify an analysis mode
     if root.analysis_mode is None:
         logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(root))
         root.analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
+
+    # make sure we've initialized our node id
+    if saq.SAQ_NODE_ID is None:
+        initialize_node()
         
     execute_with_retry(db, c, """
 INSERT INTO workload (
@@ -1818,6 +1824,10 @@ def initialize_database():
 @use_db
 def initialize_node(db, c):
     """Populates saq.SAQ_NODE_ID with the node ID for saq.NODE. Optionally inserts the node into the database if it does not exist."""
+
+    # have we already called this function?
+    if saq.SAQ_NODE_ID is not None:
+        return
 
     saq.SAQ_NODE_ID = None
 

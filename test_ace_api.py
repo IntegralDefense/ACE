@@ -165,7 +165,7 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(row)
         self.assertIsNotNone(row[0])
         self.assertEquals(row[1], uuid)
-        self.assertEquals(row[2], saq.SAQ_NODE_ID)
+        self.assertIsNotNone(row[2])
         self.assertEquals(row[3], 'test_empty')
 
     def test_submit_with_utc_timezone(self):
@@ -304,7 +304,7 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNone(result['locks'])
         self.assertTrue(isinstance(result['workload']['id'], int))
         self.assertEquals(result['workload']['uuid'], uuid)
-        self.assertEquals(result['workload']['node_id'], saq.SAQ_NODE_ID)
+        self.assertIsNotNone(result['workload']['node_id'])
         self.assertEquals(result['workload']['analysis_mode'], 'test_empty')
         self.assertTrue(isinstance(parse_event_time(result['workload']['insert_date']), datetime.datetime))
 
@@ -419,7 +419,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         self.assertEquals(submission_result[saq.cloudphish.KEY_HTTP_MESSAGE], 'OK')
         self.assertIsNotNone(submission_result[saq.cloudphish.KEY_SHA256_CONTENT])
         self.assertIsNotNone(submission_result[saq.cloudphish.KEY_SHA256_URL])
-        self.assertEquals(submission_result[saq.cloudphish.KEY_LOCATION], saq.SAQ_NODE)
+        self.assertIsNotNone(submission_result[saq.cloudphish.KEY_LOCATION])
         self.assertEquals(submission_result[saq.cloudphish.KEY_FILE_NAME], 'Payment_Advice.pdf')
         self.assertIsNotNone(submission_result[saq.cloudphish.KEY_UUID])
 
