@@ -33,7 +33,8 @@ from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, Profi
 from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
-                         add_delayed_analysis_request, clear_expired_locks, clear_expired_local_nodes
+                         add_delayed_analysis_request, clear_expired_locks, clear_expired_local_nodes, \
+                         initialize_node
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 from saq.performance import record_metric
@@ -637,10 +638,12 @@ class Engine(object):
             except Exception as e:
                 logging.error("unable to create directory {}: {}".format(d, e))
 
+        # insert this engine as a node (if it isn't already)
+        initialize_node()
+
         # update the database with the list of analysis modes we accept
         sql = [ "DELETE FROM node_modes WHERE node_id = %s" ]
         params = [ (saq.SAQ_NODE_ID,) ]
-
         
         # if we do NOT specify local_analysis_modes then we default to ANY mode
         # by setting the any_mode column of the node database row

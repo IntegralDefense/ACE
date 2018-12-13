@@ -141,9 +141,11 @@ def set_node(name):
     """Sets the value for saq.SAQ_NODE. Typically this is auto-set using the local fqdn."""
     from saq.database import initialize_node
     global SAQ_NODE
+    global SAQ_NODE_ID
     
     if name != SAQ_NODE:
         SAQ_NODE = name
+        SAQ_NODE_ID = None
         initialize_node()
 
 def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=None, relative_dir=None):
@@ -445,7 +447,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     initialize_database()
     
     # make sure our node is in the database (at this point it defaults to local if it's new)
-    initialize_node()
+    #initialize_node()
 
     # initialize fallback semaphores
     initialize_fallback_semaphores()
