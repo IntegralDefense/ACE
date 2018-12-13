@@ -1109,8 +1109,9 @@ class Engine(object):
     def update_node_status(self, db, c):
         """Updates the last_update field of the node table for this node."""
         try:
-            execute_with_retry(db, c, """UPDATE nodes SET last_update = NOW(), is_local = %s WHERE id = %s""", 
-                              (self.is_local, saq.SAQ_NODE_ID), commit=True)
+            execute_with_retry(db, c, """UPDATE nodes SET last_update = NOW(), is_local = %s, location = %s 
+                                         WHERE id = %s""", 
+                              (self.is_local, saq.API_PREFIX, saq.SAQ_NODE_ID), commit=True)
 
             logging.info("updated node {} ({}) (is_local = {})".format(saq.SAQ_NODE, saq.SAQ_NODE_ID, self.is_local))
 
