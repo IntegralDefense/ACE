@@ -32,7 +32,7 @@ class CarbonBlackBinaryCollector(Collector):
     def __init__(self, 
                  download_batch_size=10, 
                  initial_search_offset=24, 
-                 search_offset=60, 
+                 search_offset=60, # <-- DEPRECATED
                  storage_dir='storage', 
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
