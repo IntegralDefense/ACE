@@ -285,6 +285,9 @@ class WorkerManager(object):
                 for worker in self.workers:
                     worker.wait_for_start()
 
+            # don't spin the cpu
+            time.sleep(1)
+
         # make sure all the processes exit with you
         for worker in self.workers:
             worker.wait()
