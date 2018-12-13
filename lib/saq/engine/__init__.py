@@ -518,6 +518,10 @@ class Engine(object):
            Analysis mode can either be a single mode name, or a tuple of mode names.
            This is typically only used by unit tests."""
 
+        if config_section in saq.CONFIG['disabled_modules'] and saq.CONFIG['disabled_modules'].getboolean(config_section):
+            logging.info("skipping disabled module {}".format(config_section))
+            return
+
         self.locally_enabled_modules.append(config_section)
         if analysis_mode is not None:
             if isinstance(analysis_mode, str):
