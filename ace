@@ -874,9 +874,13 @@ def cb_binary_collector(args):
                 kwargs['initial_search_offset'] = args.initial_search_offset
             if args.storage_dir is not None:
                 kwargs['storage_dir'] = args.storage_dir
+            if args.collection_frequency is not None:
+                kwargs['collection_frequency'] = args.collection_frequency
+
             collector = CarbonBlackBinaryCollector(**kwargs)
             collector.load_groups()
             collector.start()
+
         except KeyboardInterrupt as e:
             logging.info("caught user interrupt")
             try:
@@ -896,6 +900,8 @@ def cb_binary_collector(args):
 # cb-binary-collector
 cb_binary_collector_parser = subparsers.add_parser('cb-binary-collector',
     help="Start/Stop the Carbon Black Binary Collector")
+cb_binary_collector_parser.add_argument('-c', '--collection-frequency', type=int, default=10,
+    help="The number of seconds to wait between requests to Carbon Black for new binaries. Defaults to 10 seconds.")
 cb_binary_collector_parser.add_argument('--download-batch-size', type=int, default=None,
     help="The total number of carbon black binaries to download at once.")
 cb_binary_collector_parser.add_argument('--initial-search-offset', type=int, default=None,

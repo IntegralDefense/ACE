@@ -214,8 +214,8 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     # the global log level setting
     LOG_LEVEL = logging.INFO
-    # global logging directory (relative to SAQ_HOME)
-    LOG_DIRECTORY = 'logs'
+    # global logging directory (relative to DATA_DIR)
+    LOG_DIRECTORY = None
 
     # directory containing statistical runtime info
     STATS_DIR = None 
@@ -340,12 +340,12 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
             LOG_LEVEL = args.log_level
 
     # make sure the logs directory exists
-    logs_dir = os.path.join(SAQ_HOME, LOG_DIRECTORY)
-    if not os.path.exists(logs_dir):
+    LOG_DIRECTORY = os.path.join(DATA_DIR, 'logs')
+    if not os.path.exists(LOG_DIRECTORY):
         try:
-            os.mkdir(logs_dir)
+            os.mkdir(LOG_DIRECTORY)
         except Exception as e:
-            sys.stderr.write("unable to mkdir {}: {}\n".format(logs_dir, e))
+            sys.stderr.write("unable to mkdir {}: {}\n".format(LOG_DIRECTORY, e))
             sys.exit(1)
 
     # by default we log to the console

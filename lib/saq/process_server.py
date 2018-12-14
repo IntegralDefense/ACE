@@ -342,7 +342,7 @@ def initialize_process_server(unix_socket=None):
     # if nothing is given then just use some randomly named file
     if unix_socket is None:
         import uuid
-        unix_socket = os.path.join(saq.SAQ_HOME, 'var', '{}.socket'.format(str(uuid.uuid4())))
+        unix_socket = os.path.join(saq.DATA_DIR, 'var', '{}.socket'.format(str(uuid.uuid4())))
 
     SP_SERVER = SubprocessServer(unix_socket)
     SP_SERVER.start()
