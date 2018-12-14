@@ -742,8 +742,8 @@ class ArchiveAnalyzer(AnalysisModule):
                 if is_office_document:
                     file_observable.redirection = _file
 
-                # 5/21/2018 - XPS files are including links to malicious sites
-                if _file.ext == 'xps':
+                # https://github.com/IntegralDefense/ACE/issues/12 - also fixed for xps
+                if file_observable.ext in [ 'xps', 'rels' ]:
                     file_observable.add_directive(DIRECTIVE_EXTRACT_URLS)
 
                 # a single file inside of a zip file is always suspect

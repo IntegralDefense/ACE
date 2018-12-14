@@ -2951,7 +2951,16 @@ def events():
     if session['event_sort_by'] == 'disposition':
         events = sorted(events, key=lambda event: event.disposition_rank, reverse=session['event_sort_dir'])
 
-    return render_template('analysis/events.html', events=events, filter_state=filter_state, malware=malware, companies=companies, campaigns=campaigns, sort_by=session['event_sort_by'], sort_dir=session['event_sort_dir'])
+    event_tags = {} 
+    # we don't show "special" or "hidden" tags in the display
+    special_tag_names = [tag for tag in saq.CONFIG['tags'].keys() if saq.CONFIG['tags'][tag] in ['special', 'hidden' ]]
+    for event in events:
+        event_tags[event.id] = []
+        for tag in event.sorted_tags:
+            if tag.name not in special_tag_names:
+                event_tags[event.id].append(tag)
+
+    return render_template('analysis/events.html', events=events, event_tags=event_tags, filter_state=filter_state, malware=malware, companies=companies, campaigns=campaigns, sort_by=session['event_sort_by'], sort_dir=session['event_sort_dir'])
 
 @analysis.route('/event_alerts', methods=['GET'])
 @login_required
@@ -2960,7 +2969,16 @@ def event_alerts():
     events = db.session.query(Event).filter(Event.id == event_id).all()
     event = events[0]
     event_mappings = db.session.query(EventMapping).filter(EventMapping.event_id == event_id).all()
-    return render_template('analysis/event_alerts.html', event_mappings=event_mappings, event=event)
+
+    alert_tags = {}
+    special_tag_names = [tag for tag in saq.CONFIG['tags'].keys() if saq.CONFIG['tags'][tag] in ['special', 'hidden' ]]
+    for event_mapping in event_mappings:
+        alert_tags[event_mapping.alert.uuid] = []
+        for tag in event_mapping.alert.sorted_tags:
+            if tag.name not in special_tag_names:
+                alert_tags[event_mapping.alert.uuid].append(tag)
+
+    return render_template('analysis/event_alerts.html', alert_tags=alert_tags, event_mappings=event_mappings, event=event)
 
 @analysis.route('/remove_alerts', methods=['POST'])
 @login_required
