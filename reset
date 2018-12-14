@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+if [ "$(ace config -v global.instance_type)" == "PRODUCTION" ]
+then
+    echo
+    echo "you probably don't want to delete all the production data lol"
+    echo
+    exit 1
+fi
+
+echo "Are you sure you want to reset the system? This deletes ALL the data."
+select yn in Yes No; do
+    case ${yn} in
+        Yes ) break ;;
+        No ) exit 0 ;;
+    esac
+done
+
+if [ -z "$SAQ_HOME" ]
+then
+    echo "missing SAQ_HOME env var"
+    exit 1
+fi
+
+if [ ! -d "$SAQ_HOME" ]
+then
+    echo "SAQ_HOME directory $SAQ_HOME is missing"
+    exit 1
+fi
+
+cd "$SAQ_HOME" || { echo "cannot cd into $SAQ_HOME"; exit 1; }
+
+data_dir=$(ace config -v global.data_dir)
+if [ -z "$data_dir" ]
+then
+    echo "mising global.data_dir config"
+    exit 1
+fi
+
+if [ "$(ace config -v global.node)" == "AUTO" ]
+then
+    node=$(hostname).$(domainname)
+else
+    node=$(ace config -v global.node)
+fi
+
+for subdir in "$node" "archive" "error_reports" "es_logs" "logs" "review" "splunk_logs" "stats" "storage" "var"
+do
+    if [ -d "$data_dir/$subdir" ]
+    then
+        echo "deleting $data_dir/$subdir"
+        rm -rf "$data_dir/$subdir"
+    fi
+done
+
+if [ -z "$(ace config -v database_ace.database)" ]
+then
+    echo "missing database_ace.database config"
+    exit 1
+fi
+
+mysql --defaults-file=/opt/ace/etc/mysql_defaults --database=$(ace config -v database_ace.database) < sql/reset_ace_database.sql
+mysql --defaults-file=/opt/ace/etc/mysql_defaults --database=$(ace config -v database_brocess.database) < sql/reset_brocess_database.sql
+mysql --defaults-file=/opt/ace/etc/mysql_defaults --database=$(ace config -v database_hal9000.database) < sql/reset_hal9000_database.sql
+mysql --defaults-file=/opt/ace/etc/mysql_defaults --database=$(ace config -v database_email_archive.database) < sql/reset_email_archive_database.sql
+#mysql --defaults-file=/opt/ace/etc/mysql_defaults --database=$(ace config -v database_vt_hash_cache.database) < sql/reset_vt_hash_cache_database.sql
