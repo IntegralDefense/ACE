@@ -336,12 +336,6 @@ class Engine(object):
         # we just cache the current hostname of this engine here
         self.hostname = socket.gethostname()
 
-        # a work directory where we can find the files to work on
-        self.work_dir = os.path.join(saq.SAQ_HOME, 'work', self.name)
-
-        # directory for temporary files
-        self.var_dir = os.path.join(saq.SAQ_HOME, 'var', self.name)
-
         # directory to store statistical runtime information
         self.stats_dir = os.path.join(saq.MODULE_STATS_DIR, self.name)
 
@@ -635,7 +629,7 @@ class Engine(object):
     def initialize(self, db, c):
         """Initialization routines executed once at startup."""
         # make sure these exist
-        for d in [ self.work_dir, self.var_dir, self.stats_dir ]:
+        for d in [ self.stats_dir ]:
             try:
                 if not os.path.isdir(d):
                     os.makedirs(d)

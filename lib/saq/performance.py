@@ -24,6 +24,6 @@ def track_execution_time(f):
     return _track_execution_time
 
 def record_metric(metric, value):
-    with open(os.path.join(saq.SAQ_HOME, 'stats', 'metrics', '{}.csv'.format(metric)), 'a') as fp:
+    with open(os.path.join(saq.DATA_DIR, 'stats', 'metrics', '{}.csv'.format(metric)), 'a') as fp:
         writer = csv.writer(fp)
         writer.writerow([str(datetime.datetime.now()), os.getpid(), ' '.join(sys.argv), value])

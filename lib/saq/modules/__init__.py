@@ -233,15 +233,16 @@ class AnalysisModule(object):
                 raise RuntimeError("cannot find {} used by {}".format(path, self))
 
     def create_required_directory(self, dir):
-        """Creates the given directory if it does not already exist.  Relative paths are relative to SAQ_HOME."""
+        """Creates the given directory if it does not already exist.  Relative paths are relative to DATA_DIR."""
 
         if not os.path.isabs(dir):
-            dir = os.path.join(saq.SAQ_HOME, dir)
+            dir = os.path.join(saq.DATA_DIR, dir)
             
         if os.path.isdir(dir):
             return
 
         try:
+            logging.debug("creating required directory {}".format(dir))
             os.makedirs(dir)
         except Exception as e:
             logging.error("unable to create required directory {} for {}: {}".format(dir, self, e))

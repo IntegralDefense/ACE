@@ -412,7 +412,7 @@ class BrotexSMTPStreamArchiveAction(AnalysisModule):
         logging.debug("archiving bro smtp connection {} from {}".format(connection_id, _file))
 
         # where do we put the file?
-        archive_dir = os.path.join(saq.SAQ_HOME, self.config['archive_dir'], self.hostname, connection_id[0:3])
+        archive_dir = os.path.join(saq.DATA_DIR, self.config['archive_dir'], self.hostname, connection_id[0:3])
         if not os.path.isdir(archive_dir):
             logging.debug("creating archive directory {}".format(archive_dir))
 
@@ -1830,7 +1830,7 @@ class EmailArchiveAction(AnalysisModule):
         email_md5 = email_md5.lower()
 
         # archive the email...
-        archive_dir = os.path.join(saq.SAQ_HOME, self.config['archive_dir'], self.hostname, email_md5[0:3])
+        archive_dir = os.path.join(saq.DATA_DIR, self.config['archive_dir'], self.hostname, email_md5[0:3])
         if not os.path.isdir(archive_dir):
             logging.debug("creating archive directory {}".format(archive_dir))
 
@@ -2740,7 +2740,7 @@ WHERE
 
         for server, md5 in result:
             # does this archive file exist?
-            archive_base_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'])
+            archive_base_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['analysis_module_email_archiver']['archive_dir'])
             if not os.path.isdir(archive_base_dir):
                 logging.warning("archive directory {} does not exist".format(archive_base_dir))
                 continue
