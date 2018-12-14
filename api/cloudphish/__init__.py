@@ -112,7 +112,7 @@ def download():
             logging.debug("sending redirect to {}".format(target_url))
             return redirect(target_url)
 
-    path = os.path.join(saq.SAQ_HOME, saq.CONFIG['cloudphish']['cache_dir'], 
+    path = os.path.join(saq.DATA_DIR, saq.CONFIG['cloudphish']['cache_dir'], 
                         sha256_content[0:2].lower(), sha256_content.lower())
 
     if not os.path.exists(path):

@@ -574,8 +574,7 @@ class ACEBasicTestCase(TestCase):
         db.commit()
 
         # clear cloudphish engine and module cache
-        for cache_dir in [ saq.CONFIG['cloudphish']['cache_dir'], 
-                           saq.CONFIG['analysis_module_cloudphish']['local_cache_dir'] ]:
+        for cache_dir in [ saq.CONFIG['cloudphish']['cache_dir'] ]:
             if os.path.isdir(cache_dir):
                 shutil.rmtree(cache_dir)
                 os.makedirs(cache_dir)
@@ -606,7 +605,7 @@ class ACEBasicTestCase(TestCase):
 
     def reset_email_archive(self):
         import socket
-        archive_subdir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'], 
+        archive_subdir = os.path.join(saq.DATA_DIR, saq.CONFIG['analysis_module_email_archiver']['archive_dir'], 
                                       socket.gethostname().lower())
 
         if os.path.exists(archive_subdir):
@@ -623,7 +622,6 @@ class ACEBasicTestCase(TestCase):
 
     def start_api_server(self):
         """Starts the API server as a separate process."""
-        logging.debug("starting api server")
         self.api_server_process = Process(target=self.execute_api_server)
         self.api_server_process.start()
 
@@ -663,6 +661,8 @@ class ACEBasicTestCase(TestCase):
             app.config['APPLICATION_ROOT']: app,
         })
 
+        logging.info("starting api server on {} port {}".format(saq.CONFIG.get('api', 'listen_address'), 
+                                                                saq.CONFIG.getint('api', 'listen_port')))
         run_simple(saq.CONFIG.get('api', 'listen_address'), saq.CONFIG.getint('api', 'listen_port'), application,
                    ssl_context=(saq.CONFIG.get('api', 'ssl_cert'), saq.CONFIG.get('api', 'ssl_key')),
                    use_reloader=False)

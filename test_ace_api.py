@@ -369,6 +369,13 @@ class TestCase(ACEEngineTestCase):
 
 class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+        self.start_api_server()
+
+        ace_api.set_default_remote_host(saq.API_PREFIX)
+        ace_api.set_default_ssl_ca_path(saq.CONFIG['SSL']['ca_chain_path'])
+
     def test_cloudphish_api(self):
         import saq.cloudphish
         submission_result = ace_api.cloudphish_submit(TEST_URL)
