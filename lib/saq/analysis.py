@@ -2705,78 +2705,6 @@ class RootAnalysis(Analysis):
         from saq.database import add_workload
         add_workload(self, exclusive_uuid=exclusive_uuid)
 
-    def submit(self, target_company=None):
-        """Submit this RootAnalysis as an Alert to the ACE system."""
-        from saq.network_client import submit_alerts
-
-        # has this already been submitted?
-        if self.alerted:
-            logging.debug("{} already submitted (not submitting)".format(self))
-            return
-
-        # save everything to disk
-        self.save()
-
-        # if a target_company is specified then we look up where to send it
-        # otherwise we default to what is in the network_client_ace section (old default)
-
-        # submit this to ACE for correlation
-        logging.info("submitting {} to ACE".format(self))
-        remote_host = saq.CONFIG['network_client_ace']['remote_host']
-        remote_port = saq.CONFIG['network_client_ace'].getint('remote_port')
-        ssl_hostname = saq.CONFIG['network_client_ace']['ssl_hostname']
-        ssl_cert = saq.CONFIG['network_client_ace']['ssl_cert']
-        ssl_key = saq.CONFIG['network_client_ace']['ssl_key']
-        ca_path = saq.CONFIG['network_client_ace']['ca_path']
-
-        if target_company:
-            try:
-                target_section = 'network_client_ace_{}'.format(target_company)
-                logging.info("sending alert {} to {}".format(self, target_company))
-                remote_host = saq.CONFIG[target_section]['remote_host']
-                remote_port = saq.CONFIG[target_section].getint('remote_port')
-                ssl_hostname = saq.CONFIG[target_section]['ssl_hostname']
-                ssl_cert = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_cert'])
-                ssl_key = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_key'])
-                ca_path = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ca_path'])
-
-            except Exception as e:
-                logging.warning("invalid company selection for alert target: {}".format(e))
-            
-        try:
-            submit_alerts(remote_host, remote_port, ssl_cert, ssl_hostname, ssl_key, ca_path, self.storage_dir)
-        except Exception as e:
-            logging.error("unable to submit {} to remote host {} remote port {} hostname {}: {}".format(
-                          self.storage_dir,
-                          remote_host,
-                          remote_port,
-                          ssl_hostname,
-                          e))
-            
-            # copy the failed alert into a directory so it can be submitted later
-            failed_dir = os.path.join(saq.SAQ_HOME, 
-                                      saq.CONFIG['network_client_ace']['failed_dir'])
-
-            if not os.path.isdir(failed_dir):
-                try:
-                    os.makedirs(failed_dir)
-                except Exception as e:
-                    logging.error("unable to create directory {}: {}".format(failed_dir, e))
-                    report_exception()
-                    return False
-
-            target_dir = os.path.join(failed_dir, os.path.basename(self.storage_dir))
-
-            try:
-                shutil.copytree(self.storage_dir, target_dir, copy_function=os.link)
-                logging.warning("copy failed submission {} to {}".format(self.storage_dir, target_dir))
-            except Exception as e:
-                logging.error("unable to copy {} to {}: {}".format(self.storage_dir, target_dir, e))
-                report_exception()
-
-        # remember that we sent this
-        self.alerted = True
-
     def save(self):
         """Saves the Alert to disk. Resolves AttachmentLinks into Attachments. Note that this does not insert the Alert into the system."""
         assert self.json_path is not None
@@ -3096,7 +3024,7 @@ class RootAnalysis(Analysis):
 
         # remove any empty directories left behind
         logging.debug("removing empty directories inside {}".format(self.storage_dir))
-        p = Popen(['find', os.path.join(saq.SAQ_HOME, self.storage_dir), '-type', 'd', '-empty', '-delete'])
+        p = Popen(['find', os.path.join(saq.DATA_DIR, self.storage_dir), '-type', 'd', '-empty', '-delete'])
         p.wait()
 
     def archive(self):
