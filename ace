@@ -577,17 +577,19 @@ def correlate(args):
 
             for module_name in saq.CONFIG[group_section].keys():
                 logging.info("enabling {} by group {}".format(module_name, module_group))
-                saq.CONFIG[module_name]['enabled'] = 'yes'
+                engine.enable_module(module_name, ANALYSIS_MODE_CLI)
+                #saq.CONFIG[module_name]['enabled'] = 'yes'
 
-        saq.CONFIG['engine_cli_correlation']['module_groups'] = ','.join(args.enable_module_group)
+        #saq.CONFIG['engine_cli_correlation']['module_groups'] = ','.join(args.enable_module_group)
 
     if args.enabled_modules:
         for name_pattern in args.enabled_modules:
             for section in saq.CONFIG.sections():
                 if name_pattern in section[len('analysis_module_'):]:
                     logging.info("enabling {}".format(section))
-                    saq.CONFIG[section]['enabled'] = 'yes'
-                    saq.CONFIG['engine_cli_correlation'][section] = 'yes'
+                    engine.enable_module(section, ANALYSIS_MODE_CLI)
+                    #saq.CONFIG[section]['enabled'] = 'yes'
+                    #saq.CONFIG['engine_cli_correlation'][section] = 'yes'
 
     try:
         engine.controlled_stop()
