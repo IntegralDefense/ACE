@@ -1683,7 +1683,7 @@ WHERE
                     return lock_uuid
 
                 # lock was acquired by someone else
-                logging.info("attempt to acquire lock {} failed (already locked by {}: {})".format(
+                logging.debug("attempt to acquire lock {} failed (already locked by {}: {})".format(
                              _uuid, current_lock_uuid, current_lock_owner))
 
             else:

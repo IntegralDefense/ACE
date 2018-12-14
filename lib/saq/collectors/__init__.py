@@ -92,7 +92,7 @@ class RemoteNode(object):
         self.workload_count = workload_count
 
         # the directory that contains any files that to be transfered along with submissions
-        self.incoming_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['incoming_dir'])
+        self.incoming_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['collection']['incoming_dir'])
 
     def __str__(self):
         return "RemoteNode(id={},name={})".format(self.id, self.name)
@@ -174,7 +174,7 @@ class RemoteNodeGroup(object):
         self.node_status_update_frequency = saq.CONFIG['engine'].getint('node_status_update_frequency')
 
         # the directory that contains any files that to be transfered along with submissions
-        self.incoming_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['incoming_dir'])
+        self.incoming_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['collection']['incoming_dir'])
 
     def start(self):
         self.shutdown_event.clear()
@@ -453,7 +453,7 @@ WHERE
                 self.name, self.coverage, self.full_delivery, self.database)
 
 class Collector(object):
-    def __init__(self, delete_files=False, test_mode=None):
+    def __init__(self, delete_files=False, test_mode=None, collection_frequency=1):
         # often used as the "tool_instance" property of analysis
         self.fqdn = socket.getfqdn()
 
@@ -464,10 +464,10 @@ class Collector(object):
         self.remote_node_groups = []
 
         # the directory that contains any files that to be transfered along with submissions
-        self.incoming_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['incoming_dir'])
+        self.incoming_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['collection']['incoming_dir'])
 
         # the directory that can contain various forms of persistence for collections
-        self.persistence_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['collection']['persistence_dir'])
+        self.persistence_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['collection']['persistence_dir'])
 
         # if delete_files is True then any files copied for submission are deleted after being
         # successfully added to the submission queue
@@ -481,6 +481,10 @@ class Collector(object):
 
         # the total number of submissions sent to the RemoteNode objects (added to the incoming_workload table)
         self.submission_count = 0
+
+        # how often to collect, defaults to 1 second
+        # NOTE there is no wait if something was previously collected
+        self.collection_frequency = collection_frequency
 
     @use_db
     def add_group(self, name, coverage, full_delivery, database, db, c):
@@ -584,8 +588,8 @@ class Collector(object):
 
         # did we not get anything to submit?
         if next_submission is None:
-            # wait a second before we check again... TODO make the wait optional
-            self.shutdown_event.wait(1)
+            # wait until we check again (defaults to 1 second, passed in on constructor)
+            self.shutdown_event.wait(self.collection_frequency)
             return
 
         if not isinstance(next_submission, Submission):
