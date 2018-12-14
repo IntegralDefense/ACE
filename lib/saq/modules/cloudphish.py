@@ -579,7 +579,7 @@ class CloudphishRequestAnalyzer(AnalysisModule):
                     logging.error("missing sha256 hash for {}".format(file_observable))
                     break
 
-                cache_dir = os.path.join(saq.CONFIG['cloudphish']['cache_dir'], 
+                cache_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['cloudphish']['cache_dir'], 
                                          file_observable.sha256_hash.lower()[0:2])
 
                 if not os.path.isdir(cache_dir):
