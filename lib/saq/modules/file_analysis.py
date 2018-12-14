@@ -2243,7 +2243,7 @@ class YaraScanner_v3_4(AnalysisModule):
         #self.blacklisted_rules = []
 
         # this is where we place files that fail scanning
-        self.scan_failure_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['yara']['scan_failure_dir'])
+        self.scan_failure_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['yara']['scan_failure_dir'])
         if not os.path.exists(self.scan_failure_dir):
             try:
                 os.makedirs(self.scan_failure_dir)
