@@ -1,8 +1,8 @@
--- MySQL dump 10.13  Distrib 5.5.53, for debian-linux-gnu (x86_64)
+-- MySQL dump 10.13  Distrib 5.7.24, for Linux (x86_64)
 --
--- Host: localhost    Database: saq-production
+-- Host: localhost    Database: ace
 -- ------------------------------------------------------
--- Server version	5.5.53-0ubuntu0.14.04.1
+-- Server version	5.7.24-0ubuntu0.18.04.1
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -58,7 +58,7 @@ CREATE TABLE `alerts` (
   KEY `idx_disposition` (`disposition`),
   KEY `idx_alert_type` (`alert_type`),
   CONSTRAINT `fk_company` FOREIGN KEY (`company_id`) REFERENCES `company` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -74,6 +74,44 @@ CREATE TABLE `campaign` (
   PRIMARY KEY (`name`),
   KEY `id` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cloudphish_analysis_results`
+--
+
+DROP TABLE IF EXISTS `cloudphish_analysis_results`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cloudphish_analysis_results` (
+  `sha256_url` binary(32) NOT NULL COMMENT 'The binary SHA2 hash of the URL.',
+  `http_result_code` int(11) DEFAULT NULL COMMENT 'The HTTP result code give by the server when it was fetched (200, 404, 500, etc…)',
+  `http_message` varchar(256) DEFAULT NULL COMMENT 'The message text that came along with the http_result_code.',
+  `sha256_content` binary(32) DEFAULT NULL COMMENT 'The binary SHA2 hash of the content that was downloaded for the URL.',
+  `result` enum('UNKNOWN','ERROR','CLEAR','ALERT','PASS') NOT NULL DEFAULT 'UNKNOWN' COMMENT 'The analysis result of the URL. This is updated by the cloudphish_request_analyzer module.',
+  `insert_date` datetime NOT NULL COMMENT 'When this entry was created.',
+  `uuid` varchar(36) NOT NULL COMMENT 'The UUID of the analysis. This would also become the UUID of the alert if it ends up becoming one.',
+  `status` enum('NEW','ANALYZING','ANALYZED') NOT NULL DEFAULT 'NEW',
+  PRIMARY KEY (`sha256_url`),
+  KEY `insert_date_index` (`insert_date`),
+  KEY `sha256_content_index` (`sha256_content`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `cloudphish_content_metadata`
+--
+
+DROP TABLE IF EXISTS `cloudphish_content_metadata`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `cloudphish_content_metadata` (
+  `sha256_content` binary(32) NOT NULL COMMENT 'The binary SHA2 hash of the content that was downloaded from the URL.',
+  `node` varchar(1024) DEFAULT NULL COMMENT 'The name of the node which stores this binary data. This would match the name columns of the nodes table, however, there is not a database relationship because the nodes can change.',
+  `name` varbinary(4096) NOT NULL COMMENT 'The name of the file as it was seen either by content disposition of extrapolated from the URL.',
+  PRIMARY KEY (`sha256_content`),
+  CONSTRAINT `fk_sha256_content` FOREIGN KEY (`sha256_content`) REFERENCES `cloudphish_analysis_results` (`sha256_content`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -108,7 +146,7 @@ CREATE TABLE `company` (
   `name` varchar(128) NOT NULL,
   PRIMARY KEY (`name`),
   KEY `id` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -136,11 +174,20 @@ DROP TABLE IF EXISTS `delayed_analysis`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `delayed_analysis` (
-  `alert_id` int(11) NOT NULL,
-  `observable_id` char(36) NOT NULL,
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `uuid` varchar(36) NOT NULL,
+  `observable_uuid` char(36) NOT NULL,
   `analysis_module` varchar(512) NOT NULL,
-  PRIMARY KEY (`alert_id`,`observable_id`,`analysis_module`),
-  CONSTRAINT `fk_alert_id` FOREIGN KEY (`alert_id`) REFERENCES `alerts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  `insert_date` datetime NOT NULL,
+  `delayed_until` datetime DEFAULT NULL,
+  `node_id` int(11) NOT NULL,
+  `exclusive_uuid` varchar(36) DEFAULT NULL COMMENT 'A workload item with an exclusive lock will only be processed by the engine (node) that created it.',
+  `storage_dir` varchar(1024) NOT NULL COMMENT 'The location of the analysis. Relative paths are relative to SAQ_HOME.',
+  PRIMARY KEY (`id`),
+  KEY `idx_uuid` (`uuid`),
+  KEY `idx_node` (`node_id`),
+  KEY `idx_node_delayed_until` (`node_id`,`delayed_until`),
+  CONSTRAINT `fk_delayed_analysis_node_id` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -181,6 +228,39 @@ CREATE TABLE `events` (
   `campaign_id` int(11) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `creation_date` (`creation_date`,`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `incoming_workload`
+--
+
+DROP TABLE IF EXISTS `incoming_workload`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `incoming_workload` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `mode` varchar(256) NOT NULL COMMENT 'The analysis mode the work will be submit with. This determines what nodes are selected for receiving the work.',
+  `work` blob NOT NULL COMMENT 'A python pickle of the **kwargs for ace_api.submit (see source code)',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=11436 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `locks`
+--
+
+DROP TABLE IF EXISTS `locks`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `locks` (
+  `uuid` varchar(36) NOT NULL,
+  `lock_uuid` varchar(36) DEFAULT NULL,
+  `lock_time` datetime NOT NULL,
+  `lock_owner` varchar(512) DEFAULT NULL,
+  PRIMARY KEY (`uuid`),
+  KEY `idx_lock_time` (`lock_time`),
+  KEY `idx_uuid_locko_uuid` (`uuid`,`lock_uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -232,6 +312,44 @@ CREATE TABLE `malware_threat_mapping` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `node_modes`
+--
+
+DROP TABLE IF EXISTS `node_modes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `node_modes` (
+  `node_id` int(11) NOT NULL,
+  `analysis_mode` varchar(256) NOT NULL COMMENT 'The analysis_mode that this mode will support processing.',
+  PRIMARY KEY (`node_id`,`analysis_mode`),
+  CONSTRAINT `fk_node_id` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `nodes`
+--
+
+DROP TABLE IF EXISTS `nodes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `nodes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(1024) NOT NULL COMMENT 'The value of SAQ_NODE in the [global] section of the configuration file.',
+  `location` varchar(1024) NOT NULL COMMENT 'Also called the API_PREFIX, this is the hostname:port portion of the URL for the api for the node.',
+  `company_id` int(11) NOT NULL COMMENT 'The company this node belongs to (see [global] company_id in config file)',
+  `last_update` datetime NOT NULL COMMENT 'The last time this node updated it’s status.',
+  `is_primary` tinyint(4) NOT NULL DEFAULT '0' COMMENT '0 - node is not the primary node\n1 - node is the primary node\n\nThe primary node is responsible for doing some basic database cleanup procedures.',
+  `any_mode` tinyint(4) NOT NULL DEFAULT '0' COMMENT 'If this is true then the node_modes table is ignored for this mode as it supports any analysis mode.',
+  `is_local` tinyint(4) NOT NULL DEFAULT '0' COMMENT 'If a node is “local” then it is not considered for use by other non-“local” nodes. Typically this is used by the correlate command line utility to run the ace engine by itself.',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `node_UNIQUE` (`name`),
+  KEY `fk_company_id_idx` (`company_id`),
+  CONSTRAINT `fk_company_id` FOREIGN KEY (`company_id`) REFERENCES `company` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=199 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `observable_mapping`
 --
 
@@ -261,7 +379,7 @@ CREATE TABLE `observables` (
   `value` varbinary(1024) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `index_type_value` (`type`,`value`(255))
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=778 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -366,7 +484,7 @@ CREATE TABLE `tags` (
   `name` varchar(256) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -384,7 +502,41 @@ CREATE TABLE `users` (
   `omniscience` int(11) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`,`email`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `work_distribution`
+--
+
+DROP TABLE IF EXISTS `work_distribution`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `work_distribution` (
+  `group_id` int(11) NOT NULL,
+  `work_id` bigint(20) NOT NULL,
+  `status` enum('READY','COMPLETED') NOT NULL DEFAULT 'READY' COMMENT 'The status of the submission. Defaults to READY until the work has been either submitted, or it has failed to submit (in either case it gets set to COMPLETED.)',
+  PRIMARY KEY (`group_id`,`work_id`),
+  KEY `fk_work_id_idx` (`work_id`),
+  KEY `fk_work_status` (`work_id`,`status`),
+  CONSTRAINT `fk_group_id` FOREIGN KEY (`group_id`) REFERENCES `work_distribution_groups` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_work_id` FOREIGN KEY (`work_id`) REFERENCES `incoming_workload` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `work_distribution_groups`
+--
+
+DROP TABLE IF EXISTS `work_distribution_groups`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `work_distribution_groups` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL COMMENT 'The name of the group (Production, QA, etc…)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_name_unique` (`name`)
+) ENGINE=InnoDB AUTO_INCREMENT=937 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -396,11 +548,23 @@ DROP TABLE IF EXISTS `workload`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `workload` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `alert_id` int(11) NOT NULL,
-  `node` varchar(256) DEFAULT NULL COMMENT 'the node that has claimed this work item',
+  `uuid` varchar(36) NOT NULL,
+  `node_id` int(11) NOT NULL COMMENT 'The node that contains this work item.',
+  `analysis_mode` varchar(256) NOT NULL,
+  `insert_date` datetime DEFAULT NULL,
+  `company_id` int(11) NOT NULL,
+  `exclusive_uuid` varchar(36) DEFAULT NULL COMMENT 'A workload item with an exclusive lock will only be processed by the engine (node) that created it.',
+  `storage_dir` varchar(1024) NOT NULL COMMENT 'The location of the analysis. Relative paths are relative to SAQ_HOME.',
   PRIMARY KEY (`id`),
-  KEY `alert_id` (`alert_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COMMENT='the list of alerts that need to be analyzed';
+  UNIQUE KEY `uuid_UNIQUE` (`uuid`),
+  UNIQUE KEY `storage_dir_UNIQUE` (`storage_dir`),
+  KEY `fk_company_id_idx` (`company_id`),
+  KEY `idx_uuid` (`uuid`),
+  KEY `idx_node` (`node_id`),
+  KEY `idx_analysis_mode` (`analysis_mode`),
+  CONSTRAINT `fk_workload_company_id` FOREIGN KEY (`company_id`) REFERENCES `company` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_workload_node_id` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=latin1 COMMENT='the list of alerts that need to be analyzed';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -412,4 +576,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2018-08-20 14:47:26
+-- Dump completed on 2018-12-17 13:33:34
