@@ -19,7 +19,7 @@ class BroBaseTestCase(CollectorBaseTestCase):
         os.mkdir(os.path.join(self.bro_work_dir, 'ace'))
         with open(os.path.join(self.bro_work_dir, 'ace', 'ace_local.bro'), 'w') as fp:
             Popen(['sed', '-e', 's:data/var:data_unittest/var:', 
-                  os.path.join(saq.SAQ_HOME, 'bro', 'ace_local.bro')], stdout=fp).wait()
+                  os.path.join(saq.SAQ_HOME, 'bro', 'ace_local.example.bro')], stdout=fp).wait()
 
         shutil.copy(os.path.join(saq.SAQ_HOME, 'bro', 'ace_http.bro'), os.path.join(self.bro_work_dir, 'ace', 'ace_http.bro'))
         shutil.copy(os.path.join(saq.SAQ_HOME, 'bro', 'ace_smtp.bro'), os.path.join(self.bro_work_dir, 'ace', 'ace_smtp.bro'))
