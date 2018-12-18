@@ -185,39 +185,36 @@ def _get_cached_db_connection(name='ace'):
             return db
 
         except Exception as e:
-            logging.debug("possibly lost cached connection to database {}: {} ({})".format(name, e, type(e)))
+            logging.info("possibly lost cached connection to database {}: {} ({})".format(name, e, type(e)))
             try:
                 db.close()
             except Exception as e:
-                logging.debug("unable to close cached database connection to {}: {}".format(name, e))
+                logging.error("unable to close cached database connection to {}: {}".format(name, e))
 
-            with _global_db_cache_lock:
-                del _global_db_cache[db_identifier]
+            try:
+                with _global_db_cache_lock:
+                    del _global_db_cache[db_identifier]
+            except Exception as e:
+                logging.error("unable to delete cached db {}: {}".format(db_identifier, e))
 
-            return _get_db_connection(name)
+            #return _get_db_connection(name)
 
     except KeyError:
+        pass
 
-        try:
-            logging.debug("opening new cached database connection to {}".format(name))
-            _section = saq.CONFIG[config_section]
-            db = pymysql.connect(host=_section['hostname'] if 'hostname' in _section else None,
-                                 unix_socket=_section['unix_socket'] if 'unix_socket' in _section else None,
-                                 db=_section['database'],
-                                 user=_section['username'],
-                                 passwd=_section['password'],
-                                 charset='utf8')
+    try:
+        logging.info("opening new cached database connection to {}".format(name))
 
-            with _global_db_cache_lock:
-                _global_db_cache[db_identifier] = db
+        with _global_db_cache_lock:
+            _global_db_cache[db_identifier] = _get_db_connection(name)
 
-            logging.debug("opened cached database connection {}".format(db_identifier))
-            return db
+        logging.debug("opened cached database connection {}".format(db_identifier))
+        return db
 
-        except Exception as e:
-            logging.error("unable to connect to database {}: {}".format(name, e))
-            report_exception()
-            raise e
+    except Exception as e:
+        logging.error("unable to connect to database {}: {}".format(name, e))
+        report_exception()
+        raise e
 
 def release_cached_db_connection(name='ace'):
 
@@ -248,13 +245,13 @@ def release_cached_db_connection(name='ace'):
         pass
 
 def _get_db_connection(name='ace'):
-    """Returns the database connection by the given name.  Defaults to the ACE db config under [mysql]."""
+    """Returns the database connection by the given name.  Defaults to the ACE db config."""
 
     if name is None:
         name = 'ace'
 
-    if _cached_db_connections_enabled():
-        return _get_cached_db_connection(name)
+    #if _cached_db_connections_enabled():
+        #return _get_cached_db_connection(name)
 
     config_section = 'ace'
     if name:
@@ -264,14 +261,55 @@ def _get_db_connection(name='ace'):
         raise ValueError("invalid database {}".format(name))
 
     _section = saq.CONFIG[config_section]
-    logging.debug("opening database connection {} host {} db {}".format(name, _section['hostname'], _section['database']))
-    return pymysql.connect(host=_section['hostname'] if 'hostname' in _section else None,
-                           port=3306 if 'port' not in _section else _section.getint('port'),
-                           unix_socket=_section['unix_socket'] if 'unix_socket' in _section else None,
-                           db=_section['database'],
-                           user=_section['username'],
-                           passwd=_section['password'],
-                           charset='utf8')
+    kwargs = {
+        'db': _section['database'],
+        'user': _section['username'],
+        'passwd': _section['password'],
+        'charset': 'utf8'
+    }
+
+    if 'hostname' in _section:
+        kwargs['host'] = _section['hostname']
+
+    if 'port' in _section:
+        kwargs['port'] = _section.getint('port')
+    
+    if 'unix_socket' in _section:
+        kwargs['unix_socket'] = _section['unix_socket']
+
+    if 'ssl_ca' in _section or 'ssl_key' in _section or 'ssl_cert' in _section:
+        kwargs['ssl'] = {}
+
+        if 'ssl_ca' in _section:
+            if not os.path.exists(_section['ssl_ca']):
+                logging.error("ssl_ca file {} does not exist (specified in {})".format(
+                              _section['ssl_ca'], config_section))
+            else:
+                kwargs['ssl']['ca'] = _section['ssl_ca']
+
+        if 'ssl_key' in _section:
+            if not os.path.exists(_section['ssl_key']):
+                logging.error("ssl_key file {} does not exist (specified in {})".format(
+                              _section['ssl_key'], config_section))
+            else:
+                kwargs['ssl']['key'] = _section['ssl_key']
+
+        if 'ssl_cert' in _section:
+            if not os.path.exists(_section['ssl_cert']):
+                logging.error("ssl_cert file {} does not exist (specified in {})".format(
+                              _section['ssl_cert'], config_section))
+            else:
+                kwargs['ssl']['cert'] = _section['ssl_cert']
+
+    logging.debug("opening database connection {} args {}".format(name, kwargs))
+    return pymysql.connect(**kwargs)
+    #return pymysql.connect(host=_section['hostname'] if 'hostname' in _section else None,
+                           #port=3306 if 'port' not in _section else _section.getint('port'),
+                           #unix_socket=_section['unix_socket'] if 'unix_socket' in _section else None,
+                           #db=_section['database'],
+                           #user=_section['username'],
+                           #passwd=_section['password'],
+                           #charset='utf8')
 
 @contextmanager
 def get_db_connection(*args, **kwargs):
