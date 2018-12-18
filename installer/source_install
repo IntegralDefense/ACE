@@ -137,12 +137,8 @@ done
 if [ ! -e etc/organization.json ]; then echo '{}' > etc/organization.json; fi
 if [ ! -e etc/local_networks.csv ]; then echo 'Indicator,Indicator_Type' > etc/local_networks.csv; fi
 
-# create a self signed SSL cert
-if [ ! -e ssl/web/localhost.key.pem ] || [ ! -e ssl/web/localhost.cert.pem ]
-then
-	openssl req -x509 -newkey rsa:4096 -keyout ssl/web/localhost.key.pem -out ssl/web/localhost.cert.pem -days 365 -nodes -subj '/CN=localhost'
-    ln -s "$SAQ_HOME/ssl/web/localhost.cert.pem" "$SAQ_HOME/ssl/ca-chain.cert.pem"
-fi
+# create our ssl certs
+./installer/install_ssl_certs.sh
 
 # if this file is a symlink then we assume we've already configured this for ACE
 if ! [ -L /etc/memcached.conf ]
