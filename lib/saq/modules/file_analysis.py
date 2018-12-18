@@ -2428,17 +2428,17 @@ class YaraScanner_v3_4(AnalysisModule):
             logging.error("error scanning file {}: {}".format(local_file_path, e))
             
             # we copy the files we cannot scan to a directory where we can debug it later
-            if self.scan_failure_dir is not None:
-                try:
-                    dest_path = os.path.join(self.scan_failure_dir, os.path.basename(local_file_path))
-                    while os.path.exists(dest_path):
-                        dest_path = '{}_{}'.format(dest_path, datetime.datetime.now().strftime('%Y%m%d%H%M%S-%f'))
-
-                    shutil.copy(local_file_path, dest_path)
-                    logging.debug("copied {} to {}".format(local_file_path, dest_path))
-                except Exception as e:
-                    logging.error("unable to copy {} to {}: {}".format(local_file_path, self.scan_failure_dir, e))
-                    report_exception()
+            #if self.scan_failure_dir is not None:
+                #try:
+                    #dest_path = os.path.join(self.scan_failure_dir, os.path.basename(local_file_path))
+                    #while os.path.exists(dest_path):
+                        #dest_path = '{}_{}'.format(dest_path, datetime.datetime.now().strftime('%Y%m%d%H%M%S-%f'))
+#
+                    #shutil.copy(local_file_path, dest_path)
+                    #logging.debug("copied {} to {}".format(local_file_path, dest_path))
+                #except Exception as e:
+                    #logging.error("unable to copy {} to {}: {}".format(local_file_path, self.scan_failure_dir, e))
+                    #report_exception()
             
             return False
 
