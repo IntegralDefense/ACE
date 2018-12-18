@@ -48,6 +48,18 @@ class CustomSQLAlchemy(SQLAlchemy):
         SQLAlchemy.apply_driver_hacks(self, app, info, options)
         options['pool_recycle'] = 60 # return these after a minute
 
+        if 'ssl_ca' in saq.CONFIG['database_ace'] \
+        or 'ssl_cert' in saq.CONFIG['database_ace'] \
+        or 'ssl_key' in saq.CONFIG['database_ace']:
+            logging.info("setting SSL options for database_ace")
+            ssl_options = { 'ca': saq.CONFIG['database_ace']['ssl_ca'] }
+            if 'ssl_cert' in saq.CONFIG['database_ace']:
+                ssl_options['cert'] = saq.CONFIG['database_ace']['ssl_cert']
+            if 'ssl_key' in saq.CONFIG['database_ace']:
+                ssl_options['key'] = saq.CONFIG['database_ace']['ssl_key']
+
+            options['ssl'] = ssl_options
+
 db = CustomSQLAlchemy()
 
 def create_app():
@@ -69,8 +81,8 @@ def create_app():
     from .analysis import analysis as analysis_blueprint
     app.register_blueprint(analysis_blueprint)
     
-    from .cloudphish import cloudphish as cloudphish_blueprint
-    app.register_blueprint(cloudphish_blueprint)
+    #from .cloudphish import cloudphish as cloudphish_blueprint
+    #app.register_blueprint(cloudphish_blueprint)
 
     from .vt_hash_cache import vt_hash_cache_bp as vt_hash_cache_blueprint
     app.register_blueprint(vt_hash_cache_blueprint)
