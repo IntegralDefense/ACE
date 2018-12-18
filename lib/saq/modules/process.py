@@ -329,6 +329,18 @@ class ProcessGUIDAnalyzer(AnalysisModule):
             logging.error("Encountered unknown error retrieving process: {0:s}".format(str(e)))
             return False
 
+
+        global ancestry_string
+        ancestry_string = "  === Process Ancestry Walk ===\n"
+        def _ancestry_details(proc, depth):
+            global ancestry_string
+            try:
+                start_time = proc.start or "<unknown>"
+                ancestry_string += "%s%s:  %s %s - %s\n" % ('  '*(depth + 1), start_time, proc.cmdline,
+                                             "(suppressed)" if proc.suppressed_process else "", proc.id)
+            except Exception as e:
+                return
+
         sp = SuperProcess(proc)
 
         analysis = self.create_analysis(observable)
@@ -336,20 +348,17 @@ class ProcessGUIDAnalyzer(AnalysisModule):
         process_tree = sp.walk_process_tree()
         process_event_details = sp.events_to_json()
         process_event_details['process_tree'] =  process_tree.tuple_list()
-  
-        binfo = proc.binary.version_info
-        process_event_details['binary_file_desc'] = binfo.file_desc   
-        process_event_details['binary_product_name'] = binfo.product_name
-        process_event_details['binary_legal_copyright'] = binfo.legal_copyright
-        process_event_details['binary_original_filename'] = binfo.original_filename
+        process_event_details['process_tree_str'] = str(process_tree)
 
+        process_event_details['process_info_str'] = str(sp)
 
-        process_event_details['binary_sig_status'] = proc.binary.signing_data.result
-        process_event_details['binary_sig_publisher'] = proc.binary.signing_data.publisher
-        process_event_details['binary_sig_issuer'] = proc.binary.signing_data.issuer
-        process_event_details['binary_sig_subject'] = proc.binary.signing_data.subject
-        process_event_details['binary_vt_score'] = proc.binary.virustotal.score
-        process_event_details['binary_vt_link'] = proc.binary.virustotal.link
+        # fill ancestry_string
+        try:
+            sp.proc.walk_parents(_ancestry_details)
+        except Exception as e:
+            logging.error("Error getting ancestry: {}".format(str(e)))
+            ancestry_string += "[ERROR] {}".format(str(e))
+        process_event_details['process_ancestry'] = ancestry_string 
 
         analysis.details = process_event_details
         return True
