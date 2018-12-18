@@ -130,3 +130,14 @@ ssl/root/ca/index.txt
 ssl/root/ca/private/
 ssl/root/ca/serial
 ssl/web/
+ssl/ca-chain.cert.pem
+ssl/root/ca/index.txt.attr
+ssl/root/ca/index.txt.old
+ssl/root/ca/intermediate/certs/
+ssl/root/ca/intermediate/crlnumber
+ssl/root/ca/intermediate/csr/
+ssl/root/ca/intermediate/index.txt
+ssl/root/ca/intermediate/private/
+ssl/root/ca/intermediate/serial
+ssl/root/ca/newcerts/
+ssl/root/ca/serial.old
