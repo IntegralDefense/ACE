@@ -49,9 +49,11 @@
                         <td class="event-cell">{{event.creation_date}}</td>
                         <td>
                             <a target="_blank" href="{{event.wiki}}">{{event.type}} - {{event.vector}} - {{event.name}}</a>
-                            {% for tag in event.sorted_tags %}
-                            {% if tag.display %}<span class="label {{tag.style}}" style="cursor:pointer">{{tag.name}}</span>{% endif %}
-                            {% endfor %}
+                            {% if event_tags[event.id]|length != 0 %}
+			      {% for tag in event_tags[event.id] %}
+                                {% if tag.display %}<span class="label {{tag.style}}" style="cursor:pointer">{{tag.name}}</span>{% endif %}
+                              {% endfor %}
+			    {% endif %}
                         </td>
                         <td>
                             {% for t in event.threats %}
