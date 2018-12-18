@@ -306,8 +306,9 @@ class ProcessGUIDAnalyzer(AnalysisModule):
 
     def execute_analysis(self, observable):
 
-        if not observable in self.root.observables and not observable.is_suspect:
-            return False
+        # we only analyze observables that came with the alert and ones with detection points
+        #if not observable in self.root.observables and not observable.is_suspect:
+        #    return False
 
         #cbapi does not check for guids and doesn't error correctly
         regex = re.compile('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.I)

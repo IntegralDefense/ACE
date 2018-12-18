@@ -23,7 +23,7 @@ echo "installing databases..."
 
 mysql -N -B -e 'show databases' > .db_list
 
-for db in ace ace-workload amc brocess email-archive hal9000 cloudphish vt-hash-cache
+for db in ace brocess email-archive hal9000 vt-hash-cache
 do
 	if ! egrep "^$db\$" .db_list > /dev/null 2>&1
 	then

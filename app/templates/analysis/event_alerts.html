@@ -26,8 +26,8 @@
             <td style="white-space: nowrap;">{{event_mapping.alert.insert_date}}</td>
             <td>
                 <a target="_blank" href="{{ url_for('analysis.index', direct=event_mapping.alert.uuid) }}">({{event_mapping.alert.priority}}) {{event_mapping.alert.description}}</a>
-                {% for tag in event_mapping.alert.sorted_tags %}
-                {% if tag.display %}<span class="label {{tag.style}}">{{tag.name}}</span>{% endif %}
+                {% for tag in alert_tags[event_mapping.alert.uuid] %}
+                  {% if tag.display %}<span class="label {{tag.style}}">{{tag.name}}</span>{% endif %}
                 {% endfor %}
             </td>
             <td>{{event_mapping.alert.owner}}</td>
