@@ -94,6 +94,11 @@ class RemoteNode(object):
         # the directory that contains any files that to be transfered along with submissions
         self.incoming_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['collection']['incoming_dir'])
 
+        # apply any node translations that need to take effect
+        if self.location in saq.CONFIG['node_translation']:
+            logging.debug("translating node {} to {}".format(self.location, saq.CONFIG['node_translation'][self.location]))
+            self.location = saq.CONFIG['node_translation'][self.location]
+
     def __str__(self):
         return "RemoteNode(id={},name={})".format(self.id, self.name)
 

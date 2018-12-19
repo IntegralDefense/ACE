@@ -209,7 +209,7 @@ def _get_cached_db_connection(name='ace'):
             _global_db_cache[db_identifier] = _get_db_connection(name)
 
         logging.debug("opened cached database connection {}".format(db_identifier))
-        return db
+        return _global_db_cache[db_identifier]
 
     except Exception as e:
         logging.error("unable to connect to database {}: {}".format(name, e))

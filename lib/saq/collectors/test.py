@@ -7,10 +7,11 @@ import tempfile
 import threading
 
 import saq
+from saq.constants import *
 from saq.database import use_db, get_db_connection
 from saq.engine import Engine
 from saq.test import *
-from . import Collector, Submission
+from . import Collector, Submission, RemoteNode
 
 class TestCollector(Collector):
     def get_next_submission(self):
@@ -532,3 +533,23 @@ class CollectorTestCase(CollectorBaseTestCase):
         # and we should have 10 workload entries
         c.execute("SELECT COUNT(*) FROM workload ")
         self.assertEquals(c.fetchone()[0], 10)
+
+    @use_db
+    def test_node_translation(self, db, c):
+
+        # start an engine to get a node created
+        engine = Engine()
+        engine.start()
+        wait_for_log_count('updated node', 1, 5)
+        engine.controlled_stop()
+        engine.wait()
+
+        # get the current node settings from the database
+        c.execute("SELECT id, name, location, company_id, last_update, is_primary, any_mode, is_local FROM nodes")
+        node_id, name, location, _, last_update, _, any_mode, _ = c.fetchone()
+
+        # add a configuration to map this location to a different location
+        saq.CONFIG['node_translation'][location] = 'test:443'
+
+        remote_node = RemoteNode(node_id, name, location, any_mode, last_update, ANALYSIS_MODE_ANALYSIS, 0)
+        self.assertEquals(remote_node.location, 'test:443')
