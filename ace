@@ -927,6 +927,52 @@ cb_binary_collector_parser.add_argument('--storage-dir',  default=None,
 cb_binary_collector_parser.set_defaults(func=cb_binary_collector)
 
 # ============================================================================
+# start/stop the BRO HTTP stream collector
+#
+
+def bro_http_collector(args):
+
+    from saq.collectors.http import BroHTTPStreamCollector
+    from saq.error import report_exception
+
+    daemon_name = 'bro_http'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {}".format(daemon_name))
+            daemonize(daemon_name)
+
+        try:
+            collector = BroHTTPStreamCollector()
+            collector.load_groups()
+            collector.start()
+
+        except KeyboardInterrupt as e:
+            logging.info("caught user interrupt")
+            try:
+                collector.stop()
+                collector.wait()
+            except Exception as e:
+                logging.error("uncaught exception: {}".format(e))
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+bro_http_collector_parser = subparsers.add_parser('bro-http-collector',
+    help="Start/Stop the Bro HTTP Stream Collector")
+bro_http_collector_parser.set_defaults(func=bro_http_collector)
+
+# ============================================================================
 # start carbon black binary processor
 #
 
@@ -1201,15 +1247,19 @@ def test_database_connections(args):
             or not saq.CONFIG[key]['database'] \
             or not saq.CONFIG[key]['username'] \
             or not saq.CONFIG[key]['password']:
-                logging.info("skipping {}".format(key))
+                print("skipping {}".format(key))
                 continue
 
             db_name = key[len('database_'):]
-            logging.info("trying {}...".format(db_name))
-            with get_db_connection(db_name) as db:
-                c = db.cursor()
-                c.execute("SELECT 1")
-                row = c.fetchone()
+            print("trying {}...".format(db_name), end='', flush=True)
+            try:
+                with get_db_connection(db_name) as db:
+                    c = db.cursor()
+                    c.execute("SELECT 1")
+                    row = c.fetchone()
+                    print("OK")
+            except Exception as e:
+                print("FAILED: {}".format(e))
 
     sys.exit(0)
 
