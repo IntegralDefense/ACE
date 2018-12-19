@@ -121,23 +121,11 @@ extra/
 bro/ace_local.bro
 
 # SSL
-ssl/root/ca/certs/
-ssl/ace/
-ssl/amc/
-ssl/brotex/
-ssl/mysql/
-ssl/root/ca/index.txt
-ssl/root/ca/private/
-ssl/root/ca/serial
-ssl/web/
-ssl/ca-chain.cert.pem
-ssl/root/ca/index.txt.attr
-ssl/root/ca/index.txt.old
-ssl/root/ca/intermediate/certs/
-ssl/root/ca/intermediate/crlnumber
-ssl/root/ca/intermediate/csr/
-ssl/root/ca/intermediate/index.txt
-ssl/root/ca/intermediate/private/
-ssl/root/ca/intermediate/serial
-ssl/root/ca/newcerts/
-ssl/root/ca/serial.old
+!ssl/root/ca/openssl.cnf
+!ssl/root/ca/intermediate/openssl.cnf
+ssl/
+
+# crawlphish unittesting
+etc/crawlphish.unittest.blacklist
+etc/crawlphish.unittest.regex
+etc/crawlphish.unittest.whitelist
