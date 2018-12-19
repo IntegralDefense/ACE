@@ -39,8 +39,19 @@ from sqlalchemy.engine import Engine
 # connection pooling is broken for MySQL (see lib/saq/database.py)
 class CustomSQLAlchemy(SQLAlchemy):
     def apply_driver_hacks(self, app, info, options):
+        # are we using SSL for MySQL connections? (you should be)
+        if 'ssl_ca' in saq.CONFIG['database_ace'] \
+        or 'ssl_cert' in saq.CONFIG['database_ace'] \
+        or 'ssl_key' in saq.CONFIG['database_ace']:
+            ssl_options = { 'ca': saq.CONFIG['database_ace']['ssl_ca'] }
+            if 'ssl_cert' in saq.CONFIG['database_ace']:
+                ssl_options['cert'] = saq.CONFIG['database_ace']['ssl_cert']
+            if 'ssl_key' in saq.CONFIG['database_ace']:
+                ssl_options['key'] = saq.CONFIG['database_ace']['ssl_key']
+
+            options.update({'connect_args': {'ssl': ssl_options}})
+
         SQLAlchemy.apply_driver_hacks(self, app, info, options)
-        options['pool_recycle'] = 60 # return these after a minute
 
 db = CustomSQLAlchemy()
 
@@ -68,11 +79,14 @@ def create_app(testing=False):
             'pool_size': 5,
         }
 
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
     class _test_config(_config):
         TESTING = True
 
     app = Flask(__name__)
-    app.config.from_object(_test_config if testing else _config)
+    app.config.from_object(_test_config() if testing else _config())
 
     #login_manager.init_app(app)
     db.init_app(app)
