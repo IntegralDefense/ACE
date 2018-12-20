@@ -240,10 +240,28 @@ DROP TABLE IF EXISTS `incoming_workload`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `incoming_workload` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `type_id` int(11) NOT NULL COMMENT 'Each added work item has a work type, which collectors use to know which workload items belong to them.',
   `mode` varchar(256) NOT NULL COMMENT 'The analysis mode the work will be submit with. This determines what nodes are selected for receiving the work.',
   `work` blob NOT NULL COMMENT 'A python pickle of the **kwargs for ace_api.submit (see source code)',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `fk_type_id_idx` (`type_id`),
+  CONSTRAINT `fk_type_id` FOREIGN KEY (`type_id`) REFERENCES `incoming_workload_type` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `incoming_workload_type`
+--
+
+DROP TABLE IF EXISTS `incoming_workload_type`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `incoming_workload_type` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(512) NOT NULL COMMENT 'The name of the work (http, email, etc…)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name_UNIQUE` (`name`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -576,4 +594,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2018-12-20 14:58:04
+-- Dump completed on 2018-12-20 15:46:53
