@@ -18,7 +18,7 @@ HTTP_DETAILS_READY = 'ready'
 
 class BroHTTPStreamCollector(Collector):
     def __init__(self, *args, **kwargs):
-        super().__init__(delete_files=True, *args, **kwargs)
+        super().__init__(workload_type='http', delete_files=True, *args, **kwargs)
 
         # the location of the incoming http streams
         self.bro_http_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['bro']['http_dir'])
