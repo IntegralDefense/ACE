@@ -35,7 +35,8 @@ class CarbonBlackBinaryCollector(Collector):
                  search_offset=60, # <-- DEPRECATED
                  storage_dir='storage', 
                  *args, **kwargs):
-        super().__init__(*args, **kwargs)
+
+        super().__init__(workload_type='cb', *args, **kwargs)
 
         # carbon black config data
         self.cb_url = saq.CONFIG['carbon_black']['url']
