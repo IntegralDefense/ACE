@@ -95,12 +95,15 @@ class RemoteNode(object):
         self.incoming_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['collection']['incoming_dir'])
 
         # apply any node translations that need to take effect
-        if self.location in saq.CONFIG['node_translation']:
-            logging.debug("translating node {} to {}".format(self.location, saq.CONFIG['node_translation'][self.location]))
-            self.location = saq.CONFIG['node_translation'][self.location]
+        for key in saq.CONFIG['node_translation'].keys():
+            src, target = saq.CONFIG['node_translation'][key].split(',')
+            if self.location == src:
+                logging.debug("translating node {} to {}".format(self.location, target))
+                self.location = target
+                break
 
     def __str__(self):
-        return "RemoteNode(id={},name={})".format(self.id, self.name)
+        return "RemoteNode(id={},name={},location={})".format(self.id, self.name, self.location)
 
     def submit(self, submission):
         """Attempts to submit the given Submission to this node."""
