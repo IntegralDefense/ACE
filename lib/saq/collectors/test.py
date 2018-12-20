@@ -14,6 +14,9 @@ from saq.test import *
 from . import Collector, Submission, RemoteNode
 
 class TestCollector(Collector):
+    def __init__(self, *args, **kwargs):
+        super().__init__(workload_type='test', *args, **kwargs)
+
     def get_next_submission(self):
         return None
 
@@ -123,7 +126,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
     @use_db
     def test_work_item(self, db, c):
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def get_next_submission(_self):
                 if not hasattr(_self, 'submitted'):
                     _self.submitted = True
@@ -163,7 +166,7 @@ class CollectorTestCase(CollectorBaseTestCase):
     @use_db
     def test_submit(self, db, c):
 
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def __init__(_self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 self.available_work = [self.create_submission() for _ in range(1)]
@@ -207,7 +210,7 @@ class CollectorTestCase(CollectorBaseTestCase):
     @use_db
     def test_coverage(self, db, c):
 
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def __init__(_self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 self.available_work = [self.create_submission() for _ in range(10)]
@@ -269,7 +272,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
     @use_db
     def test_fail_submit_full_coverage(self, db, c):
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def __init__(_self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 self.available_work = [self.create_submission() for _ in range(1)]
@@ -317,7 +320,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
     @use_db
     def test_fail_submit_no_coverage(self, db, c):
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def __init__(_self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 self.available_work = [self.create_submission() for _ in range(1)]
@@ -373,7 +376,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         global fail_event
         fail_event = threading.Event()
 
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def __init__(_self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 _self.success_tested = False
@@ -427,7 +430,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         os.write(fp, b'Hello, world!')
         os.close(fp)
 
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def __init__(_self, *args, **kwargs):
                 super().__init__(delete_files=True, *args, **kwargs)
                 self.work = self.create_submission()
@@ -465,7 +468,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
     @use_db
     def test_recovery(self, db, c):
-        class _custom_collector(Collector):
+        class _custom_collector(TestCollector):
             def __init__(_self, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 self.available_work = [self.create_submission() for _ in range(10)]
@@ -476,7 +479,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
                 return self.available_work.pop()
 
-        class _custom_collector_2(Collector):
+        class _custom_collector_2(TestCollector):
             def get_next_submission(_self):
                 return None
 

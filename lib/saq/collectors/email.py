@@ -13,7 +13,7 @@ from saq.collectors import Collector, Submission
 class EmailCollector(Collector):
     """Collects emails received by local email system."""
     def __init__(self, *args, **kwargs):
-        super().__init__(delete_files=True, *args, **kwargs)
+        super().__init__(delete_files=True, workload_type='email', *args, **kwargs)
 
         # the location of the incoming emails
         self.email_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['email']['email_dir'])
