@@ -973,6 +973,52 @@ bro_http_collector_parser = subparsers.add_parser('bro-http-collector',
 bro_http_collector_parser.set_defaults(func=bro_http_collector)
 
 # ============================================================================
+# start/stop the BRO SMTP stream collector
+#
+
+def bro_smtp_collector(args):
+
+    from saq.collectors.smtp import BroSMTPStreamCollector
+    from saq.error import report_exception
+
+    daemon_name = 'bro_smtp'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {}".format(daemon_name))
+            daemonize(daemon_name)
+
+        try:
+            collector = BroSMTPStreamCollector()
+            collector.load_groups()
+            collector.start()
+
+        except KeyboardInterrupt as e:
+            logging.info("caught user interrupt")
+            try:
+                collector.stop()
+                collector.wait()
+            except Exception as e:
+                logging.error("uncaught exception: {}".format(e))
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+bro_smtp_collector_parser = subparsers.add_parser('bro-smtp-collector',
+    help="Start/Stop the Bro SMTP Stream Collector")
+bro_smtp_collector_parser.set_defaults(func=bro_smtp_collector)
+
+# ============================================================================
 # start carbon black binary processor
 #
 
