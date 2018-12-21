@@ -95,12 +95,15 @@ class RemoteNode(object):
         self.incoming_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['collection']['incoming_dir'])
 
         # apply any node translations that need to take effect
-        if self.location in saq.CONFIG['node_translation']:
-            logging.debug("translating node {} to {}".format(self.location, saq.CONFIG['node_translation'][self.location]))
-            self.location = saq.CONFIG['node_translation'][self.location]
+        for key in saq.CONFIG['node_translation'].keys():
+            src, target = saq.CONFIG['node_translation'][key].split(',')
+            if self.location == src:
+                logging.debug("translating node {} to {}".format(self.location, target))
+                self.location = target
+                break
 
     def __str__(self):
-        return "RemoteNode(id={},name={})".format(self.id, self.name)
+        return "RemoteNode(id={},name={},location={})".format(self.id, self.name, self.location)
 
     def submit(self, submission):
         """Attempts to submit the given Submission to this node."""
@@ -134,12 +137,13 @@ class RemoteNodeGroup(object):
     """Represents a collection of one or more RemoteNode objects that share the
        same group configuration property."""
 
-    def __init__(self, name, coverage, full_delivery, database, group_id, batch_size=32):
+    def __init__(self, name, coverage, full_delivery, database, group_id, workload_type_id, batch_size=32):
         assert isinstance(name, str) and name
         assert isinstance(coverage, int) and coverage > 0 and coverage <= 100
         assert isinstance(full_delivery, bool)
         assert isinstance(database, str)
         assert isinstance(group_id, int)
+        assert isinstance(workload_type_id, int)
 
         self.name = name
 
@@ -157,6 +161,9 @@ class RemoteNodeGroup(object):
 
         # the id of this group in the work_distribution_groups table
         self.group_id = group_id
+
+        # the type of work that this collector works with
+        self.workload_type_id = workload_type_id
 
         # the (maximum) number of work items to pull at once from the database
         self.batch_size = batch_size
@@ -233,9 +240,10 @@ SELECT DISTINCT(incoming_workload.mode)
 FROM
     incoming_workload JOIN work_distribution ON incoming_workload.id = work_distribution.work_id
 WHERE
-    work_distribution.group_id = %s
+    incoming_workload.type_id = %s
+    AND work_distribution.group_id = %s
     AND work_distribution.status = 'READY'
-""", (self.group_id,))
+""", (self.workload_type_id, self.group_id,))
         available_modes = c.fetchall()
         db.commit()
 
@@ -324,13 +332,14 @@ SELECT
 FROM
     incoming_workload JOIN work_distribution ON incoming_workload.id = work_distribution.work_id
 WHERE
-    work_distribution.group_id = %s
+    incoming_workload.type_id = %s
+    AND work_distribution.group_id = %s
     AND incoming_workload.mode IN ( {} )
     AND work_distribution.status = 'READY'
 ORDER BY
     incoming_workload.id ASC
 LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
-        params = [ self.group_id ]
+        params = [ self.workload_type_id, self.group_id ]
         params.extend(available_modes)
         params.append(self.batch_size)
 
@@ -458,9 +467,34 @@ WHERE
                 self.name, self.coverage, self.full_delivery, self.database)
 
 class Collector(object):
-    def __init__(self, delete_files=False, test_mode=None, collection_frequency=1):
+    def __init__(self, workload_type, delete_files=False, test_mode=None, collection_frequency=1):
         # often used as the "tool_instance" property of analysis
         self.fqdn = socket.getfqdn()
+
+        # the type of work this collector collects
+        # this maps to incoming_workload_type.name in the database
+        self.workload_type = workload_type
+
+        # get the workload type_id from the database, or, add it if it does not already exist
+        try:
+            with get_db_connection() as db:
+                c = db.cursor()
+                c.execute("SELECT id FROM incoming_workload_type WHERE name = %s", (self.workload_type,))
+                row = c.fetchone()
+                if row is None:
+                    c.execute("INSERT INTO incoming_workload_type ( name ) VALUES ( %s )", (self.workload_type,))
+                    db.commit()
+                    c.execute("SELECT id FROM incoming_workload_type WHERE name = %s", (self.workload_type,))
+                    row = c.fetchone()
+                    if row is None:
+                        raise ValueError("unable to create workload type for {}".format(self.workload_type))
+
+                self.workload_type_id = row[0]
+                logging.debug("got workload type id {} for {}".format(self.workload_type_id, self.workload_type))
+
+        except Exception as e:
+            logging.critial("unable to get workload type_id from database: {}".format(self.workload_type))
+            raise e
 
         # set this to True to gracefully shut down the collector
         self.shutdown_event = threading.Event()
@@ -502,7 +536,7 @@ class Collector(object):
         else:
             group_id = row[0]
 
-        remote_node_group = RemoteNodeGroup(name, coverage, full_delivery, database, group_id)
+        remote_node_group = RemoteNodeGroup(name, coverage, full_delivery, database, group_id, self.workload_type_id)
         self.remote_node_groups.append(remote_node_group)
         logging.info("added {}".format(remote_node_group))
         return remote_node_group
@@ -650,8 +684,8 @@ class Collector(object):
         self.submission_count += 1
 
     def insert_workload(self, db, c, next_submission):
-        c.execute("INSERT INTO incoming_workload ( mode, work ) VALUES ( %s, %s )",
-                 (next_submission.analysis_mode, pickle.dumps(next_submission)))
+        c.execute("INSERT INTO incoming_workload ( type_id, mode, work ) VALUES ( %s, %s, %s )",
+                 (self.workload_type_id, next_submission.analysis_mode, pickle.dumps(next_submission)))
 
         if c.lastrowid is None:
             raise RuntimeError("missing lastrowid for INSERT transaction")
