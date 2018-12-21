@@ -1590,12 +1590,11 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 try:
                     with get_db_connection() as db:
                         c = db.cursor()
-                        c.execute("""SELECT uuid FROM workload
-                                     UNION SELECT uuid FROM delayed_analysis
-                                     UNION SELECT uuid FROM locks 
-                                     WHERE uuid = %s
+                        c.execute("""SELECT uuid FROM workload WHERE uuid = %s
+                                     UNION SELECT uuid FROM delayed_analysis WHERE uuid = %s
+                                     UNION SELECT uuid FROM locks WHERE uuid = %s
                                      LIMIT 1
-                                     """, (self.root.uuid,))
+                                     """, (self.root.uuid, self.root.uuid, self.root.uuid))
 
                         row = c.fetchone()
                         db.commit()
@@ -1608,7 +1607,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                             except Exception as e:
                                 logging.error("unable to clear {}: {}".format(self.root.storage_dir))
                         else:
-                            logging.debug("not cleaning up {} (found outstanding work)".format(self.root))
+                            logging.debug("not cleaning up {} (found outstanding work ({}))".format(self.root, row))
 
                 except Exception as e:
                     logging.error("trouble checking finished status of {}: {}".format(self.root, e))

@@ -124,6 +124,12 @@ class RemoteNode(object):
             tags=submission.tags,
             files=files)
 
+        try:
+            result = result['result']
+            logging.info("submit remote {} submission {} uuid {}".format(self.location, submission, result['uuid']))
+        except Exception as e:
+            logging.warning("submission irregularity for {}: {}".format(submission, e))
+
         # clean up our file descriptors
         for name, fp in files:
             try:
