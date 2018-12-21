@@ -54,10 +54,13 @@ class BroSMTPStreamCollector(Collector):
                     analysis_mode = ANALYSIS_MODE_EMAIL,
                     tool = 'ACE - Bro SMTP Scanner',
                     tool_instance = self.hostname,
-                    type = 'mailbox',
+                    type = ANALYSIS_TYPE_BRO_SMTP,
                     event_time = datetime.datetime.fromtimestamp(os.path.getmtime(stream_file_path)),
                     details = {},
-                    observables = [],
+                    observables = [ { 'type': F_FILE, 
+                                    'value': stream_file_name, 
+                                    'directives': [ DIRECTIVE_NO_SCAN, DIRECTIVE_ORIGINAL_SMTP ], }
+                                  ],
                     tags = [],
                     files=[os.path.join(self.bro_smtp_dir, stream_file_name)]))
 
