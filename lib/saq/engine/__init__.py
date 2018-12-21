@@ -1117,7 +1117,7 @@ class Engine(object):
                                          WHERE id = %s""", 
                               (self.is_local, saq.API_PREFIX, saq.SAQ_NODE_ID), commit=True)
 
-            logging.info("updated node {} ({}) (is_local = {})".format(saq.SAQ_NODE, saq.SAQ_NODE_ID, self.is_local))
+            logging.debug("updated node {} ({}) (is_local = {})".format(saq.SAQ_NODE, saq.SAQ_NODE_ID, self.is_local))
 
         except Exception as e:
             logging.error("unable to update node {} status: {}".format(saq.SAQ_NODE, e))
@@ -1537,8 +1537,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         if work_item is None:
             return False
 
-        logging.info("got work item {}".format(work_item))
-
         # at this point the thing to work on is locked (using the locks database table)
         # start a secondary thread that just keeps the lock open
         self.start_root_lock_manager(work_item.uuid)
@@ -1548,6 +1546,11 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         except Exception as e:
             logging.error("error processing work item {}: {}".format(work_item, e))
             report_exception()
+
+        if isinstance(work_item, RootAnalysis):
+            logging.info("got work item {} - {}".format(work_item, work_item.description))
+        else:
+            logging.info("got work item {}".format(work_item))
 
         # at this point self.root is set and loaded
         # remember what the analysis mode was before we started analysis
