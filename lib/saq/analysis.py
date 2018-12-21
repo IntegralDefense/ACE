@@ -27,6 +27,14 @@ from saq.util import parse_event_time
 
 STATE_KEY_WHITELISTED = 'whitelisted'
 
+def MODULE_PATH(analysis_module):
+    """Returns the "module_path" used as a key to look up analysis in ACE."""
+    return '{}:{}'.format(analysis_module.__module__, 
+                          analysis_module.__name__ if isinstance(analysis_module, type) else type(analysis_module).__name__)
+
+# regex used to convert str(type(Analysis)) into a "module path"
+CLASS_STRING_REGEX = re.compile(r"^<class '([^']+)'>$")
+
 ##############################################################################
 #
 # I/O tracking
@@ -992,7 +1000,8 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
     @property
     def module_path(self):
         """Returns module.path:class_name."""
-        return '{}:{}'.format(self.__module__, type(self).__name__)
+        return MODULE_PATH(self)
+        #return '{}:{}'.format(self.__module__, type(self).__name__)
 
     def search_tree(self, tags=()):
         """Searches this object and every object in it's analysis tree for the given items.  Returns the list of items that matched."""
@@ -1686,13 +1695,33 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
 
         if isinstance(analysis_type, type):
             try:
-                return self.analysis[analysis_type().module_path]
+                return self.analysis[MODULE_PATH(analysis_type)]
             except KeyError:
                 return None
         else:
-            for a in self.analysis.values():
-                if str(type(a)) == analysis_type:
-                    return a
+            # str(type(Analysis)) will end up looking like this: <class 'saq.modules.test.BasicTestAnalysis'>
+            # where the keys in self.analysis look like this: saq.modules.test:BasicTestAnalysis
+            # (I do not remember why it's like that)
+            # so we translate the first into the second
+            m = CLASS_STRING_REGEX.match(analysis_type)
+            if m is None:
+                raise ValueError("invalid value {} passed to get_analysis (expecting str(type(Analysis)))".format(
+                                 analysis_type))
+
+            class_path = m.group(1)
+            class_path_rw = list(class_path)
+            
+            class_path_rw[class_path.rfind('.')] = ':'
+            class_path = ''.join(class_path_rw)
+
+            try:
+                return self.analysis[class_path]
+            except KeyError:
+                return None
+            
+            #for a in self.analysis.values():
+                #if str(type(a)) == analysis_type:
+                    #return a
 
         return None
 

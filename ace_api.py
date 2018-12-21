@@ -175,7 +175,7 @@ def submit(
             assert key in [ 'type', 'value', 'time', 'tags', 'directives', 'limited_analysis' ], "unknown observable property {} in {}".format(key, o)
 
         # make sure any times are formatted
-        if isinstance(o['time'], datetime.datetime):
+        if 'time' in o and isinstance(o['time'], datetime.datetime):
             o['time'] = LOCAL_TIMEZONE.localize(o['time']).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
 
     # make sure the tags are strings

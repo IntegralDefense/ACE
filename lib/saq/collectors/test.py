@@ -552,7 +552,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         node_id, name, location, _, last_update, _, any_mode, _ = c.fetchone()
 
         # add a configuration to map this location to a different location
-        saq.CONFIG['node_translation'][location] = 'test:443'
+        saq.CONFIG['node_translation']['unittest'] = '{},test:443'.format(location)
 
         remote_node = RemoteNode(node_id, name, location, any_mode, last_update, ANALYSIS_MODE_ANALYSIS, 0)
         self.assertEquals(remote_node.location, 'test:443')

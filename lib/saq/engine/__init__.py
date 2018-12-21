@@ -1537,6 +1537,8 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         if work_item is None:
             return False
 
+        logging.debug("got work item {}".format(work_item))
+
         # at this point the thing to work on is locked (using the locks database table)
         # start a secondary thread that just keeps the lock open
         self.start_root_lock_manager(work_item.uuid)
@@ -1546,11 +1548,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         except Exception as e:
             logging.error("error processing work item {}: {}".format(work_item, e))
             report_exception()
-
-        if isinstance(work_item, RootAnalysis):
-            logging.info("got work item {} - {}".format(work_item, work_item.description))
-        else:
-            logging.info("got work item {}".format(work_item))
 
         # at this point self.root is set and loaded
         # remember what the analysis mode was before we started analysis
@@ -1582,6 +1579,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             except Exception as e:
                 logging.error("unable to add {} to workload: {}".format(self.root, e))
                 report_exception()
+
         # if the analysis mode did NOT change
         # then we look to see if we should clean this up
         else:
@@ -1610,7 +1608,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                             except Exception as e:
                                 logging.error("unable to clear {}: {}".format(self.root.storage_dir))
                         else:
-                            logging.debug("not cleaning up {} (found outstanding work ({}))".format(self.root, row))
+                            logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
 
                 except Exception as e:
                     logging.error("trouble checking finished status of {}: {}".format(self.root, e))
@@ -1639,6 +1637,8 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         elif isinstance(work_item, RootAnalysis):
             self.root = work_item
             self.root.load()
+
+        logging.info("processing {}".format(self.root.description))
 
     def analyze(self, target):
         assert isinstance(target, saq.analysis.RootAnalysis) or isinstance(target, DelayedAnalysisRequest)
