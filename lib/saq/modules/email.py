@@ -191,8 +191,6 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
                 envelope_from = None
                 envelope_to = []
 
-                self.root.description = 'BRO SMTP Scanner Detection - ' 
-
                 # the first line of the file has the source IP address of the smtp connection
                 # in the following format: 172.16.139.143:38668/tcp
 
@@ -272,11 +270,14 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
                             KEY_ENV_RCPT_TO: envelope_to,
                         }
 
+                        self.root.description = 'BRO SMTP Scanner Detection - ' 
+
                         if source_ipv4:
                             observable = analysis.add_observable(F_IPV4, source_ipv4)
 
                         if envelope_from:
                             observable = analysis.add_observable(F_EMAIL_ADDRESS, envelope_from)
+                            self.root.description += 'From {} '.format(envelope_from)
 
                         if envelope_to:
                             for to in envelope_to:
@@ -284,6 +285,8 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
                                 if envelope_from:
                                     observable = analysis.add_observable(F_EMAIL_CONVERSATION, 
                                                                          create_email_conversation(envelope_from, to))
+
+                            self.root.description += 'To {} '.format(','.join(envelope_to))
 
                         rfc822_fp = None
                         root = None
@@ -304,6 +307,21 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
             logging.debug("unable to parse smtp stream {}: {}".format(_file.value, e))
             report_exception()
             return False
+
+    def execute_post_analysis(self):
+        # find the email we extracted from the stmp stream
+        email_observable = self.root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_EMAIL))
+        if email_observable is None:
+            return
+
+        email_analysis = email_observable.get_analysis(EmailAnalysis)
+        if email_analysis is None:
+            return
+
+        if email_analysis.decoded_subject is not None:
+            self.root.description += ' Subject: {}'.format(email_analysis.decoded_subject)
+        elif email_analysis.subject is not None:
+            self.root.decoded_subject += ' Subject: {}'.format(email_analysis.subject)
 
 class EncryptedArchiveAnalysis(Analysis):
     def initialize_details(self):
