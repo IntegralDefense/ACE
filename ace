@@ -597,7 +597,8 @@ def correlate(args):
     if args.enabled_modules:
         for name_pattern in args.enabled_modules:
             for section in saq.CONFIG.sections():
-                if name_pattern in section[len('analysis_module_'):]:
+                if fnmatch.fnmatch(section[len('analysis_module_'):], name_pattern):
+                #if name_pattern in section[len('analysis_module_'):]:
                     logging.info("enabling {}".format(section))
                     engine.enable_module(section, ANALYSIS_MODE_CLI)
                     #saq.CONFIG[section]['enabled'] = 'yes'
@@ -2876,6 +2877,29 @@ remove_bro_http_whitelist_parser = subparsers.add_parser('remove-bro-http-whitel
     help="Adds the given CIDR and description as a whitelist item to the bro HTTP whitelist.")
 remove_bro_http_whitelist_parser.add_argument('cidr', help="The network CIDR to remove from the whitelist.")
 remove_bro_http_whitelist_parser.set_defaults(func=remove_bro_http_whitelist)
+
+def list_available_modules(args):
+    from saq.engine import load_module
+
+    result = {}
+
+    for section in saq.CONFIG.keys():
+        if not section.startswith('analysis_module_'):
+            continue
+
+        if section in saq.CONFIG['disabled_modules'] and saq.CONFIG['disabled_modules'].getboolean(section):
+            continue
+
+        result[section] = load_module(section)
+
+    for key in sorted(result.keys()):
+        print('{: <35}{}'.format(key[len('analysis_module_'):], result[key].__doc__ if result[key].__doc__ is not None else ''))
+
+    sys.exit(0)
+
+list_available_modules_parser = subparsers.add_parser('list-available-modules',
+    help="Lists the modules available in ACE.")
+list_available_modules_parser.set_defaults(func=list_available_modules)
 
 def config(args):
     import saq

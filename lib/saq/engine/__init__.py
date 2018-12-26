@@ -306,6 +306,38 @@ def exclude_if_local(target_function):
 
     return _wrapper
 
+def load_module(section):
+    """Loads an AnalysisModule by config section name."""
+    if section not in saq.CONFIG:
+        raise ValueError("{} is not a valid ACE module configuraiton name".format(section))
+
+    module_name = saq.CONFIG[section]['module']
+    try:
+        _module = importlib.import_module(module_name)
+    except Exception as e:
+        logging.error("unable to import module {}".format(module_name, e))
+        report_exception()
+        return None
+
+    class_name = saq.CONFIG[section]['class']
+    try:
+        module_class = getattr(_module, class_name)
+    except AttributeError as e:
+        logging.error("class {} does not exist in module {} in analysis module {}".format(
+                      class_name, module_name, section))
+        report_exception()
+        return None
+
+    try:
+        logging.debug("loading module {}".format(section))
+        return module_class(section)
+    except Exception as e:
+        logging.error("unable to load analysis module {}: {}".format(section, e))
+        report_exception()
+        return None
+
+    return analysis_module
+
 class Engine(object):
     """Analysis Correlation Engine"""
 
@@ -783,29 +815,8 @@ class Engine(object):
                 if section not in self.locally_enabled_modules:
                     continue
 
-            module_name = saq.CONFIG[section]['module']
-            try:
-                _module = importlib.import_module(module_name)
-            except Exception as e:
-                logging.error("unable to import module {}".format(module_name, e))
-                report_exception()
-                continue
-
-            class_name = saq.CONFIG[section]['class']
-            try:
-                module_class = getattr(_module, class_name)
-            except AttributeError as e:
-                logging.error("class {} does not exist in module {} in analysis module {}".format(
-                              class_name, module_name, section))
-                report_exception()
-                continue
-
-            try:
-                logging.info("loading module {}".format(section))
-                analysis_module = module_class(section)
-            except Exception as e:
-                logging.error("unable to load analysis module {}: {}".format(section, e))
-                report_exception()
+            analysis_module = load_module(section)
+            if analysis_module is None:
                 continue
 
             # make sure the module has everything it needs
