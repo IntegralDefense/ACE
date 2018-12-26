@@ -57,7 +57,7 @@ class BroHTTPStreamCollector(Collector):
                         analysis_mode = ANALYSIS_MODE_HTTP,
                         tool = 'ACE - Bro HTTP Scanner',
                         tool_instance = self.hostname,
-                        type = 'http',
+                        type = ANALYSIS_TYPE_BRO_HTTP,
                         event_time = datetime.datetime.fromtimestamp(os.path.getmtime(os.path.join(
                                                                                       self.bro_http_dir, file_name))),
                         details = {},
