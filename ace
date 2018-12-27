@@ -1041,7 +1041,8 @@ def email_collector(args):
             daemonize(daemon_name)
 
         try:
-            collector = EmailCollector()
+            collector = EmailCollector(assignment_yara_rule_path=args.assignment_rule,
+                                       blacklist_yara_rule_path=args.blacklist_rule)
             collector.load_groups()
             collector.start()
 
@@ -1063,6 +1064,10 @@ def email_collector(args):
 
 email_collector_parser = subparsers.add_parser('email-collector',
     help="Start/Stop the Email Collector")
+email_collector_parser.add_argument('--blacklist-rule', default='etc/blacklist.yar',
+    help="Path to the yara rule used for blacklisting emails.")
+email_collector_parser.add_argument('--assignment-rule', default='etc/remote_assignments.yar',
+    help="Path to the yara rule used for assigning emails to collection groups.")
 email_collector_parser.set_defaults(func=email_collector)
 
 # ============================================================================
