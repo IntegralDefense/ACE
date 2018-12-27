@@ -328,7 +328,7 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
             return
 
         email_analysis = email_observable.get_analysis(EmailAnalysis)
-        if email_analysis is None:
+        if email_analysis is None or not email_analysis:
             return
 
         if email_analysis.decoded_subject is not None:
@@ -1193,7 +1193,7 @@ class EmailAnalyzer(AnalysisModule):
 
         except Exception as e:
             logging.error("unable to parse email {}: {}".format(_file, e))
-            report_exception()
+            #report_exception()
 
             try:
                 src_path = os.path.join(self.root.storage_dir, _file.value)
