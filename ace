@@ -1020,6 +1020,52 @@ bro_smtp_collector_parser = subparsers.add_parser('bro-smtp-collector',
 bro_smtp_collector_parser.set_defaults(func=bro_smtp_collector)
 
 # ============================================================================
+# start/stop the email collector
+#
+
+def email_collector(args):
+
+    from saq.collectors.email import EmailCollector
+    from saq.error import report_exception
+
+    daemon_name = 'email'
+    disable_proxy()
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info("starting daemon {}".format(daemon_name))
+            daemonize(daemon_name)
+
+        try:
+            collector = EmailCollector()
+            collector.load_groups()
+            collector.start()
+
+        except KeyboardInterrupt as e:
+            logging.info("caught user interrupt")
+            try:
+                collector.stop()
+                collector.wait()
+            except Exception as e:
+                logging.error("uncaught exception: {}".format(e))
+        except Exception as e:
+            logging.error("uncaught exception: {}".format(e))
+            report_exception()
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+    sys.exit(0)
+
+email_collector_parser = subparsers.add_parser('email-collector',
+    help="Start/Stop the Email Collector")
+email_collector_parser.set_defaults(func=email_collector)
+
+# ============================================================================
 # start carbon black binary processor
 #
 

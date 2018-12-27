@@ -50,7 +50,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="ACE Mailbox Client")
     parser.add_argument('--base-dir', required=False, dest='base_dir', default='/opt/ace',
         help="Base directory for amc (defaults to /opt/ace)")
-    parser.add_argument('--data-dir', required=False, dest='data_dir', default='var/incoming/amc',
+    parser.add_argument('--data-dir', required=False, dest='data_dir', default='data/var/incoming/amc',
         help="Relative directory where emails are locally stored for transport. "
              "Overrides value specified in configuration file.")
     parser.add_argument('--subdir-format', required=False, dest='subdir_format', default='%Y%m%d%H',
