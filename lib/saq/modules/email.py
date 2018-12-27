@@ -185,7 +185,7 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
         path = os.path.join(self.root.storage_dir, _file.value)
 
         try:
-            with open(path, 'r') as fp:
+            with open(path, 'r', errors='ignore') as fp:
                 source_ipv4 = None
                 source_port = None
                 envelope_from = None
@@ -217,8 +217,67 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
                 rfc822_path = None
                 rfc822_fp = None
 
+                def _finalize():
+                    # called when we detect the end of an SMTP stream OR the end of the file (data)
+                    nonlocal rfc822_fp, source_ipv4, source_port, envelope_from, envelope_to, state
+
+                    rfc822_fp.close()
+
+                    logging.info("finished parsing {} from {}".format(rfc822_path, path))
+
+                    # submit this for analysis...
+                    email_file = analysis.add_observable(F_FILE, os.path.relpath(rfc822_path, 
+                                                                                  start=self.root.storage_dir))
+                    if email_file:
+                        email_file.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
+                        # we don't scan the email as a whole because of all the random base64 data
+                        # that randomly matches various indicators from crits
+                        # instead we rely on all the extraction that we do and scan the output of those processes
+                        email_file.add_directive(DIRECTIVE_NO_SCAN)
+                        # make sure we archive it
+                        email_file.add_directive(DIRECTIVE_ARCHIVE)
+
+                    analysis.details = {
+                        # the name of the file will equal the bro connection id
+                        KEY_CONNECTION_ID: os.path.basename(path),
+                        KEY_SOURCE_IPV4: source_ipv4,
+                        KEY_SOURCE_PORT: source_port,
+                        KEY_ENV_MAIL_FROM: envelope_from,
+                        KEY_ENV_RCPT_TO: envelope_to,
+                    }
+
+                    self.root.description = 'BRO SMTP Scanner Detection - ' 
+
+                    if source_ipv4:
+                        observable = analysis.add_observable(F_IPV4, source_ipv4)
+
+                    if envelope_from:
+                        observable = analysis.add_observable(F_EMAIL_ADDRESS, envelope_from)
+                        self.root.description += 'From {} '.format(envelope_from)
+
+                    if envelope_to:
+                        for to in envelope_to:
+                            observable = analysis.add_observable(F_EMAIL_ADDRESS, to)
+                            if envelope_from:
+                                observable = analysis.add_observable(F_EMAIL_CONVERSATION, 
+                                                                     create_email_conversation(envelope_from, to))
+
+                        self.root.description += 'To {} '.format(','.join(envelope_to))
+
+                    rfc822_fp = None
+                    source_ipv4 = None
+                    source_port = None
+                    envelope_from = None
+                    envelope_to = []
+
+                    state = STATE_SMTP
+
                 # smtp is pretty much line oriented
-                for line in fp:
+                while True:
+                    line = fp.readline()
+                    if line == '':
+                        break
+
                     if state == STATE_SMTP:
                         m = REGEX_BRO_SMTP_MAIL_FROM.match(line)
                         if m:
@@ -245,61 +304,15 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
 
                     # otherwise we're reading DATA and looking for the end of that
                     if line.strip() == ('> . .'):
-                        rfc822_fp.close()
-
-                        logging.info("finished parsing {} from {}".format(rfc822_path, path))
-
-                        # submit this for analysis...
-                        email_file = analysis.add_observable(F_FILE, os.path.relpath(rfc822_path, 
-                                                                                      start=self.root.storage_dir))
-                        if email_file:
-                            email_file.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
-                            # we don't scan the email as a whole because of all the random base64 data
-                            # that randomly matches various indicators from crits
-                            # instead we rely on all the extraction that we do and scan the output of those processes
-                            email_file.add_directive(DIRECTIVE_NO_SCAN)
-                            # make sure we archive it
-                            email_file.add_directive(DIRECTIVE_ARCHIVE)
-
-                        analysis.details = {
-                            # the name of the file will equal the bro connection id
-                            KEY_CONNECTION_ID: os.path.basename(path),
-                            KEY_SOURCE_IPV4: source_ipv4,
-                            KEY_SOURCE_PORT: source_port,
-                            KEY_ENV_MAIL_FROM: envelope_from,
-                            KEY_ENV_RCPT_TO: envelope_to,
-                        }
-
-                        self.root.description = 'BRO SMTP Scanner Detection - ' 
-
-                        if source_ipv4:
-                            observable = analysis.add_observable(F_IPV4, source_ipv4)
-
-                        if envelope_from:
-                            observable = analysis.add_observable(F_EMAIL_ADDRESS, envelope_from)
-                            self.root.description += 'From {} '.format(envelope_from)
-
-                        if envelope_to:
-                            for to in envelope_to:
-                                observable = analysis.add_observable(F_EMAIL_ADDRESS, to)
-                                if envelope_from:
-                                    observable = analysis.add_observable(F_EMAIL_CONVERSATION, 
-                                                                         create_email_conversation(envelope_from, to))
-
-                            self.root.description += 'To {} '.format(','.join(envelope_to))
-
-                        rfc822_fp = None
-                        root = None
-                        source_ipv4 = None
-                        source_port = None
-                        envelope_from = None
-                        envelope_to = []
-
-                        state = STATE_SMTP
+                        _finalize()
                         continue
 
                     rfc822_fp.write(line)
                     continue
+
+                # did the file end while we were reading SMTP data?
+                if state == STATE_DATA:
+                    _finalize()
 
             return True
 
