@@ -60,6 +60,8 @@ class EmailCollector(Collector):
                     email_path = os.path.join(target_dir, email_file)
                     logging.info("found email {}".format(email_file))
 
+                    # yara rules can control what groups the email actually gets sent to
+
                     # create a new submission request for this
                     self.stream_list.append(Submission(
                         description = 'ACE Mailbox Scanner Detection - {}'.format(email_file),
