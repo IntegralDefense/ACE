@@ -536,6 +536,16 @@ class Collector(object):
         # NOTE there is no wait if something was previously collected
         self.collection_frequency = collection_frequency
 
+        # create any required directories
+        for dir_path in [ self.incoming_dir, self.persistence_dir ]:
+            if not os.path.isdir(dir_path):
+                try:
+                    logging.info("creating directory {}".format(dir_path))
+                    os.makedirs(dir_path)
+                except Exception as e:
+                    logging.critical("unable to create director {}: {}".format(dir_path, e))
+                    sys.exit(1)
+
     @use_db
     def add_group(self, name, coverage, full_delivery, database, db, c):
         c.execute("SELECT id FROM work_distribution_groups WHERE name = %s", (name,))
@@ -571,19 +581,6 @@ class Collector(object):
         # you need to add at least one group to send to
         if not self.remote_node_groups:
             raise RuntimeError("no RemoteNodeGroup objects have been added to {}".format(self))
-
-        # create any required directories
-        for dir_path in [ self.incoming_dir, self.persistence_dir ]:
-            if not os.path.isdir(dir_path):
-                try:
-                    logging.info("creating directory {}".format(dir_path))
-                    os.makedirs(dir_path)
-                except Exception as e:
-                    logging.critical("unable to create director {}: {}".format(dir_path, e))
-                    sys.exit(1)
-
-        # give subclasses a chance to do something before the main loop starts
-        self.initialize()
 
         self.collection_thread = threading.Thread(target=self.loop, name="Collector")
         self.collection_thread.start()
