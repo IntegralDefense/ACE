@@ -556,3 +556,114 @@ class CollectorTestCase(CollectorBaseTestCase):
 
         remote_node = RemoteNode(node_id, name, location, any_mode, last_update, ANALYSIS_MODE_ANALYSIS, 0)
         self.assertEquals(remote_node.location, 'test:443')
+
+    @use_db
+    def test_node_assignment(self, db, c):
+
+        class _custom_collector(TestCollector):
+            def __init__(_self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                submission = self.create_submission()
+                submission.group_assignments = ['test_group_1']
+                self.available_work = [submission]
+
+            def get_next_submission(_self):
+                if not self.available_work:
+                    return None
+
+                return self.available_work.pop()
+        
+        # start an engine to get a node created
+        engine = Engine()
+        engine.start()
+        wait_for_log_count('updated node', 1, 5)
+        engine.controlled_stop()
+        engine.wait()
+
+        collector = _custom_collector()
+        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg2 = collector.add_group('test_group_2', 100, True, 'ace') # 100% coverage
+        collector.execute()
+
+        # after this is executed we should have an assignment to test_group_1 but not test_group_2
+        c.execute("""SELECT COUNT(*) FROM work_distribution JOIN work_distribution_groups ON work_distribution.group_id = work_distribution_groups.id
+                     WHERE work_distribution_groups.name = %s""", ('test_group_1',))
+        self.assertEquals(c.fetchone()[0], 1)
+
+        c.execute("""SELECT COUNT(*) FROM work_distribution JOIN work_distribution_groups ON work_distribution.group_id = work_distribution_groups.id
+                     WHERE work_distribution_groups.name = %s""", ('test_group_2',))
+        self.assertEquals(c.fetchone()[0], 0)
+
+    @use_db
+    def test_node_default_assignment(self, db, c):
+
+        class _custom_collector(TestCollector):
+            def __init__(_self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                # we don't make any custom assignments
+                self.available_work = [self.create_submission()]
+
+            def get_next_submission(_self):
+                if not self.available_work:
+                    return None
+
+                return self.available_work.pop()
+        
+        # start an engine to get a node created
+        engine = Engine()
+        engine.start()
+        wait_for_log_count('updated node', 1, 5)
+        engine.controlled_stop()
+        engine.wait()
+
+        collector = _custom_collector()
+        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg2 = collector.add_group('test_group_2', 100, True, 'ace') # 100% coverage
+        collector.execute()
+
+        # after this is executed we should have assignments to both groups
+        c.execute("""SELECT COUNT(*) FROM work_distribution JOIN work_distribution_groups ON work_distribution.group_id = work_distribution_groups.id
+                     WHERE work_distribution_groups.name = %s""", ('test_group_1',))
+        self.assertEquals(c.fetchone()[0], 1)
+
+        c.execute("""SELECT COUNT(*) FROM work_distribution JOIN work_distribution_groups ON work_distribution.group_id = work_distribution_groups.id
+                     WHERE work_distribution_groups.name = %s""", ('test_group_2',))
+        self.assertEquals(c.fetchone()[0], 1)
+
+    @use_db
+    def test_node_invalid_assignment(self, db, c):
+
+        class _custom_collector(TestCollector):
+            def __init__(_self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                submission = self.create_submission()
+                # we assign to an invalid (unknown) group
+                submission.group_assignments = ['test_group_invalid']
+                self.available_work = [submission]
+
+            def get_next_submission(_self):
+                if not self.available_work:
+                    return None
+
+                return self.available_work.pop()
+        
+        # start an engine to get a node created
+        engine = Engine()
+        engine.start()
+        wait_for_log_count('updated node', 1, 5)
+        engine.controlled_stop()
+        engine.wait()
+
+        collector = _custom_collector()
+        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg2 = collector.add_group('test_group_2', 100, True, 'ace') # 100% coverage
+        collector.execute()
+
+        # after this is executed we should have an assignment to test_group_1 but not test_group_2
+        c.execute("""SELECT COUNT(*) FROM work_distribution JOIN work_distribution_groups ON work_distribution.group_id = work_distribution_groups.id
+                     WHERE work_distribution_groups.name = %s""", ('test_group_1',))
+        self.assertEquals(c.fetchone()[0], 1)
+
+        c.execute("""SELECT COUNT(*) FROM work_distribution JOIN work_distribution_groups ON work_distribution.group_id = work_distribution_groups.id
+                     WHERE work_distribution_groups.name = %s""", ('test_group_2',))
+        self.assertEquals(c.fetchone()[0], 1)
