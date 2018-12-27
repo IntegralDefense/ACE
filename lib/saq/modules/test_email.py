@@ -207,6 +207,55 @@ class TestCase(ACEModuleTestCase):
         email_analysis = email_file.get_analysis(saq.modules.email.EmailAnalysis)
         self.assertIsNotNone(email_analysis)
 
+    def test_bro_smtp_stream_analysis_no_end_command(self):
+        import saq
+        import saq.modules.email
+
+        # test the same thing as test_bro_smtp_stream_analysis except we remove the > . .
+
+        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
+        
+        root = create_root_analysis(alert_type=ANALYSIS_TYPE_BRO_SMTP, analysis_mode=ANALYSIS_MODE_EMAIL)
+        root.initialize_storage()
+        root.details = { }
+        shutil.copy(os.path.join('test_data', 'smtp_streams', 'CBmtfvapmTMqCEUw6.missing_end'), 
+                    os.path.join(root.storage_dir, 'CBmtfvapmTMqCEUw6'))
+        
+        file_observable = root.add_observable(F_FILE, 'CBmtfvapmTMqCEUw6')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_SMTP)
+        file_observable.add_directive(DIRECTIVE_NO_SCAN)
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(local_analysis_modes=[ANALYSIS_MODE_EMAIL])
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_bro_smtp_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        analysis = file_observable.get_analysis(saq.modules.email.BroSMTPStreamAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertEquals(len(analysis.get_observables_by_type(F_FILE)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_ADDRESS)), 2)
+        self.assertEquals(len(analysis.get_observables_by_type(F_IPV4)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_CONVERSATION)), 1)
+        self.assertTrue(saq.modules.email.KEY_CONNECTION_ID in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_IPV4 in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_PORT in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_MAIL_FROM in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_RCPT_TO in analysis.details)
+        email_file = analysis.find_observable(lambda o: o.type == F_FILE)
+        self.assertIsNotNone(email_file)
+        self.assertEquals(email_file.value, 'email.rfc822')
+        email_analysis = email_file.get_analysis(saq.modules.email.EmailAnalysis)
+        self.assertIsNotNone(email_analysis)
+
     def test_bro_smtp_stream_submission(self):
         from flask import url_for
         from saq.analysis import _JSONEncoder
