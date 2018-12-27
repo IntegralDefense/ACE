@@ -12,5 +12,5 @@ then
 fi
 
 ( cd $SAQ_HOME && \
-find error_reports -maxdepth 1 -mindepth 1 -type f -print0 | xargs -0 grep -l "$1" | \
+find data/error_reports -maxdepth 1 -mindepth 1 -type f -print0 | xargs -0 grep -l "$1" | \
 while read f; do echo $f; rm "$f"; if [ -d "$f.ace" ]; then rm -rf "$f.ace"; fi; done )
