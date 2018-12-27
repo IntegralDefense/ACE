@@ -185,7 +185,7 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
         path = os.path.join(self.root.storage_dir, _file.value)
 
         try:
-            with open(path, 'r') as fp:
+            with open(path, 'r', errors='ignore') as fp:
                 source_ipv4 = None
                 source_port = None
                 envelope_from = None
