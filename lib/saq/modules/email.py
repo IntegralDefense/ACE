@@ -198,7 +198,7 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
                 m = REGEX_BRO_SMTP_SOURCE_IPV4.match(line)
 
                 if not m:
-                    logging.error("unable to parse source address from {} ({})".format(path, line.strip()))
+                    raise ValueError("unable to parse soure address from {} ({})".format(path, line.strip()))
                 else:
                     source_ipv4 = m.group(1)
                     source_port = m.group(2)
@@ -317,8 +317,9 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
             return True
 
         except Exception as e:
-            logging.debug("unable to parse smtp stream {}: {}".format(_file.value, e))
-            report_exception()
+            logging.error("unable to parse smtp stream {}: {}".format(_file.value, e))
+            #report_exception()
+            shutil.copy(os.path.join(self.root.storage_dir, _file.value), os.path.join(saq.DATA_DIR, 'data', 'review', 'smtp'))
             return False
 
     def execute_post_analysis(self):
@@ -328,7 +329,7 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
             return
 
         email_analysis = email_observable.get_analysis(EmailAnalysis)
-        if email_analysis is None or not email_analysis:
+        if email_analysis is None or isinstance(email_analysis, bool):
             return
 
         if email_analysis.decoded_subject is not None:
@@ -1199,6 +1200,10 @@ class EmailAnalyzer(AnalysisModule):
                 src_path = os.path.join(self.root.storage_dir, _file.value)
                 dst_path = os.path.join(saq.DATA_DIR, 'review', 'rfc822', str(uuid.uuid4()))
                 shutil.copy(src_path, dst_path)
+
+                with open('{}.unparsed'.format(dst_path), 'w') as fp:
+                    fp.write(unparsed_email)
+
             except Exception as e:
                 logging.error("unable to save file for review: {}".format(e))
 
@@ -1419,7 +1424,7 @@ class EmailAnalyzer(AnalysisModule):
         # we use this later when we write the log message
         attachments = [] # of ( size, type, name, sha256 )
 
-        def _recursive_parser(target):
+        def __recursive_parser(target):
             nonlocal target_message_id
 
             # if this attachment is an email and it's not the target email
@@ -1532,6 +1537,13 @@ class EmailAnalyzer(AnalysisModule):
 
             else:
                 raise RuntimeError("parsing logic error: {}".format(_file.value))
+
+        def _recursive_parser(*args, **kwargs):
+            try:
+                return __recursive_parser(*args, **kwargs)
+            except Exception as e:
+                logging.error("recursive parsing failed on {}: {}".format(_file.value, e))
+                report_exception()
 
         _recursive_parser(target_email)
 
