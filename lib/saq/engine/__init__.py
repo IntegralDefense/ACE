@@ -1649,7 +1649,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             self.root = work_item
             self.root.load()
 
-        logging.info("processing {} mode {}".format(self.root.description, self.root.analysis_mode))
+        logging.info("processing {} mode {} ({})".format(self.root.description, self.root.analysis_mode, self.root.uuid))
 
     def analyze(self, target):
         assert isinstance(target, saq.analysis.RootAnalysis) or isinstance(target, DelayedAnalysisRequest)
