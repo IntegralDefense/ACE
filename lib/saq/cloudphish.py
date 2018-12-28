@@ -6,6 +6,7 @@ import logging
 import hashlib
 import pickle
 import uuid
+import os, os.path
 
 from urllib.parse import urlparse
 
@@ -247,14 +248,17 @@ def _get_cached_analysis(url, db, c):
         if file_name:
             file_name = file_name.decode('unicode_internal')
 
+        storage_dir = storage_dir_from_uuid(uuid)
         root_details = None
-        try:
-            root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
-            root.load()
-            root_details = root.details
-        except Exception as e:
-            logging.error("unable to load cloudphish analysis {}: {}".format(uuid, e))
-            report_exception()
+
+        if os.path.exists(storage_dir):
+            try:
+                root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+                root.load()
+                root_details = root.details
+            except Exception as e:
+                logging.error("unable to load cloudphish analysis {}: {}".format(uuid, e))
+                report_exception()
 
         return CloudphishAnalysisResult(RESULT_OK,      # result
                                         root_details,   # details 
