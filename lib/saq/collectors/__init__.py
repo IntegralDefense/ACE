@@ -53,7 +53,8 @@ class Submission(object):
                  details,
                  observables,
                  tags,
-                 files):
+                 files,
+                 group_assignments=[]):
 
         self.description = description
         self.analysis_mode = analysis_mode
@@ -66,6 +67,10 @@ class Submission(object):
         self.tags = tags
         self.files = files
         self.uuid = str(uuid.uuid4())
+
+        # list of RemoteNodeGroup.name values
+        # empty list means send to all configured groups
+        self.group_assignments = group_assignments
 
     def __str__(self):
         return "{} ({})".format(self.description, self.analysis_mode)
@@ -531,6 +536,16 @@ class Collector(object):
         # NOTE there is no wait if something was previously collected
         self.collection_frequency = collection_frequency
 
+        # create any required directories
+        for dir_path in [ self.incoming_dir, self.persistence_dir ]:
+            if not os.path.isdir(dir_path):
+                try:
+                    logging.info("creating directory {}".format(dir_path))
+                    os.makedirs(dir_path)
+                except Exception as e:
+                    logging.critical("unable to create director {}: {}".format(dir_path, e))
+                    sys.exit(1)
+
     @use_db
     def add_group(self, name, coverage, full_delivery, database, db, c):
         c.execute("SELECT id FROM work_distribution_groups WHERE name = %s", (name,))
@@ -566,19 +581,6 @@ class Collector(object):
         # you need to add at least one group to send to
         if not self.remote_node_groups:
             raise RuntimeError("no RemoteNodeGroup objects have been added to {}".format(self))
-
-        # create any required directories
-        for dir_path in [ self.incoming_dir, self.persistence_dir ]:
-            if not os.path.isdir(dir_path):
-                try:
-                    logging.info("creating directory {}".format(dir_path))
-                    os.makedirs(dir_path)
-                except Exception as e:
-                    logging.critical("unable to create director {}: {}".format(dir_path, e))
-                    sys.exit(1)
-
-        # give subclasses a chance to do something before the main loop starts
-        self.initialize()
 
         self.collection_thread = threading.Thread(target=self.loop, name="Collector")
         self.collection_thread.start()
@@ -699,7 +701,18 @@ class Collector(object):
         work_id = c.lastrowid
 
         # assign this work to each configured group
-        for remote_node_group in self.remote_node_groups:
+        node_groups = self.remote_node_groups
+        
+        # does this submission have a defined set to groups to send to?
+        if next_submission.group_assignments:
+            node_groups = [ng for ng in node_groups if ng.name in next_submission.group_assignments]
+
+            if not node_groups:
+                # default to all groups if we end up with an empty list
+                logging.error("group assignment {} does not map to any known groups".format(next_submission.group_assignments))
+                node_groups = self.remote_node_groups
+            
+        for remote_node_group in node_groups:
             c.execute("INSERT INTO work_distribution ( work_id, group_id ) VALUES ( %s, %s )",
                      (work_id, remote_node_group.group_id))
 
