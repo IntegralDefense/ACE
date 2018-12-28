@@ -2355,9 +2355,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         final_analysis_mode = False
 
         # did analysis complete when there was work left to do?
-        if len(work_stack):
-            logging.info("work on {} was incomplete".format(self.root))
-            self.work_incomplete(self.root)
+        #if len(work_stack):
+            #logging.info("work on {} was incomplete".format(self.root))
+            #self.work_incomplete(self.root)
 
     def is_module_enabled(self, _type_or_string):
         """Returns True if the given module is enabled. 

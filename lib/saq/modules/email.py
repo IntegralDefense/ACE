@@ -116,7 +116,7 @@ class MailboxEmailAnalyzer(AnalysisModule):
 
         analysis = self.create_analysis(_file)
 
-        if email_analysis is None:
+        if email_analysis is None or isinstance(email_analysis, bool):
             self.root.description = '{} unparsable email'.format(MAILBOX_ALERT_PREFIX)
         else:
             if email_analysis.decoded_subject:
@@ -1547,6 +1547,7 @@ class EmailAnalyzer(AnalysisModule):
             except Exception as e:
                 logging.error("recursive parsing failed on {}: {}".format(_file.value, e))
                 report_exception()
+                shutil.copy(os.path.join(self.root.storage_dir, _file.value), os.path.join(saq.DATA_DIR, 'review', 'rfc822'))
 
         _recursive_parser(target_email)
 
