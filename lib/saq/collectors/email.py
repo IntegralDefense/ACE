@@ -126,7 +126,7 @@ class EmailCollector(Collector):
                         event_time = datetime.datetime.fromtimestamp(os.path.getmtime(email_path)),
                         details = {},
                         observables = [ { 'type': F_FILE, 
-                                        'value': email_path, 
+                                        'value': email_file, 
                                         'directives': [ DIRECTIVE_NO_SCAN, DIRECTIVE_ORIGINAL_EMAIL ], } ],
                         tags = [],
                         files=[email_path],
