@@ -125,7 +125,9 @@ class EmailCollector(Collector):
                         type = ANALYSIS_TYPE_MAILBOX,
                         event_time = datetime.datetime.fromtimestamp(os.path.getmtime(email_path)),
                         details = {},
-                        observables = [],
+                        observables = [ { 'type': F_FILE, 
+                                        'value': email_path, 
+                                        'directives': [ DIRECTIVE_NO_SCAN, DIRECTIVE_ORIGINAL_EMAIL ], }
                         tags = [],
                         files=[email_path],
                         group_assignments=group_assignments))
