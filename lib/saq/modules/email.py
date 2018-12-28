@@ -323,6 +323,9 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
             return False
 
     def execute_post_analysis(self):
+        if self.root.alert_type != ANALYSIS_TYPE_BRO_SMTP:
+            return 
+
         # find the email we extracted from the stmp stream
         email_observable = self.root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_EMAIL))
         if email_observable is None:
