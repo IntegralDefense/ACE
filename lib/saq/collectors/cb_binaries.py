@@ -73,6 +73,8 @@ class CarbonBlackBinaryCollector(Collector):
         # temporary list of things to submit
         self.work_list = collections.deque()
 
+        self.load_persistence()
+
     def load_persistence(self):
         # load stuff
         try:
@@ -149,9 +151,6 @@ class CarbonBlackBinaryCollector(Collector):
             pickle.dump(self._current_result_count, fp)
 
         logging.debug("updated current_result_count to {}".format(value))
-
-    def initialize(self):
-        self.load_persistence()
 
     def get_next_submission(self):
         if len(self.work_list) == 0:
