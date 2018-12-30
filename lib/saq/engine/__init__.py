@@ -1560,18 +1560,20 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             logging.error("error processing work item {}: {}".format(work_item, e))
             report_exception()
 
-        # at this point self.root is set and loaded
-        # remember what the analysis mode was before we started analysis
-        current_analysis_mode = self.root.analysis_mode
-        logging.debug("analyzing {} in analysis_mode {}".format(self.root, self.root.analysis_mode))
+        if self.root is not None:
 
-        try:
-            self.analyze(work_item)
-        except Exception as e:
-            logging.error("error analyzing {}: {}".format(work_item, e))
-            report_exception()
+            # at this point self.root is set and loaded
+            # remember what the analysis mode was before we started analysis
+            current_analysis_mode = self.root.analysis_mode
+            logging.debug("analyzing {} in analysis_mode {}".format(self.root, self.root.analysis_mode))
 
-        self.stop_root_lock_manager()
+            try:
+                self.analyze(work_item)
+            except Exception as e:
+                logging.error("error analyzing {}: {}".format(work_item, e))
+                report_exception()
+
+            self.stop_root_lock_manager()
 
         try:
             self.clear_work_target(work_item)
