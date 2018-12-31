@@ -605,7 +605,8 @@ def correlate(args):
                     #saq.CONFIG['engine_cli_correlation'][section] = 'yes'
 
     try:
-        engine.controlled_stop()
+        if not args.single_threaded:
+            engine.controlled_stop()
         engine.start()
         engine.wait()
     except KeyboardInterrupt:
