@@ -319,7 +319,7 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
         except Exception as e:
             logging.error("unable to parse smtp stream {}: {}".format(_file.value, e))
             #report_exception()
-            shutil.copy(os.path.join(self.root.storage_dir, _file.value), os.path.join(saq.DATA_DIR, 'data', 'review', 'smtp'))
+            shutil.copy(os.path.join(self.root.storage_dir, _file.value), os.path.join(saq.DATA_DIR, 'review', 'smtp'))
             return False
 
     def execute_post_analysis(self):
