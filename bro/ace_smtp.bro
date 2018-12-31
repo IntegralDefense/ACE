@@ -23,6 +23,10 @@ event smtp_request(c: connection, is_orig: bool, command: string, arg: string) {
     if (! record_smtp_stream(c)) 
         return;
 
+    # have we switched to TLS?
+    if (c?$smtp && c$smtp$tls)
+        return;
+
     local f:file = open_for_append(get_target_smtp_filename(c));
     write_file(f, fmt("> %s %s\n", command, arg));
     close(f);
@@ -34,6 +38,10 @@ event smtp_reply(c: connection, is_orig: bool, code: count, cmd: string, msg: st
     if (! record_smtp_stream(c)) 
         return;
 
+    # have we switched to TLS?
+    if (c?$smtp && c$smtp$tls)
+        return;
+
     local f:file = open_for_append(get_target_smtp_filename(c));
     write_file(f, fmt("< %s %s %s\n", cmd, code, msg));
     close(f);
@@ -43,6 +51,10 @@ event smtp_reply(c: connection, is_orig: bool, code: count, cmd: string, msg: st
 
 event smtp_data(c: connection, is_orig: bool, data: string) {
     if (! record_smtp_stream(c)) 
+        return;
+
+    # have we switched to TLS?
+    if (c?$smtp && c$smtp$tls)
         return;
 
     local f:file = open_for_append(get_target_smtp_filename(c));
