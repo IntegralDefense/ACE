@@ -30,8 +30,8 @@ parser.add_argument('-L', '--logging-config-path', required=False, dest='logging
     help="Path to the logging configuration file.")
 parser.add_argument('-c', '--config-path', required=False, dest='config_paths', action='append', default=[],
     help="ACE configuration files. $SAQ_HOME/etc/saq.default.ini is always loaded, additional override default settings.")
-parser.add_argument('--single-threaded', required=False, dest='single_threaded', default=False, action='store_true',
-    help="Force execution to take place in a single process and a single thread.  Useful for manual debugging.")
+#parser.add_argument('--single-threaded', required=False, dest='single_threaded', default=False, action='store_true',
+    #help="Force execution to take place in a single process and a single thread.  Useful for manual debugging.")
 parser.add_argument('--log-level', required=False, dest='log_level', default=None,
     help="Change the root log level.")
 parser.add_argument('--start', required=False, dest='start', default=False, action='store_true',
@@ -389,7 +389,7 @@ def correlate(args):
 
     initialize_process_server()
 
-    engine = Engine()
+    engine = Engine(single_threaded_mode=args.single_threaded)
     engine.set_local()
 
     def _cleanup():
@@ -650,6 +650,8 @@ def correlate(args):
 # analyze-files
 correlate_parser = subparsers.add_parser('correlate',
     help="Analyze one or more observables or alerts.")
+correlate_parser.add_argument('--single-threaded', required=False, dest='single_threaded', default=False, action='store_true',
+    help="Force execution to take place in a single process and a single thread.  Useful for manual debugging.")
 correlate_parser.add_argument('-D', '--disable-module', required=False, dest='disabled_modules', nargs='*',
     help="Zero or more module names (substring match) to disable.")
 correlate_parser.add_argument('--disable-all', required=False, dest='disable_all', default=False, action='store_true',
