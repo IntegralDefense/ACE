@@ -18,7 +18,7 @@ import saq
 from saq.analysis import Analysis, Observable
 from saq.error import report_exception
 from saq.network_semaphore import NetworkSemaphoreClient
-from saq.util import create_timedelta
+from saq.util import create_timedelta, parse_event_time
 
 from splunklib import SplunkQueryObject
 
@@ -787,26 +787,27 @@ class LDAPAnalysisModule(AnalysisModule):
 def splunktime_to_datetime(splunk_time):
     """Convert a splunk time in 2015-02-19T09:50:49.000-05:00 format to a datetime object."""
     assert isinstance(splunk_time, str)
-    return datetime.datetime.strptime(splunk_time.split('.')[0], '%Y-%m-%dT%H:%M:%S')
-    
+    #return datetime.datetime.strptime(splunk_time.split('.')[0], '%Y-%m-%dT%H:%M:%S')
+    return parse_event_time(splunk_time)
 
 def splunktime_to_saqtime(splunk_time):
     """Convert a splunk time in 2015-02-19T09:50:49.000-05:00 format to SAQ time format YYYY-MM-DD HH:MM:SS."""
     assert isinstance(splunk_time, str)
+    return parse_event_time(splunk_time).strftime(event_time_format_json_tz)
 
-    m = re.match(r'^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\.[0-9]{3}[-+][0-9]{2}:[0-9]{2}$', splunk_time)
-    if not m:
-        logging.error("_time field does not match expected format: {0}".format(splunk_time))
-        return None
+    #m = re.match(r'^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\.[0-9]{3}[-+][0-9]{2}:[0-9]{2}$', splunk_time)
+    #if not m:
+        #logging.error("_time field does not match expected format: {0}".format(splunk_time))
+        #return None
 
    # reformat this time for SAQ
-    return '{0}-{1}-{2} {3}:{4}:{5}'.format(
-        m.group(1),
-        m.group(2),
-        m.group(3),
-        m.group(4),
-        m.group(5),
-        m.group(6))
+    #return '{0}-{1}-{2} {3}:{4}:{5}'.format(
+        #m.group(1),
+        #m.group(2),
+        #m.group(3),
+        #m.group(4),
+        #m.group(5),
+        #m.group(6))
 
 class SplunkAnalysisModule(AnalysisModule, SplunkQueryObject):
     """An analysis module that uses Splunk."""
