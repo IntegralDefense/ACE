@@ -349,7 +349,8 @@ class Engine(object):
                                    analysis_pools=None, 
                                    pool_size_limit=None, 
                                    default_analysis_mode=None,
-                                   copy_analysis_on_error=None):
+                                   copy_analysis_on_error=None,
+                                   single_threaded_mode=False):
 
         assert local_analysis_modes is None or isinstance(local_analysis_modes, list)
         assert analysis_pools is None or isinstance(analysis_pools, dict)
@@ -523,6 +524,10 @@ class Engine(object):
             self.copy_analysis_on_error = copy_analysis_on_error
         else:
             self.copy_analysis_on_error = self.config.getboolean('copy_analysis_on_error')
+
+        # in single threaded mode we don't start any extra processes or threads
+        # this is useful for debugging
+        self.single_threaded_mode = single_threaded_mode
 
     def __str__(self):
         return "Engine ({} - {})".format(saq.SAQ_NODE, self.name)
@@ -943,8 +948,11 @@ class Engine(object):
     # CONTROL FUNCTIONS
     # ------------------------------------------------------------------------
 
-    def start(self):
+    def start(self, mode=None):
         """Starts the engine."""
+
+        if self.single_threaded_mode:
+            return self.single_threaded_start(mode=mode)
 
         # make sure engine isn't already started
         if self.started:
@@ -961,7 +969,7 @@ class Engine(object):
     def single_threaded_start(self, mode=None):
         """Typically used for debugging. Runs the entire thing under a single process/thread."""
         logging.warning("executing in single threaded mode")
-        self.controlled_stop()
+        #self.controlled_stop()
         worker = Worker(mode)
         worker.single_threaded_start()
 
@@ -979,9 +987,11 @@ class Engine(object):
 
     def wait(self):
         """Waits for the engine to stop."""
+        if self.single_threaded_mode:
+            return
 
         self.initialize_signal_handlers()
-        logging.debug("waiting for engine process {} to complete".format(self.engine_process.pid))
+        logging.info("waiting for engine process {} to complete".format(self.engine_process.pid))
 
         while True:
             try:
@@ -1034,6 +1044,9 @@ class Engine(object):
 
     def start_root_lock_manager(self, uuid):
         """Starts a thread that keeps a lock open."""
+        if self.single_threaded_mode:
+            return
+
         logging.debug("starting lock manager for {}".format(uuid))
 
         # we use this event for a controlled shutdown
@@ -1048,6 +1061,9 @@ class Engine(object):
 
     def stop_root_lock_manager(self):
         """Stops the root lock manager thread."""
+        if self.single_threaded_mode:
+            return
+
         if self.lock_manager_control_event is None:
             logging.warning("called stop_root_lock_manager() when no lock manager was running")
             return
@@ -1065,6 +1081,8 @@ class Engine(object):
                 if not acquire_lock(uuid, self.lock_uuid, lock_owner=self.lock_owner):
                     logging.warning("failed to maintain lock")
                     break
+
+            # make sure the last lock we had was released
 
         except Exception as e:
             logging.error("caught unknown error in {}: {}".format(self.lock_keepalive_thread, e))
@@ -2233,12 +2251,13 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                                         break
 
                         # start a side thread that watches how long a single analysis request can take
-                        monitor_event = threading.Event()
-                        monitor_thread = threading.Thread(target=_monitor, args=(monitor_event, 
-                                                                                 analysis_module, 
-                                                                                 work_item.observable))
-                        monitor_thread.daemon = True
-                        monitor_thread.start()
+                        if not self.single_threaded_mode:
+                            monitor_event = threading.Event()
+                            monitor_thread = threading.Thread(target=_monitor, args=(monitor_event, 
+                                                                                     analysis_module, 
+                                                                                     work_item.observable))
+                            monitor_thread.daemon = True
+                            monitor_thread.start()
 
                         # we indicate that the analysis module refused to generate analysis (for whatever reason)
                         # by returning False here
@@ -2248,8 +2267,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                             analysis_result = analysis_module.analyze(work_item.observable, final_analysis_mode)
                         finally:
                             # make sure we stop the monitor thread
-                            monitor_event.set()
-                            monitor_thread.join()
+                            if not self.single_threaded_mode:
+                                monitor_event.set()
+                                monitor_thread.join()
 
                         # this should always return a boolean
                         # but just warn if it doesn't
