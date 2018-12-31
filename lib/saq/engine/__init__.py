@@ -348,7 +348,8 @@ class Engine(object):
     def __init__(self, name='ace', local_analysis_modes=None, 
                                    analysis_pools=None, 
                                    pool_size_limit=None, 
-                                   default_analysis_mode=None):
+                                   default_analysis_mode=None,
+                                   copy_analysis_on_error=None):
 
         assert local_analysis_modes is None or isinstance(local_analysis_modes, list)
         assert analysis_pools is None or isinstance(analysis_pools, dict)
@@ -518,7 +519,10 @@ class Engine(object):
         # when analysis fails (entirely) we record the details in the error_reports directory
         # if this flag is True then we also save a copy of the RootAnalysis data structure as well
         # NOTE this can take a lot of disk space
-        self.copy_analysis_on_error = False
+        if copy_analysis_on_error is not None:
+            self.copy_analysis_on_error = copy_analysis_on_error
+        else:
+            self.copy_analysis_on_error = self.config.getboolean('copy_analysis_on_error')
 
     def __str__(self):
         return "Engine ({} - {})".format(saq.SAQ_NODE, self.name)
@@ -1560,20 +1564,26 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             logging.error("error processing work item {}: {}".format(work_item, e))
             report_exception()
 
-        if self.root is not None:
-
-            # at this point self.root is set and loaded
-            # remember what the analysis mode was before we started analysis
-            current_analysis_mode = self.root.analysis_mode
-            logging.debug("analyzing {} in analysis_mode {}".format(self.root, self.root.analysis_mode))
-
             try:
-                self.analyze(work_item)
+                self.clear_work_target(work_item)
             except Exception as e:
-                logging.error("error analyzing {}: {}".format(work_item, e))
+                logging.error("unable to clear work item {}: {}".format(work_item, e))
                 report_exception()
+    
+            return
 
-            self.stop_root_lock_manager()
+        # at this point self.root is set and loaded
+        # remember what the analysis mode was before we started analysis
+        current_analysis_mode = self.root.analysis_mode
+        logging.debug("analyzing {} in analysis_mode {}".format(self.root, self.root.analysis_mode))
+
+        try:
+            self.analyze(work_item)
+        except Exception as e:
+            logging.error("error analyzing {}: {}".format(work_item, e))
+            report_exception()
+
+        self.stop_root_lock_manager()
 
         try:
             self.clear_work_target(work_item)
@@ -1712,7 +1722,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         except Exception as e:
             elapsed_time = time.time() - start_time
-            logging.error("anaysis failed on {}: {}".format(self.root, e))
+            logging.error("analysis failed on {}: {}".format(self.root, e))
             error_report_path = report_exception()
 
             try:

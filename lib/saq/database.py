@@ -176,7 +176,7 @@ def _get_cached_db_connection(name='ace'):
     try:
         db_identifier = _get_cached_db_identifier(name)
         with _global_db_cache_lock:
-            #logging.debug("aquiring existing cached database connection {}".format(db_identifier))
+            logging.debug("aquiring existing cached database connection {}".format(db_identifier))
             db = _global_db_cache[db_identifier]
 
         try:

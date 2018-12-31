@@ -6,6 +6,7 @@ import time
 
 import saq
 from saq.analysis import _JSONEncoder
+from saq.database import enable_cached_db_connections
 
 from flask import Flask, make_response, abort, Response, request
 from flask_sqlalchemy import SQLAlchemy
@@ -102,6 +103,9 @@ def create_app(testing=False):
 
     from .cloudphish import cloudphish_bp as cloudphish_blueprint
     app.register_blueprint(cloudphish_blueprint)
+
+    # turn on database connection caching
+    app.before_request(enable_cached_db_connections)
 
     return app
 

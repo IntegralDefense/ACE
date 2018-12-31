@@ -339,7 +339,7 @@ class CloudphishAnalyzer(AnalysisModule):
                                                  proxies=saq.PROXIES if self.use_proxy else None,
                                                  timeout=self.timeout)
 
-            logging.debug("got result {} for cloudphish query {}".format(response, url))
+            logging.debug("got result {} for cloudphish query @ {} for {}".format(response, cloudphish_server, url.value))
 
             #response = requests.request('POST', self.get_submit_url(), params = { 
                    #'url': url.value, 
@@ -542,6 +542,7 @@ class CloudphishRequestAnalyzer(AnalysisModule):
 
         if crawlphish_analysis is None:
             # something went wrong with the analysis of the url
+            logging.warning("missing crawlphish analysis for {}".format(url.value))
             update_cloudphish_result(sha256_url, status=STATUS_ANALYZED, result=SCAN_RESULT_ERROR)
             return
 
