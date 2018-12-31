@@ -3823,7 +3823,7 @@ class PCodeAnalyzer(AnalysisModule):
                 p.wait(timeout=30)
 
         if p.returncode != 0:
-            logging.warning("pcodedmp returned error code {} for {}".format(p.returncode, _file.value))
+            logging.debug("pcodedmp returned error code {} for {}".format(p.returncode, _file.value))
 
         if os.path.getsize(stderr_path):
             logging.debug("pcodedmp recorded errors for {}".format(_file.value))
