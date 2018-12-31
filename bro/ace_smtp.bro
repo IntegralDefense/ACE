@@ -52,6 +52,13 @@ event smtp_data(c: connection, is_orig: bool, data: string) {
     c$ace_smtp_state = T;
 }
 
+event smtp_starttls(c: connection) {
+    if (c$ace_smtp_state) {
+        c$ace_smtp_state = F;
+        unlink(get_target_smtp_filename(c));
+    }
+}
+
 event connection_state_remove(c: connection) {
     if (! record_smtp_stream(c)) 
         return;
