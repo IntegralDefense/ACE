@@ -2998,7 +2998,42 @@ config_parser.add_argument('-v', '--value', action='store_true', default=False, 
 config_parser.add_argument('settings', nargs="*",
     help="Zero or more configuration items to display in the format section.key.")
 config_parser.set_defaults(func=config)
-    
+
+def display_workload(args):
+    from saq.database import get_db_connection
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("SELECT analysis_mode, COUNT(*) FROM workload GROUP BY analysis_mode ORDER BY analysis_mode")
+        print(" -- WORKLOAD --")
+        print("{: <15}{}".format('MODE', 'COUNT'))
+        for analysis_mode, count in c:
+            print("{: <15}{}".format(analysis_mode, count))
+
+        db.commit()
+        print()
+        print(" -- DELAYED WORKLOAD --")
+        c.execute("SELECT storage_dir, analysis_module, COUNT(*) FROM delayed_analysis GROUP BY storage_dir, analysis_module")
+        print("{: <36} {: <20} {}".format('UUID', 'MODULE', 'COUNT'))
+        for storage_dir, analysis_module, count in c:
+            storage_dir = os.path.basename(storage_dir)
+            analysis_module = analysis_module[len('analysis_module_'):]
+            print("{: <36} {: <20} {}".format(storage_dir, analysis_module, count))
+
+        db.commit()
+        print()
+        print(" -- LOCKS --")
+        c.execute("SELECT uuid, lock_uuid, lock_time, lock_owner FROM locks ORDER BY lock_time")
+        print("{: <36} {: <36} {: <19} {}".format('UUID', 'LOCK', 'TIME', 'OWNER'))
+        for _uuid, lock_uuid, lock_time, lock_owner in c:
+            print("{: <36} {: <36} {: <19} {}".format(_uuid, lock_uuid, str(lock_time), lock_owner))
+        db.commit()
+
+    sys.exit(0)
+
+display_workload_parser = subparsers.add_parser('display-workload',
+    help="Displays the current ACE workload.")
+display_workload_parser.set_defaults(func=display_workload)
 
 if __name__ == '__main__':
 
