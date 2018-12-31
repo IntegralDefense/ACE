@@ -704,6 +704,7 @@ class ArchiveAnalyzer(AnalysisModule):
             # avoid the numerious XML documents in excel files
             params = ['unzip', local_file_path, '-x', 'xl/activeX/*', 
                                                 '-x', 'xl/activeX/_rels/*', 
+                                                '-x', 'xl/ctrlProps/*.xml',
                       '-d', extracted_path]
         elif is_ace_file:
             # for some reason, unace doesn't let you use a full path
