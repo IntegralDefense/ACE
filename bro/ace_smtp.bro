@@ -23,6 +23,10 @@ event smtp_request(c: connection, is_orig: bool, command: string, arg: string) {
     if (! record_smtp_stream(c)) 
         return;
 
+    # have we switched to TLS?
+    if (c?$smtp && c$smtp$tls)
+        return;
+
     local f:file = open_for_append(get_target_smtp_filename(c));
     write_file(f, fmt("> %s %s\n", command, arg));
     close(f);
@@ -32,6 +36,10 @@ event smtp_request(c: connection, is_orig: bool, command: string, arg: string) {
 
 event smtp_reply(c: connection, is_orig: bool, code: count, cmd: string, msg: string, cont_resp: bool) {
     if (! record_smtp_stream(c)) 
+        return;
+
+    # have we switched to TLS?
+    if (c?$smtp && c$smtp$tls)
         return;
 
     local f:file = open_for_append(get_target_smtp_filename(c));
@@ -45,11 +53,22 @@ event smtp_data(c: connection, is_orig: bool, data: string) {
     if (! record_smtp_stream(c)) 
         return;
 
+    # have we switched to TLS?
+    if (c?$smtp && c$smtp$tls)
+        return;
+
     local f:file = open_for_append(get_target_smtp_filename(c));
     write_file(f, fmt("%s\n", data));
     close(f);
 
     c$ace_smtp_state = T;
+}
+
+event smtp_starttls(c: connection) {
+    if (c$ace_smtp_state) {
+        c$ace_smtp_state = F;
+        unlink(get_target_smtp_filename(c));
+    }
 }
 
 event connection_state_remove(c: connection) {
