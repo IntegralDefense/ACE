@@ -10,6 +10,7 @@ class ACEUtilTestCase(ACEBasicTestCase):
         old_default_format = '2018-10-19 14:06:34'
         json_format = '2018-10-19T18:08:08.346118-05:00'
         old_json_format = '2018-10-19T18:08:08.346118'
+        splunk_format = '2015-02-19T09:50:49.000-05:00'
 
         result = parse_event_time(default_format)
         self.assertEquals(result.year, 2018)
@@ -50,3 +51,13 @@ class ACEUtilTestCase(ACEBasicTestCase):
         self.assertEquals(result.second, 8)
         self.assertIsNotNone(result.tzinfo)
         self.assertEquals(saq.LOCAL_TIMEZONE.tzname, result.tzinfo.tzname)
+
+        result = parse_event_time(splunk_format)
+        self.assertEquals(result.year, 2015)
+        self.assertEquals(result.month, 2)
+        self.assertEquals(result.day, 19)
+        self.assertEquals(result.hour, 9)
+        self.assertEquals(result.minute, 50)
+        self.assertEquals(result.second, 49)
+        self.assertIsNotNone(result.tzinfo)
+        self.assertEquals(int(result.tzinfo.utcoffset(None).total_seconds()), -(5 * 60 * 60))
