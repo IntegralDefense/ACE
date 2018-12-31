@@ -1545,9 +1545,11 @@ class EmailAnalyzer(AnalysisModule):
             try:
                 return __recursive_parser(*args, **kwargs)
             except Exception as e:
-                logging.error("recursive parsing failed on {}: {}".format(_file.value, e))
-                report_exception()
-                shutil.copy(os.path.join(self.root.storage_dir, _file.value), os.path.join(saq.DATA_DIR, 'review', 'rfc822'))
+                logging.warning("recursive parsing failed on {}: {}".format(_file.value, e))
+                #report_exception()
+                target_path = os.path.join(saq.DATA_DIR, 'review', 'rfc822', '{}.{}'.format(
+                                           _file.value, datetime.datetime.now().strftime('%Y%m%d%H%M%S')))
+                shutil.copy(os.path.join(self.root.storage_dir, _file.value), target_path)
 
         _recursive_parser(target_email)
 

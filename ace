@@ -2183,7 +2183,7 @@ def update_crits_cache(args):
     import sqlite3
     from pymongo import MongoClient
 
-    cache_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['crits']['cache_db_path'])
+    cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path'])
 
     # the actual file should be a symlink
     if os.path.exists(cache_path) and not os.path.islink(cache_path):

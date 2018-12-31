@@ -258,7 +258,7 @@ class CrawlphishURLFilter(object):
         """Is this URL in crits?  value is the result of calling process_url on a URL."""
         assert isinstance(value, ParseResult)
 
-        cache_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['crits']['cache_db_path'])
+        cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path'])
         with sqlite3.connect('file:{}?mode=ro'.format(cache_path), uri=True) as db:
             db_cursor = db.cursor()
             row = None
