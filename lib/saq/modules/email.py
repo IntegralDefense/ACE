@@ -1763,40 +1763,41 @@ class EmailAnalyzer(AnalysisModule):
         is_email = 'RFC 822 mail' in file_type_analysis.file_type
         is_email |= 'message/rfc822' in file_type_analysis.file_type
         is_email |= 'message/rfc822' in file_type_analysis.mime_type
+        is_email |= _file.has_directive(DIRECTIVE_ORIGINAL_EMAIL)
 
-        if not is_email:
-            header_count = 0
-            try:
-                with open(os.path.join(self.root.storage_dir, _file.value), 'r') as fp:
-                    while True:
-                        line = fp.readline(1024)
-                        m = RE_EMAIL_HEADER.match(line)
-                        if m:
-                            header_count += 1
-                            #logging.info("MARKER: header")
-                            continue
+        #if not is_email:
+            #header_count = 0
+            #try:
+                #with open(os.path.join(self.root.storage_dir, _file.value), 'r') as fp:
+                    #while True:
+                        #line = fp.readline(1024)
+                        #m = RE_EMAIL_HEADER.match(line)
+                        #if m:
+                            #header_count += 1
+                            ##logging.info("MARKER: header")
+                            #continue
 
-                        # have we reached the end of the headers?
-                        if line.strip() == '':
-                            #logging.info("MARKER: headers end")
-                            break
+                        ## have we reached the end of the headers?
+                        #if line.strip() == '':
+                            ##logging.info("MARKER: headers end")
+                            #break
 
-                        m = RE_EMAIL_HEADER_CONTINUE.match(line)
-                        if m:
-                            #logging.info("MARKER: header continuation")
-                            continue
+                        #m = RE_EMAIL_HEADER_CONTINUE.match(line)
+                        #if m:
+                            ##logging.info("MARKER: header continuation")
+                            #continue
 
-                        # we read some non-email header content
-                        #logging.info("MARKER: non header: [{}]".format(line.strip()))
-                        header_count = 0
-                        break
+                        ## we read some non-email header content
+                        ##logging.info("MARKER: non header: [{}]".format(line.strip()))
+                        #header_count = 0
+                        #break
 
-                if header_count > 5: # completely arbitrary value
-                    logging.debug("detected email file {} by inspecting contents".format(_file.value))
-                    is_email = True
+                #if header_count > 5: # completely arbitrary value
+                    #logging.debug("detected email file {} by inspecting contents".format(_file.value))
+                    #is_email = True
 
-            except Exception as e:
-                logging.debug("unable to determine if {} is an email: {}".format(_file.value, e))
+            #except Exception as e:
+                #logging.debug("unable to determine if {} is an email: {}".format(_file.value, e))
 
         if not is_email:
             logging.debug("unsupported file type for email analysis: {} {}".format(
