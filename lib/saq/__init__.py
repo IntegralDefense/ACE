@@ -181,7 +181,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     global SAQ_NODE_ID
     global SAQ_RELATIVE_DIR
     global SEMAPHORES_ENABLED
-    global SINGLE_THREADED
     global STATS_DIR
     global TEMP_DIR
     global TOR_PROXY
@@ -206,8 +205,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     MANAGED_NETWORKS = None
     # set this to True to force all anlaysis to result in an alert being generated
     FORCED_ALERTS = False
-    # this forces all execution on happen on the same process and thread
-    SINGLE_THREADED = False
     # the gpg private key password for encrypting/decrypting archive files
     # this can be provided on the command line so that these files can also be analyzed
     ENCRYPTION_PASSWORD = None
@@ -259,10 +256,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     # do we want to force alerts?
     if args:
         FORCED_ALERTS = args.force_alerts
-
-    # do we want to run in single threaded mode?
-    if args:
-        SINGLE_THREADED = args.single_threaded
 
     # what is the root directory of the entire system?
     if saq_home is not None:

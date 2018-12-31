@@ -969,7 +969,7 @@ class Engine(object):
     def single_threaded_start(self, mode=None):
         """Typically used for debugging. Runs the entire thing under a single process/thread."""
         logging.warning("executing in single threaded mode")
-        #self.controlled_stop()
+        self.controlled_stop()
         worker = Worker(mode)
         worker.single_threaded_start()
 
