@@ -338,7 +338,7 @@ import logging
 import os.path
 from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum
 from sqlalchemy.dialects.mysql import BOOLEAN
-from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref
+from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates
 from sqlalchemy.orm.exc import NoResultFound, DetachedInstanceError
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
@@ -758,6 +758,13 @@ class Alert(RootAnalysis, Base):
     description = Column(
         String(1024),
         nullable=False)
+
+    @validates('description')
+    def validate_description(self, key, value):
+        max_length = getattr(self.__class__, key).prop.columns[0].type.length
+        if value and len(value) > max_length:
+            return value[:max_length]
+        return value
 
     priority = Column(
         Integer,
