@@ -126,10 +126,10 @@ class EmailCollector(Collector):
                         event_time = datetime.datetime.fromtimestamp(os.path.getmtime(email_path)),
                         details = {},
                         observables = [ { 'type': F_FILE, 
-                                        'value': email_file, 
+                                        'value': 'email.rfc822', 
                                         'directives': [ DIRECTIVE_NO_SCAN, DIRECTIVE_ORIGINAL_EMAIL ], } ],
                         tags = [],
-                        files=[email_path],
+                        files=[(email_path, 'email.rfc822')],
                         group_assignments=group_assignments))
 
                 # was this directory empty?
