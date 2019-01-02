@@ -39,7 +39,8 @@ TEST_MODE_SINGLE_SUBMISSION = 'single_submission'
 class Submission(object):
     """A single analysis submission.
        Keep in mind that this object gets serialized into a database blob via the pickle module.
-       NOTE - The files parameter MUST be a list of file names (not file descriptors.)"""
+       NOTE - The files parameter MUST be either a list of file names or a list of tuples of (source, dest)
+              NOT file descriptors."""
 
     # this is basically just all the arguments that are passed to ace_api.submit
     
@@ -114,7 +115,15 @@ class RemoteNode(object):
         """Attempts to submit the given Submission to this node."""
         assert isinstance(submission, Submission)
         # we need to convert the list of files to what is expected by the ace_api.submit function
-        files = [ (os.path.basename(f), open(os.path.join(self.incoming_dir, submission.uuid, os.path.basename(f)), 'rb')) for f in submission.files]
+        _files = []
+        for f in submission.files:
+            if isinstance(f, tuple):
+                src_path, dest_name = f
+                _files.append((dest_name, open(os.path.join(self.incoming_dir, submission.uuid, os.path.basename(src_path)), 'rb')))
+            else:
+                _files.append((os.path.basename(f), open(os.path.join(self.incoming_dir, submission.uuid, os.path.basename(f)), 'rb')))
+
+        #files = [ (os.path.basename(f), open(os.path.join(self.incoming_dir, submission.uuid, os.path.basename(f)), 'rb')) for f in submission.files]
         result = ace_api.submit(
             submission.description,
             remote_host=self.location,
@@ -127,7 +136,7 @@ class RemoteNode(object):
             details=submission.details,
             observables=submission.observables,
             tags=submission.tags,
-            files=files)
+            files=_files)
 
         try:
             result = result['result']
@@ -136,7 +145,7 @@ class RemoteNode(object):
             logging.warning("submission irregularity for {}: {}".format(submission, e))
 
         # clean up our file descriptors
-        for name, fp in files:
+        for name, fp in _files:
             try:
                 fp.close()
             except Exception as e:
@@ -653,6 +662,10 @@ class Collector(object):
                 try:
                     os.mkdir(target_dir)
                     for f in next_submission.files:
+                        # this could be a tuple of (source_file, target_name)
+                        if isinstance(f, tuple):
+                            f = f[0]
+
                         target_path = os.path.join(target_dir, os.path.basename(f))
                         # TODO use hard links instead of copies to reduce I/O
                         shutil.copy2(f, target_path)
@@ -684,6 +697,10 @@ class Collector(object):
         # all is well -- delete the files we've copied into our incoming directory
         if self.delete_files:
             for f in next_submission.files:
+                # this could be a tuple of (source_file, target_name)
+                if isinstance(f, tuple):
+                    f = f[0]
+
                 try:
                     os.remove(f)
                 except Exception as e:
