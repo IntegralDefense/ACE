@@ -301,7 +301,7 @@ def _get_db_connection(name='ace'):
             else:
                 kwargs['ssl']['cert'] = _section['ssl_cert']
 
-    logging.debug("opening database connection {} args {}".format(name, kwargs))
+    logging.debug("opening database connection {}".format(name))
     return pymysql.connect(**kwargs)
     #return pymysql.connect(host=_section['hostname'] if 'hostname' in _section else None,
                            #port=3306 if 'port' not in _section else _section.getint('port'),
