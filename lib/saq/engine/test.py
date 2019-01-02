@@ -51,19 +51,38 @@ class TestCase(ACEEngineTestCase):
             engine.stop()
             engine.wait()
 
-    def test_signal_terminate(self):
+    def test_signal_TERM(self):
 
         engine = Engine()
 
         try:
             engine.start()
             
-            def _send_sigterm(pid):
+            def _send_signal():
                 wait_for_log_count('waiting for engine process', 1)
-                logging.info("sending SIGTERM to {}".format(pid))
-                os.kill(pid, signal.SIGTERM)
+                os.kill(engine.engine_process.pid, signal.SIGTERM)
 
-            t = threading.Thread(target=_send_sigterm, args=(os.getpid(),))
+            t = threading.Thread(target=_send_signal)
+            t.start()
+
+            engine.wait()
+
+        except KeyboardInterrupt:
+            engine.stop()
+            engine.wait()
+
+    def test_signal_INT(self):
+
+        engine = Engine()
+
+        try:
+            engine.start()
+            
+            def _send_signal():
+                wait_for_log_count('waiting for engine process', 1)
+                os.kill(engine.engine_process.pid, signal.SIGINT)
+
+            t = threading.Thread(target=_send_signal)
             t.start()
 
             engine.wait()
@@ -75,10 +94,10 @@ class TestCase(ACEEngineTestCase):
     def test_single_process(self):
 
         # test starting and stopping in single-process mode
-        engine = Engine()
+        engine = Engine(single_threaded_mode=True)
 
         try:
-            engine.single_threaded_start()
+            engine.start()
         except KeyboardInterrupt:
             pass
 
@@ -1833,3 +1852,37 @@ class TestCase(ACEEngineTestCase):
         engine.controlled_stop()
         engine.start()
         engine.wait()
+
+    @use_db
+    def test_clear_outstanding_locks(self, db, c):
+        
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        root.add_observable(F_TEST, 'test_never_return')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(pool_size_limit=1)
+        engine.initialize() # get the node created
+
+        # create an arbitrary lock
+        from saq.database import acquire_lock
+        self.assertTrue(acquire_lock(str(uuid.uuid4()), str(uuid.uuid4()), f'{saq.SAQ_NODE}-unittest-12345'))
+        self.assertTrue(acquire_lock(str(uuid.uuid4()), str(uuid.uuid4()), f'some_other_node.local-unittest-12345'))
+        
+        # should have two locks now
+        c.execute("SELECT COUNT(*) FROM locks")
+        self.assertEquals(c.fetchone()[0], 2)
+        db.commit()
+
+        # initialize the engine again
+        engine = TestEngine(pool_size_limit=1)
+        engine.initialize()
+
+        # should see a logging message about locks being deleted
+        wait_for_log_count('clearing 1 locks from previous execution', 1, 5)
+
+        # we should have one lock left, belong to the "other node"
+        c.execute("SELECT lock_owner FROM locks")
+        self.assertEquals(c.fetchone()[0], 'some_other_node.local-unittest-12345')

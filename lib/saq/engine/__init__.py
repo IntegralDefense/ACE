@@ -459,6 +459,7 @@ class Engine(object):
         # this gets set to true when we receive a unix signal
         self.sigterm_received = False
         self.sighup_received = False
+        self.sigint_received = False
 
         # how often do we automatically reload the workers?
         self.auto_refresh_frequency = self.config.getint('auto_refresh_frequency')
@@ -696,15 +697,33 @@ class Engine(object):
 
         execute_with_retry(db, c, sql, params, commit=True)
 
+        if not self.is_local:
+            # clear any outstanding locks left over from a previous execution
+            # we use the lock_owner columns of the locks table to determine if any locks are outstanding for this node
+            # the format of the value of the column is node-mode-pid
+            # ace-qa2.local-email-25203
+            c.execute("SELECT COUNT(*) FROM locks WHERE lock_owner LIKE CONCAT(%s, '-%%')", (saq.SAQ_NODE,))
+            result = c.fetchone()
+            if result:
+                logging.info(f"clearing {result[0]} locks from previous execution")
+                execute_with_retry(db, c, "DELETE FROM locks WHERE lock_owner LIKE CONCAT(%s, '-%%')", (saq.SAQ_NODE,), commit=True)
+
     def initialize_signal_handlers(self):
         def handle_sighup(signum, frame):
+            logging.info("received SIGHUP")
             self.sighup_received = True
 
         def handle_sigterm(signal, frame):
+            logging.info("received SIGTERM")
             self.sigterm_received = True
+
+        def handle_sigint(signal, frame):
+            logging.info("received SIGINT")
+            self.sigint_received = True
 
         signal.signal(signal.SIGTERM, handle_sigterm)
         signal.signal(signal.SIGHUP, handle_sighup)
+        signal.signal(signal.SIGINT, handle_sigint)
 
     def initialize_modules(self):
         """Loads all configured analysis modules and prepares the analysis mode mapping."""
@@ -1007,7 +1026,7 @@ class Engine(object):
                     except Exception as e:
                         logging.error("unable to send SIGTERM to {}: {}".format(self.engine_process.pid, e))
                     finally:
-                        sigterm_received = False
+                        self.sigterm_received = False
 
                 if self.sighup_received:
                     try:
@@ -1016,7 +1035,7 @@ class Engine(object):
                     except Exception as e:
                         logging.error("unable to send SIGHUP to {}: {}".format(self.engine_process.pid, e))
                     finally:
-                        sighup_received = False
+                        self.sighup_received = False
 
             except Exception as e:
                 logging.error("unable to join engine process {}".format(e))
@@ -1230,8 +1249,8 @@ class Engine(object):
 
         try:
             while True:
-                if self.sigterm_received:
-                    logging.info("recevied SIGTERM -- shutting down")
+                if self.sigterm_received or self.sigint_received:
+                    logging.info("received signal to shut down")
                     self.stop()
                     break
 
