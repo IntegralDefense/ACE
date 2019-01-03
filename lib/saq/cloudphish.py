@@ -257,8 +257,10 @@ def _get_cached_analysis(url, db, c):
                 root.load()
                 root_details = root.details
             except Exception as e:
-                logging.error("unable to load cloudphish analysis {}: {}".format(uuid, e))
-                report_exception()
+                # this isn't really an error -- another process may be in the middle of processing this url
+                # the database contents should be correct though
+                logging.debug("unable to load cloudphish analysis {}: {}".format(uuid, e))
+                #report_exception()
 
         return CloudphishAnalysisResult(RESULT_OK,      # result
                                         root_details,   # details 
