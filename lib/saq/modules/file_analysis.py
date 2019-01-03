@@ -3343,7 +3343,7 @@ class URLExtractionAnalyzer(AnalysisModule):
 
                 # don't download from links that came from files downloaded from the internet
                 if _file.has_relationship(R_DOWNLOADED_FROM):
-                    logging.info("excluding analysis for url {} by cloudphish for downloaded file".format(url.value))
+                    logging.info("excluding analysis for url {} by cloudphish for downloaded file".format(url))
                     url_observable.exclude_analysis(CloudphishAnalyzer)
 
         return True
