@@ -319,7 +319,7 @@ def _create_analysis(url, reprocess, details, db, c):
                                       VALUES ( UNHEX(%s), %s, NOW() )""",
                                    """INSERT INTO cloudphish_url_lookup ( sha256_url, url )
                                       VALUES ( UNHEX(%s), %s )"""],
-                           [(sha256_url, _uuid)
+                           [(sha256_url, _uuid),
                             (sha256_url, url)], commit=True)
     except pymysql.err.IntegrityError as e:
         # (<class 'pymysql.err.IntegrityError'>--(1062, "Duplicate entry
