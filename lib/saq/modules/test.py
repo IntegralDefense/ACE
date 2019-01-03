@@ -60,6 +60,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_8(test)
         elif test.value == 'test_worker_death':
             return self.execute_analysis_worker_death(test)
+        elif test.value.startswith('test_action_counter'):
+            return self.execute_analysis_test_action_counter(test)
         else:
             return False
 
@@ -97,6 +99,14 @@ class BasicTestAnalyzer(AnalysisModule):
         analysis = self.create_analysis(test)
         analysis.add_detection_point('test detection')
         self.root.whitelisted = True
+        return True
+    
+    def execute_analysis_test_action_counter(self, test):
+        if self.root.get_action_counter('test') >= 2:
+            return False
+
+        self.root.increment_action_counter('test')
+        analysis = self.create_analysis(test)
         return True
 
     def execute_analysis_worker_death(self, test):
