@@ -3338,14 +3338,12 @@ class URLExtractionAnalyzer(AnalysisModule):
         for url in extracted_urls:
             url_observable = analysis.add_observable(F_URL, url)
             if url_observable:
-                # we don't want to crawl the internet
-                #if not _file.has_relationship(R_DOWNLOADED_FROM):
-                    #url_observable.add_directive(DIRECTIVE_CRAWL)
                 analysis.details.append(url_observable.value)
                 logging.debug("extracted url {} from {}".format(url_observable.value, _file.value))
 
-                # XXX hack
-                if self.engine.name == 'cloudphish':
+                # don't download from links that came from files downloaded from the internet
+                if _file.has_relationship(R_DOWNLOADED_FROM):
+                    logging.info("excluding analysis for url {} by cloudphish for downloaded file".format(url.value))
                     url_observable.exclude_analysis(CloudphishAnalyzer)
 
         return True
