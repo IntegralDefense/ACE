@@ -2022,7 +2022,7 @@ def manage():
     query = query.options(joinedload('workload'))
     query = query.options(joinedload('delayed_analysis'))
     query = query.options(joinedload('lock'))
-    query = query.options(joinedload('observable_mappings'))
+    #query = query.options(joinedload('observable_mappings'))
     query = query.options(joinedload('event_mapping'))
 
     count_query = query.statement.with_only_columns([func.count(distinct(saq.database.Alert.id))]).order_by(None)
