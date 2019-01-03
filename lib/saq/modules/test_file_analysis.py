@@ -13,7 +13,6 @@ from subprocess import Popen, PIPE
 import saq, saq.test
 from saq.constants import *
 from saq.test import *
-from saq.engine.test_engine import AnalysisEngine, TerminatingMarker
 from saq.analysis import Analysis, RootAnalysis
 
 UNITTEST_SOCKET_DIR = 'socket_unittest'
@@ -30,6 +29,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         self.yss_stdout_reader_thread = None
         self.yss_stderr_reader_thread = None
 
+    # TODO get rid of this externa execution and replace with just using the class
     def initialize_yss(self):
 
         # clear existing logs
@@ -133,11 +133,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
     def test_file_analysis_000_url_extraction_000_relative_html_urls(self):
         from saq.modules.file_analysis import URLExtractionAnalysis
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_url_extraction')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis(event_time=datetime.datetime.now())
         root.initialize_storage()
 
@@ -150,9 +145,13 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_EXTRACT_URLS)
         file_observable.add_relationship(R_DOWNLOADED_FROM, url_observable)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -165,12 +164,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
 
     def test_file_analysis_000_url_extraction_001_pdfparser(self):
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_pdf_analyzer')
-        engine.enable_module('analysis_module_url_extraction')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis()
         root.initialize_storage()
 
@@ -179,9 +172,14 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         
         file_observable = root.add_observable(F_FILE, target_file)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_pdf_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -203,11 +201,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
     def test_file_analysis_001_oletools_000(self):
 
         #from saq.modules.file_analysis import OLEVBA_Analysis_v1_2
-
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_olevba_v1_2')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
 
         KEY_STORAGE_DIR = 'storage_dir'
         KEY_TAGS = 'tags'
@@ -261,13 +254,16 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
             shutil.copy(target_path, root.storage_dir)
             file_observable = root.add_observable(F_FILE, file_name)
             root.save()
+            root.schedule()
 
             results[file_name][KEY_OID] = file_observable.id
             results[file_name][KEY_STORAGE_DIR] = root.storage_dir
 
-            engine.queue_work_item(root.storage_dir)
-
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_olevba_v1_2', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         for file_name in results.keys():
@@ -287,19 +283,18 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
 
     def test_file_analysis_002_archive_000_zip(self):
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_archive')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/zip/test.zip', root.storage_dir)
         _file = root.add_observable(F_FILE, 'test.zip')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -314,19 +309,18 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
 
     def test_file_analysis_002_archive_001_rar(self):
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_archive')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/rar/test.r07', root.storage_dir)
         _file = root.add_observable(F_FILE, 'test.r07')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -341,19 +335,18 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
 
     def test_file_analysis_002_archive_002_ace(self):
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_archive')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/ace/dhl_report.ace', root.storage_dir)
         _file = root.add_observable(F_FILE, 'dhl_report.ace')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -368,20 +361,19 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         
     def test_file_analysis_003_xml_000_rels(self):
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_archive')
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_office_xml_rel')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/docx/xml_rel.docx', root.storage_dir)
         _file = root.add_observable(F_FILE, 'xml_rel.docx')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_office_xml_rel', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -407,23 +399,21 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         url = analysis.get_observables_by_type(F_URL)
         self.assertEquals(len(url), 1)
 
-    @clear_log
     def test_file_analysis_004_yara_000_basic_scan(self):
 
         self.initialize_yss()
-        
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/scan_targets/match', root.storage_dir)
         _file = root.add_observable(F_FILE, 'match')
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        root.schedule()
+        
+        engine = TestEngine()
+        engine.enable_module('analysis_module_yara_scanner_v3_4', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         # scanned file /opt/saq/var/test/91b55d6f-fe82-4508-ac68-bbc519693d12/scan.target with yss (matches found: True)
@@ -447,23 +437,21 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # the yara rule should have detections
         self.assertTrue(yara_rule.detections)
 
-    @clear_log
     def test_file_analysis_004_yara_001_local_scan(self):
         
         # we do not initalize the local yss scanner so it should not be available for scanning
-
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/scan_targets/match', root.storage_dir)
         _file = root.add_observable(F_FILE, 'match')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_yara_scanner_v3_4', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         self.assertEquals(log_count('with yss (matches found: True)'), 0)
@@ -489,23 +477,21 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # the yara rule should have detections
         self.assertTrue(yara_rule.detections)
 
-    @clear_log
     def test_file_analysis_004_yara_002_no_alert(self):
         
         self.initialize_yss()
-
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/scan_targets/no_alert', root.storage_dir)
         _file = root.add_observable(F_FILE, 'no_alert')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_yara_scanner_v3_4', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         self.assertEquals(log_count('with yss (matches found: True)'), 1)
@@ -526,23 +512,21 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # the yara rule should NOT have detections
         self.assertFalse(yara_rule.detections)
 
-    @clear_log
     def test_file_analysis_004_yara_003_directives(self):
         
         self.initialize_yss()
-
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/scan_targets/add_directive', root.storage_dir)
         _file = root.add_observable(F_FILE, 'add_directive')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_yara_scanner_v3_4', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         self.assertEquals(log_count('with yss (matches found: True)'), 1)
@@ -566,23 +550,21 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # and we should have an extra directive
         self.assertTrue(_file.has_directive(DIRECTIVE_EXTRACT_URLS))
 
-    @clear_log
     def test_file_analysis_004_yara_004_crits(self):
         
         self.initialize_yss()
-
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/scan_targets/crits', root.storage_dir)
         _file = root.add_observable(F_FILE, 'crits')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_yara_scanner_v3_4', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         self.assertEquals(log_count('with yss (matches found: True)'), 1)
@@ -608,19 +590,19 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertEquals(len(crits_id), 1)
 
     def test_file_analysis_005_pcode_000_extract_pcode(self):
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_pcodedmp')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/ole_files/word2013_macro_stripped.doc', root.storage_dir)
         _file = root.add_observable(F_FILE, 'word2013_macro_stripped.doc')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_pcodedmp', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -639,7 +621,6 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # and that should have a redirection
         self.assertIsNotNone(_file.redirection)
 
-    @protect_production
     def test_file_analysis_005_office_file_archiver_000_archive(self):
 
         # clear existing archive dir
@@ -653,19 +634,18 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         except Exception as e:
             logging.error("unable to reset {}: {}".format(target_dir, e))
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_office_file_archiver')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/ole_files/Paid Invoice.doc', root.storage_dir)
         _file = root.add_observable(F_FILE, 'Paid Invoice.doc')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_office_file_archiver', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -680,19 +660,18 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertTrue(analysis.details)
         self.assertTrue(os.path.exists(analysis.details))
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_office_file_archiver')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.initialize_storage()
         shutil.copy('test_data/ole_files/Paid Invoice.doc', root.storage_dir)
         _file = root.add_observable(F_FILE, 'Paid Invoice.doc')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_office_file_archiver', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -712,21 +691,20 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
     
     def test_file_analysis_006_extracted_ole_000_js(self):
 
-        engine = self.create_engine(AnalysisEngine)
-        engine.enable_module('analysis_module_archive')
-        engine.enable_module('analysis_module_extracted_ole_analyzer')
-        engine.enable_module('analysis_module_officeparser_v1_0')
-        engine.enable_module('analysis_module_file_type')
-        self.start_engine(engine)
-
         root = create_root_analysis()
         root.initialize_storage()
         shutil.copy('test_data/docx/js_ole_obj.docx', root.storage_dir)
         _file = root.add_observable(F_FILE, 'js_ole_obj.docx')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_extracted_ole_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_officeparser_v1_0', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()

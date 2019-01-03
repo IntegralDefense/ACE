@@ -13,12 +13,9 @@ __all__ = [
     'ACEBasicTestCase',
     'ACEEngineTestCase',
     'ACEModuleTestCase',
-    'modify_logging_level',
-    'reset_config',
-    'cleanup_delayed_analysis',
+    'reset_alerts',
     'log_count',
     'wait_for_log_count',
-    'clear_log',
     'WaitTimedOutError',
     'wait_for_log_entry',
     'track_io',
@@ -28,9 +25,11 @@ __all__ = [
     'wait_for',
     'enable_module',
     'force_alerts',
-    'protect_production',
     'GUIServer',
     'search_log',
+    'search_log_regex',
+    'search_log_condition',
+    'TestEngine',
 ]
 
 import atexit
@@ -42,41 +41,24 @@ import sys
 import threading
 import time
 
-from multiprocessing import Manager, RLock, Pipe
+from multiprocessing import Manager, RLock, Pipe, Process
 from unittest import TestCase
 from subprocess import Popen, PIPE
 
 import saq
+import saq.engine
 from saq.analysis import RootAnalysis, _enable_io_tracker, _disable_io_tracker
-from saq.database import initialize_database, get_db_connection
+from saq.database import initialize_database, get_db_connection, use_db
+from saq.engine import Engine
 from saq.error import report_exception
+from saq.util import storage_dir_from_uuid
 
 from splunklib import SplunkQueryObject
 
-initialized = False
 test_dir = None
 
 # decorators
 #
-def reset_config(target_function):
-    def wrapper(*args, **kwargs):
-        try:
-            return target_function(*args, **kwargs)
-        finally:
-            saq.load_configuration()
-    return wrapper
-
-def modify_logging_level(level):
-    def modify_logging_level_decorator(target_function):
-        def wrapper(*args, **kwargs):
-            current_level = logging.getLogger().getEffectiveLevel()
-            logging.getLogger().setLevel(level)
-            try:
-                return target_function(*args, **kwargs)
-            finally:
-                logging.getLogger().setLevel(current_level)
-        return wrapper
-    return modify_logging_level_decorator
 
 def track_io(target_function):
     def wrapper(*args, **kwargs):
@@ -85,22 +67,6 @@ def track_io(target_function):
             return target_function(*args, **kwargs)
         finally:
             _disable_io_tracker()
-    return wrapper
-
-def clear_log(target_function):
-    def wrapper(*args, **kwargs):
-        memory_log_handler.clear()
-        return target_function(*args, **kwargs)
-    return wrapper
-
-def cleanup_delayed_analysis(target_function):
-    def wrapper(*args, **kwargs):
-        try:
-            return target_function(*args, **kwargs)
-        finally:
-            delayed_analysis_dir = os.path.join(saq.SAQ_HOME, 'var', 'unittest', 'delayed_analysis')
-            if os.path.exists(delayed_analysis_dir):
-                shutil.rmtree(delayed_analysis_dir)
     return wrapper
 
 def force_alerts(target_function):
@@ -113,19 +79,15 @@ def force_alerts(target_function):
             saq.FORCED_ALERTS = False
     return wrapper
 
-def protect_production(target_function):
-    """Do not allow this to run on a production system."""
+def reset_alerts(target_function):
+    """Deletes all alerts in the database."""
     def wrapper(*args, **kwargs):
-        if saq.CONFIG['global']['instance_type'] not in [ 'PRODUCTION', 'QA', 'DEV' ]:
-            sys.stderr.write('\n\n *** CRITICAL ERROR *** \n\ninvalid instance_type setting in configuration\n')
-            sys.exit(1)
-
-        if saq.CONFIG['global']['instance_type'] == 'PRODUCTION':
-            sys.stderr.write('\n\n *** PROTECT PRODUCTION *** \ndo not execute this in production, idiot\n')
-            sys.exit(1)
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""DELETE FROM alerts""")
+            db.commit()
 
         return target_function(*args, **kwargs)
-
     return wrapper
 
 # 
@@ -294,6 +256,12 @@ def wait_for_log_count(text, count, timeout=5):
 def search_log(text):
     return memory_log_handler.search(lambda log_record: text in log_record.getMessage())
 
+def search_log_regex(regex):
+    return memory_log_handler.search(lambda log_record: regex.search(log_record.getMessage()))
+
+def search_log_condition(func):
+    return memory_log_handler.search(func)
+
 def splunk_query(search_string, *args, **kwargs):
     config = saq.CONFIG['splunk']
     q = SplunkQueryObject(
@@ -306,11 +274,7 @@ def splunk_query(search_string, *args, **kwargs):
     return q, result
 
 def initialize_test_environment():
-    global initialized
     global test_dir
-
-    if initialized:
-        return
 
     # there is no reason to run anything as root
     if os.geteuid() == 0:
@@ -330,6 +294,14 @@ def initialize_test_environment():
     saq.initialize(saq_home=saq_home, config_paths=[], 
                    logging_config_path=os.path.join(saq_home, 'etc', 'unittest_logging.ini'), 
                    args=None, relative_dir=None)
+
+    if saq.CONFIG['global']['instance_type'] not in [ 'PRODUCTION', 'QA', 'DEV' ]:
+        sys.stderr.write('\n\n *** CRITICAL ERROR *** \n\ninvalid instance_type setting in configuration\n')
+        sys.exit(1)
+
+    if saq.CONFIG['global']['instance_type'] == 'PRODUCTION':
+        sys.stderr.write('\n\n *** PROTECT PRODUCTION *** \ndo not execute this in production, idiot\n')
+        sys.exit(1)
 
     # additional logging required for testing
     initialize_unittest_logging()
@@ -352,7 +324,7 @@ def initialize_test_environment():
     from saq.crypto import get_aes_key
     saq.ENCRYPTION_PASSWORD = get_aes_key('password')
 
-    initialize_database()
+    #initialize_database()
     initialized = True
 
 # expected values
@@ -368,7 +340,8 @@ EV_ROOT_ANALYSIS_UUID = '14ca0ff2-ff7e-4fa1-a375-160dc072ab02'
 
 def create_root_analysis(tool=None, tool_instance=None, alert_type=None, desc=None, event_time=None,
                          action_counts=None, details=None, name=None, remediation=None, state=None,
-                         uuid=None, location=None, storage_dir=None, company_name=None, company_id=None):
+                         uuid=None, location=None, storage_dir=None, company_name=None, company_id=None,
+                         analysis_mode=None):
     """Returns a default RootAnalysis object with expected values for testing."""
     return RootAnalysis(tool=tool if tool else EV_ROOT_ANALYSIS_TOOL,
                         tool_instance=tool_instance if tool_instance else EV_ROOT_ANALYSIS_TOOL_INSTANCE,
@@ -382,9 +355,10 @@ def create_root_analysis(tool=None, tool_instance=None, alert_type=None, desc=No
                         state=state if state else None,
                         uuid=uuid if uuid else EV_ROOT_ANALYSIS_UUID,
                         location=location if location else None,
-                        storage_dir=storage_dir if storage_dir else os.path.join(saq.SAQ_HOME, 'var', 'test', uuid if uuid else EV_ROOT_ANALYSIS_UUID),
+                        storage_dir=storage_dir if storage_dir else storage_dir_from_uuid(uuid if uuid else EV_ROOT_ANALYSIS_UUID),
                         company_name=company_name if company_name else None,
-                        company_id=company_id if company_id else None)
+                        company_id=company_id if company_id else None,
+                        analysis_mode=analysis_mode if analysis_mode else 'test_groups')
 
 class ServerProcess(object):
     def __init__(self, args):
@@ -472,21 +446,49 @@ class GUIServer(ServerProcess):
         return self.saq_init > 1
 
 class ACEBasicTestCase(TestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.api_server_process = None
 
     def setUp(self):
-        saq.DUMP_TRACEBACKS = True
+        #saq.DUMP_TRACEBACKS = True
         logging.info("TEST: {}".format(self.id()))
         initialize_test_environment()
-        saq.load_configuration()
+        self.reset()
         open_test_comms()
+        memory_log_handler.clear()
+        self.initialize_test_client()
+
+    def initialize_test_client(self):
+        from api import create_app
+        self.app = create_app(testing=True)
+        self.app_context = self.app.test_request_context()                      
+        self.app_context.push()                           
+        self.client = self.app.test_client()
 
     def tearDown(self):
         close_test_comms()
 
         # anything logged at CRITICAL log level will cause the test the fail
-        self.assertFalse(memory_log_handler.search(lambda e: e.levelno == logging.CRITICAL))
+        #self.assertFalse(memory_log_handler.search(lambda e: e.levelno == logging.CRITICAL))
 
         saq.DUMP_TRACEBACKS = False
+
+        self.stop_api_server()
+
+        if saq.engine.CURRENT_ENGINE is not None:
+            try:
+                saq.engine.CURRENT_ENGINE.stop()
+            except:
+                pass
+
+    def clear_error_reports(self):
+        """Clears out any error reports generated by the test."""
+        try:
+            shutil.rmtree(os.path.join(saq.DATA_DIR, 'error_reports'))
+            os.makedirs(os.path.join(saq.DATA_DIR, 'error_reports'))
+        except Exception as e:
+            sys.stderr.write("unable to clear error_reports: {}\n".format(e))
 
     def wait_for_log_entry(self, *args, **kwargs):
         try:
@@ -507,39 +509,78 @@ class ACEBasicTestCase(TestCase):
 
             time.sleep(delay)
 
-    @protect_production
-    def reset_brocess(self):
+    def reset(self):
+        """Resets everything back to the default state."""
+        self.reset_config()
+        self.reset_brocess()
+        self.reset_cloudphish()
+        self.reset_correlation()
+        self.reset_email_archive()
+        self.reset_crawlphish()
+
+    def reset_crawlphish(self):
+        self.whitelist_path = saq.CONFIG['analysis_module_crawlphish']['whitelist_path'] \
+                            = os.path.join('etc', 'crawlphish.unittest.whitelist')
+
+        self.regex_path = saq.CONFIG['analysis_module_crawlphish']['regex_path'] \
+                        = os.path.join('etc', 'crawlphish.unittest.regex')
+
+        self.blacklist_path = saq.CONFIG['analysis_module_crawlphish']['blacklist_path'] \
+                        = os.path.join('etc', 'crawlphish.unittest.blacklist')
+
+        if os.path.exists(self.whitelist_path):
+            os.remove(self.whitelist_path)
+
+        if os.path.exists(self.regex_path):
+            os.remove(self.regex_path)
+
+        if os.path.exists(self.blacklist_path):
+            os.remove(self.blacklist_path)
+
+        with open(self.blacklist_path, 'w') as fp:
+            fp.write('10.0.0.0/8\n')
+            fp.write('127.0.0.1\n')
+            fp.write('localhost.local\n')
+
+        with open(self.regex_path, 'w') as fp:
+            fp.write('\.(pdf|zip|scr|js|cmd|bat|ps1|doc|docx|xls|xlsx|ppt|pptx|exe|vbs|vbe|jse|wsh|cpl|rar|ace|hta)$\n')
+
+        with open(self.whitelist_path, 'w') as fp:
+            fp.write('anonfile.xyz\n')
+
+    def reset_config(self):
+        """Resets saq.CONFIG."""
+        saq.load_configuration()
+
+    @use_db(name='brocess')
+    def reset_brocess(self, db, c):
         # clear the brocess db
-        with get_db_connection('brocess') as db:
-            c = db.cursor()
-            c.execute("""DELETE FROM httplog""")
-            c.execute("""DELETE FROM smtplog""")
-            db.commit()
+        c.execute("""DELETE FROM httplog""")
+        c.execute("""DELETE FROM smtplog""")
+        db.commit()
+        # TODO instead of using harded values pull the limits from the config
+        c.execute("""INSERT INTO httplog ( host, numconnections, firstconnectdate ) 
+                     VALUES ( 'local', 1000, UNIX_TIMESTAMP(NOW()) ),
+                            ( 'xyz', 1000, UNIX_TIMESTAMP(NOW()) ),
+                            ( 'test1.local', 70, UNIX_TIMESTAMP(NOW()) ),
+                            ( 'test2.local', 69, UNIX_TIMESTAMP(NOW()) )""")
+        db.commit()
 
-    @protect_production
-    def reset_cloudphish(self):
+    @use_db
+    def reset_cloudphish(self, db, c):
         # clear cloudphish db
-        with get_db_connection('cloudphish') as db:
-            c = db.cursor()
-            c.execute("""DELETE FROM analysis_results""")
-            c.execute("""DELETE FROM content_metadata""")
-            c.execute("""DELETE FROM workload""")
-            db.commit()
-
-        with get_db_connection('brocess') as db:
-            c = db.cursor()
-            c.execute("""DELETE FROM httplog""")
-            db.commit()
+        c.execute("""DELETE FROM cloudphish_analysis_results""")
+        c.execute("""DELETE FROM cloudphish_content_metadata""")
+        db.commit()
 
         # clear cloudphish engine and module cache
-        for cache_dir in [ saq.CONFIG['cloudphish']['cache_dir'], 
-                           saq.CONFIG['analysis_module_cloudphish']['local_cache_dir'] ]:
+        for cache_dir in [ saq.CONFIG['cloudphish']['cache_dir'] ]:
             if os.path.isdir(cache_dir):
                 shutil.rmtree(cache_dir)
                 os.makedirs(cache_dir)
 
-    @protect_production
-    def reset_correlation(self):
+    @use_db
+    def reset_correlation(self, db, c):
         data_subdir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE)
         if os.path.isdir(data_subdir):
             try:
@@ -548,21 +589,23 @@ class ACEBasicTestCase(TestCase):
             except Exception as e:
                 logging.error("unable to clear {}: {}".format(data_subdir, e))
 
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("DELETE FROM alerts")
-            c.execute("DELETE FROM workload")
-            c.execute("DELETE FROM observables")
-            c.execute("DELETE FROM tags")
-            c.execute("DELETE FROM profile_points")
-            c.execute("DELETE FROM events")
-            c.execute("DELETE FROM remediation")
-            db.commit()
+        c.execute("DELETE FROM alerts")
+        c.execute("DELETE FROM workload")
+        c.execute("DELETE FROM observables")
+        c.execute("DELETE FROM tags")
+        c.execute("DELETE FROM profile_points")
+        c.execute("DELETE FROM events")
+        c.execute("DELETE FROM remediation")
+        c.execute("DELETE FROM company WHERE name != 'default'")
+        c.execute("DELETE FROM nodes WHERE is_local = 1")
+        c.execute("UPDATE nodes SET is_primary = 0")
+        c.execute("DELETE FROM locks")
+        c.execute("DELETE FROM delayed_analysis")
+        db.commit()
 
-    @protect_production
     def reset_email_archive(self):
         import socket
-        archive_subdir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'], 
+        archive_subdir = os.path.join(saq.DATA_DIR, saq.CONFIG['analysis_module_email_archiver']['archive_dir'], 
                                       socket.gethostname().lower())
 
         if os.path.exists(archive_subdir):
@@ -577,6 +620,64 @@ class ACEBasicTestCase(TestCase):
             c.execute("DELETE FROM archive")
             db.commit()
 
+    def start_api_server(self):
+        """Starts the API server as a separate process."""
+        self.api_server_process = Process(target=self.execute_api_server)
+        self.api_server_process.start()
+
+        import ace_api
+
+        result = None
+        errors = []
+        for x in range(5):
+            try:
+                result = ace_api.ping(remote_host=saq.API_PREFIX, ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+                break
+            except Exception as e:
+                errors.append(str(e))
+                time.sleep(1)
+
+        if result is None:
+            for error in errors:
+                logging.error(error)
+
+            self.fail("unable to start api server")
+
+    def execute_api_server(self):
+
+        # https://gist.github.com/rduplain/1705072
+        # this is a bit weird because I want the urls to be the same as they
+        # are configured for apache, where they are all starting with /api
+        
+        from api import create_app
+
+        app = create_app(testing=True)
+        from werkzeug.serving import run_simple
+        from werkzeug.wsgi import DispatcherMiddleware
+        from flask import Flask
+        app.config['DEBUG'] = True
+        app.config['APPLICATION_ROOT'] = '/api'
+        application = DispatcherMiddleware(Flask('dummy_app'), {
+            app.config['APPLICATION_ROOT']: app,
+        })
+
+        logging.info("starting api server on {} port {}".format(saq.CONFIG.get('api', 'listen_address'), 
+                                                                saq.CONFIG.getint('api', 'listen_port')))
+        run_simple(saq.CONFIG.get('api', 'listen_address'), saq.CONFIG.getint('api', 'listen_port'), application,
+                   ssl_context=(saq.CONFIG.get('api', 'ssl_cert'), saq.CONFIG.get('api', 'ssl_key')),
+                   use_reloader=False)
+
+    def stop_api_server(self):
+        """Stops the API server if it's running."""
+        if self.api_server_process is None:
+            return
+
+        import signal
+        os.kill(self.api_server_process.pid, signal.SIGKILL)
+
+        self.api_server_process.join()
+        self.api_server_process = None
+
 class ACEEngineTestCase(ACEBasicTestCase):
 
     def __init__(self, *args, **kwargs):
@@ -584,7 +685,6 @@ class ACEEngineTestCase(ACEBasicTestCase):
 
         # if we create an engine using self.create_engine() then we track it here
         self.tracked_engine = None
-
         self.server_processes = {} # key = name, value ServerProcess
 
     def start_gui_server(self):
@@ -606,12 +706,22 @@ class ACEEngineTestCase(ACEBasicTestCase):
             finally:
                 self.tracked_engine = None
 
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+        self.disable_all_modules()
+
     def tearDown(self):
         ACEBasicTestCase.tearDown(self)
         self.stop_tracked_engine()
 
         for key in self.server_processes.keys():
             self.server_processes[key].stop()
+
+        #if saq.engine.CURRENT_ENGINE:
+            #try:
+                #saq.engine.CURRENT_ENGINE.stop()
+            #except:
+                #pass
 
     def execute_engine_test(self, engine):
         try:
@@ -658,7 +768,8 @@ class ACEEngineTestCase(ACEBasicTestCase):
         for key in saq.CONFIG.keys():
             if key.startswith('analysis_module_'):
                 saq.CONFIG[key]['enabled'] = 'no'
-        
+
+        logging.debug("disabled all modules")
 
 class CloudphishServer(EngineProcess):
     def __init__(self):
@@ -667,3 +778,5 @@ class CloudphishServer(EngineProcess):
 class ACEModuleTestCase(ACEEngineTestCase):
     pass
 
+class TestEngine(Engine):
+    pass

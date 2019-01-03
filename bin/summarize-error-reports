@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 time=${1:-yesterday}
-(cd $SAQ_HOME && find error_reports -maxdepth 1 -type f | grep $(date -d "$time" '+%Y-%m-%d') | while read r; do perl -E 'print "=" x 72 . "\n"'; echo $r; cat $r; echo; done)
+(cd $SAQ_HOME && find data/error_reports -maxdepth 1 -type f | grep $(date -d "$time" '+%Y-%m-%d') | while read r; do perl -E 'print "=" x 72 . "\n"'; echo $r; cat $r; echo; done)
