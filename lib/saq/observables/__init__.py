@@ -176,9 +176,9 @@ class URLObservable(Observable):
 
         try:
             # sometimes URL extraction pulls out invalid URLs
-            self.value.encode('ascii')
+            self.value.encode('ascii') # valid URLs are ASCII
         except UnicodeEncodeError as e:
-            raise ObservableValueError("invalid URL {}: {}".format(self.value, e))
+            raise ObservableValueError("invalid URL {}: {}".format(self.value.encode('unicode_escape'), e))
 
     @property
     def sha256(self):
@@ -620,5 +620,5 @@ def create_observable(o_type, o_value, o_time=None):
     try:
         return o_class(o_value, time=o_time)
     except ObservableValueError as e:
-        logging.debug("invalid value {} for observable type {}: {}".format(o_value, o_type, e))
+        logging.debug("invalid value {} for observable type {}: {}".format(o_value.encode('unicode_escape'), o_type, e))
         return None

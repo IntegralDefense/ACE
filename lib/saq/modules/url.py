@@ -671,6 +671,9 @@ class CrawlphishAnalyzer(AnalysisModule):
 
                 proxy_result.status_code = response.status_code
                 proxy_result.status_code_reason = response.reason
+                logging.info("url request result {} ({}) for {}".format(response.status_code,
+                                                                        response.reason,
+                                                                        formatted_url))
 
                 for header in response.headers.keys():
                     proxy_result.headers[header] = response.headers[header]
@@ -701,7 +704,7 @@ class CrawlphishAnalyzer(AnalysisModule):
 
         # did we successfully start a download?
         if proxy_result.error_reason is not None:
-            logging.debug("unable to download {}".format(formatted_url))
+            logging.info("unable to download {}: {}".format(formatted_url, proxy_result.error_reason))
             return True
 
         # for each url we download we use a file name inside a directory with the following format

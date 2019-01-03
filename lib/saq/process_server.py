@@ -189,7 +189,7 @@ class RemoteConnection(object):
                 # have we read enough bytes to start writing to file?
                 if self.stderr_fp is None and bytes_read > STDERR_BYTE_LIMIT:
                     logging.debug("switch to file storage for stderr")
-                    self.stderr_fp = tempfile.TemporaryFile(suffix='stderr_', dir=saq.CONFIG['global']['tmp_dir'])
+                    self.stderr_fp = tempfile.TemporaryFile(suffix='stderr_', dir=saq.TEMP_DIR)
 
                 # we are writing to file at this point?
                 if self.stderr_fp:
@@ -342,7 +342,7 @@ def initialize_process_server(unix_socket=None):
     # if nothing is given then just use some randomly named file
     if unix_socket is None:
         import uuid
-        unix_socket = os.path.join(saq.SAQ_HOME, 'var', '{}.socket'.format(str(uuid.uuid4())))
+        unix_socket = os.path.join(saq.DATA_DIR, 'var', '{}.socket'.format(str(uuid.uuid4())))
 
     SP_SERVER = SubprocessServer(unix_socket)
     SP_SERVER.start()
@@ -778,7 +778,7 @@ class SubprocessServer(object):
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(self.unix_socket)
             except:
-                logging.error("unable to connect to {} to close connection: {}".format(self.socket_path, e))
+                logging.error("unable to connect to {} to close connection: {}".format(self.unix_socket, e))
             finally:
                 try:
                     s.close()
@@ -810,6 +810,7 @@ class SubprocessServer(object):
             self.shutdown = True
 
         signal.signal(signal.SIGTERM, _handler)
+        signal.signal(signal.SIGINT, _handler)
 
     def initialize_socket(self):
         # start server socket for receiving connections

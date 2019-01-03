@@ -7,7 +7,6 @@ import unittest
 import saq, saq.test
 from saq.constants import *
 from saq.test import *
-from saq.engine.test_engine import AnalysisEngine, TerminatingMarker
 
 from splunklib import SplunkQueryObject
 

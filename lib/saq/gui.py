@@ -54,6 +54,10 @@ class GUIAlert(Alert):
 
         return result
 
+    @property
+    def jinja_event_time(self):
+        return self.event_time.strftime(event_time_format_tz)
+
 class ObservableAction(object):
     """Represents an "action" that a user can take with an Observable in the GUI."""
     def __init__(self):

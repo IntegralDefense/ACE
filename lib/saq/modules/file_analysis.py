@@ -704,6 +704,7 @@ class ArchiveAnalyzer(AnalysisModule):
             # avoid the numerious XML documents in excel files
             params = ['unzip', local_file_path, '-x', 'xl/activeX/*', 
                                                 '-x', 'xl/activeX/_rels/*', 
+                                                '-x', 'xl/ctrlProps/*.xml',
                       '-d', extracted_path]
         elif is_ace_file:
             # for some reason, unace doesn't let you use a full path
@@ -971,7 +972,7 @@ class OLEVBA_Analyzer_v1_1(AnalysisModule):
         try:
 
             # we create a temporary directory to hold the output data
-            output_dir = tempfile.mkdtemp(suffix='.ole', dir=os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir']))
+            output_dir = tempfile.mkdtemp(suffix='.ole', dir=saq.TEMP_DIR)
             # keep track of these so we can remove them later
             self.output_dirs.append(output_dir)
             
@@ -1030,7 +1031,7 @@ class OLEVBA_Analyzer_v1_1(AnalysisModule):
             # remove me later... XXX
             import uuid
             _uuid = str(uuid.uuid4())
-            _path = os.path.join(saq.SAQ_HOME, 'review', 'misc', _uuid)
+            _path = os.path.join(saq.DATA_DIR, 'review', 'misc', _uuid)
             with open(_path, 'w') as fp:
                 fp.write(json_data)
 
@@ -2243,7 +2244,7 @@ class YaraScanner_v3_4(AnalysisModule):
         #self.blacklisted_rules = []
 
         # this is where we place files that fail scanning
-        self.scan_failure_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['yara']['scan_failure_dir'])
+        self.scan_failure_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['yara']['scan_failure_dir'])
         if not os.path.exists(self.scan_failure_dir):
             try:
                 os.makedirs(self.scan_failure_dir)
@@ -2428,17 +2429,17 @@ class YaraScanner_v3_4(AnalysisModule):
             logging.error("error scanning file {}: {}".format(local_file_path, e))
             
             # we copy the files we cannot scan to a directory where we can debug it later
-            if self.scan_failure_dir is not None:
-                try:
-                    dest_path = os.path.join(self.scan_failure_dir, os.path.basename(local_file_path))
-                    while os.path.exists(dest_path):
-                        dest_path = '{}_{}'.format(dest_path, datetime.datetime.now().strftime('%Y%m%d%H%M%S-%f'))
-
-                    shutil.copy(local_file_path, dest_path)
-                    logging.debug("copied {} to {}".format(local_file_path, dest_path))
-                except Exception as e:
-                    logging.error("unable to copy {} to {}: {}".format(local_file_path, self.scan_failure_dir, e))
-                    report_exception()
+            #if self.scan_failure_dir is not None:
+                #try:
+                    #dest_path = os.path.join(self.scan_failure_dir, os.path.basename(local_file_path))
+                    #while os.path.exists(dest_path):
+                        #dest_path = '{}_{}'.format(dest_path, datetime.datetime.now().strftime('%Y%m%d%H%M%S-%f'))
+#
+                    #shutil.copy(local_file_path, dest_path)
+                    #logging.debug("copied {} to {}".format(local_file_path, dest_path))
+                #except Exception as e:
+                    #logging.error("unable to copy {} to {}: {}".format(local_file_path, self.scan_failure_dir, e))
+                    #report_exception()
             
             return False
 
@@ -3823,7 +3824,7 @@ class PCodeAnalyzer(AnalysisModule):
                 p.wait(timeout=30)
 
         if p.returncode != 0:
-            logging.warning("pcodedmp returned error code {} for {}".format(p.returncode, _file.value))
+            logging.debug("pcodedmp returned error code {} for {}".format(p.returncode, _file.value))
 
         if os.path.getsize(stderr_path):
             logging.debug("pcodedmp recorded errors for {}".format(_file.value))

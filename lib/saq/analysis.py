@@ -23,7 +23,17 @@ import requests
 import saq
 from saq.constants import *
 from saq.error import report_exception
-from saq.lock import LocalLockableObject
+from saq.util import parse_event_time
+
+STATE_KEY_WHITELISTED = 'whitelisted'
+
+def MODULE_PATH(analysis_module):
+    """Returns the "module_path" used as a key to look up analysis in ACE."""
+    return '{}:{}'.format(analysis_module.__module__, 
+                          analysis_module.__name__ if isinstance(analysis_module, type) else type(analysis_module).__name__)
+
+# regex used to convert str(type(Analysis)) into a "module path"
+CLASS_STRING_REGEX = re.compile(r"^<class '([^']+)'>$")
 
 ##############################################################################
 #
@@ -389,7 +399,7 @@ class AlertSubmitException(Exception):
 class _JSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime.datetime):
-            return obj.isoformat()
+            return obj.strftime(event_time_format_json_tz)
         elif isinstance(obj, bytes):
             return obj.decode('unicode_escape', 'replace')
         elif hasattr(obj, 'json'):
@@ -513,13 +523,16 @@ class TaggableObject(EventSource):
         """Returns True if this object has this tag."""
         return tag_value in [x.name for x in self.tags]
 
+    @property
+    def whitelisted(self):
+        """Returns True if this observable has been whitelisted."""
+        return self.has_tag('whitelisted') or self.has_directive(DIRECTIVE_WHITELISTED)
+
     def mark_as_whitelisted(self):
         """Utility function to mark this Observable as whietlisted by adding the tag 'whitelisted'."""
         self.add_tag('whitelisted')
-
-    @property
-    def is_whitelisted(self):
-        return self.has_tag('whitelisted')
+        self.add_directive(DIRECTIVE_WHITELISTED)
+        self.root.whitelisted = True
 
 class Analysis(TaggableObject, DetectableObject, ProfileObject):
     """Represents an output of analysis work."""
@@ -641,15 +654,16 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         # this gets stored in the main json data structure
         self._summary = self.generate_summary()
 
+        # this is a thing now -- analysis modules are over-writing the details of the root analysis since we got rid of the "engines" 
         # try to catch a case where we set the data but forgot to load first
-        overwrite_warning = False
-        if self._details is not None and not self.external_details_loaded and self.external_details_path is not None:
-            full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
-            if os.path.exists(full_path):
-                logging.warning("saving new data over existing data without loading existing data in {} from {}".format(self, self.external_details_path))
-                logging.warning("previous file size was {} bytes".format(os.path.getsize(full_path)))
-                logging.warning("new details is type {} value {}".format(type(self._details), self._details))
-                overwrite_warning = True
+        #overwrite_warning = False
+        #if self._details is not None and not self.external_details_loaded and self.external_details_path is not None:
+            #full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
+            #if os.path.exists(full_path):
+                #logging.warning("saving new data over existing data without loading existing data in {} from {}".format(self, self.external_details_path))
+                #logging.warning("previous file size was {} bytes".format(os.path.getsize(full_path)))
+                #logging.warning("new details is type {} value {}".format(type(self._details), self._details))
+                #overwrite_warning = True
 
         # have we figured out where we are saving the data to?
         if self.external_details_path is None:
@@ -669,9 +683,9 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
             json.dump(self._details, fp, cls=_JSONEncoder)
             _track_writes()
 
-        if overwrite_warning:
-            full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
-            logging.warning("new file size is {} bytes".format(os.path.getsize(full_path)))
+        #if overwrite_warning:
+            #full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
+            #logging.warning("new file size is {} bytes".format(os.path.getsize(full_path)))
 
         # at this point we consider the data "loaded"
         self.external_details_loaded = True
@@ -820,8 +834,8 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         if Analysis.KEY_ALERTED in value:
             self.alerted = value[Analysis.KEY_ALERTED]
 
-        if Analysis.KEY_DELAYED in value:
-            self.delayed = value[Analysis.KEY_DELAYED]
+        #if Analysis.KEY_DELAYED in value:
+            #self.delayed = value[Analysis.KEY_DELAYED]
 
     @property
     def delayed(self):
@@ -904,6 +918,18 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
 
         return result[0]
 
+    def find_observable(self, func):
+        """Returns the first observable where func(observable) returns True, or None if none are found."""
+        for observable in self.observables:
+            if func(observable):
+                return observable
+
+        return None
+
+    def find_observables(self, func):
+        """Returns all observables where func(observable) returns True."""
+        return [o for o in self.observables if func(o)]
+
     @property
     def files(self):
         """Returns the list of observables of type F_FILE that actually exists with the Alert."""
@@ -974,7 +1000,8 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
     @property
     def module_path(self):
         """Returns module.path:class_name."""
-        return '{}:{}'.format(self.__module__, type(self).__name__)
+        return MODULE_PATH(self)
+        #return '{}:{}'.format(self.__module__, type(self).__name__)
 
     def search_tree(self, tags=()):
         """Searches this object and every object in it's analysis tree for the given items.  Returns the list of items that matched."""
@@ -1247,6 +1274,13 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
             return self.value
 
     @property
+    def display_time(self):
+        if self.time is None:
+            return ''
+
+        return self.time.strftime(event_time_format_tz)
+
+    @property
     def is_suspect(self):
         """Returns True if this Observable or any child Analysis has any detection points."""
         if super().is_suspect:
@@ -1348,7 +1382,23 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
 
     @time.setter
     def time(self, value):
-        self._time = value # TODO check value
+        if value is None:
+            self._time = None
+        elif isinstance(value, datetime.datetime):
+            # if we didn't specify a timezone then we use the timezone of the local system
+            if value.tzinfo is None:
+                value = saq.LOCAL_TIMEZONE.localize(value)
+            self._time = value
+        elif isinstance(value, str):
+            self._time = parse_event_time(value)
+        else:
+            raise ValueError("time must be a datetime.datetime object or a string in the format "
+                             "%Y-%m-%d %H:%M:%S %z but you passed {}".format(type(value).__name__))
+
+    @property
+    def time_datetime(self):
+        """Returns self.time. Remains for backwards compatibility."""
+        return self.time
 
     @property
     def directives(self):
@@ -1439,6 +1489,13 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         assert isinstance(value, list)
         assert all([isinstance(x, str) for x in value])
         self._limited_analysis = value
+
+    def limit_analysis(self, analysis_module):
+        """Limit the analysis of this observable to the analysis module specified by configuration section name.
+           For example, if you have a section for a module called [analysis_module_something] then you would pass
+           the value "something" as the analysis_module."""
+        assert isinstance(analysis_module, str)
+        self._limited_analysis.append(analysis_module)
 
     @property
     def excluded_analysis(self):
@@ -1539,16 +1596,6 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         for target in self.links:
             target.add_tag(*args, **kwargs)
 
-    @property
-    def time_datetime(self):
-        """Return a datetime.datetime representation of self.time."""
-        if self.time is None:
-            return None
-
-        if isinstance(self.time, datetime.datetime):
-            return self.time
-
-        return datetime.datetime.strptime(self.time, event_time_format)
 
     @property
     def analysis(self):
@@ -1633,7 +1680,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         # does this analysis already exist?
         # usually this is because you copied and pasted another AnalysisModule and didn't change the generated_analysis_type function
         if analysis.module_path in self.analysis:
-            logging.debug("replacing analysis {} with empty analysis - means you returned False from execute_analysis but you still added analysis".format(
+            logging.warning("replacing analysis {} with empty analysis - means you returned False from execute_analysis but you still added analysis".format(
                 self.analysis[analysis.module_path]))
             return
 
@@ -1648,13 +1695,33 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
 
         if isinstance(analysis_type, type):
             try:
-                return self.analysis[analysis_type().module_path]
+                return self.analysis[MODULE_PATH(analysis_type)]
             except KeyError:
                 return None
         else:
-            for a in self.analysis.values():
-                if str(type(a)) == analysis_type:
-                    return a
+            # str(type(Analysis)) will end up looking like this: <class 'saq.modules.test.BasicTestAnalysis'>
+            # where the keys in self.analysis look like this: saq.modules.test:BasicTestAnalysis
+            # (I do not remember why it's like that)
+            # so we translate the first into the second
+            m = CLASS_STRING_REGEX.match(analysis_type)
+            if m is None:
+                raise ValueError("invalid value {} passed to get_analysis (expecting str(type(Analysis)))".format(
+                                 analysis_type))
+
+            class_path = m.group(1)
+            class_path_rw = list(class_path)
+            
+            class_path_rw[class_path.rfind('.')] = ':'
+            class_path = ''.join(class_path_rw)
+
+            try:
+                return self.analysis[class_path]
+            except KeyError:
+                return None
+            
+            #for a in self.analysis.values():
+                #if str(type(a)) == analysis_type:
+                    #return a
 
         return None
 
@@ -1974,27 +2041,10 @@ class AnalysisDependency(object):
 # requiring you to do a database query first.
 #
 # The hiearchy of relationships goes Analysis --> Alert --> saq.database.Alert
-# 
-# *** Implementation Details ***
-# The base saq.analysis.Alert contains properties with leading underscores.
-# These are exposed via @property decorators.  The names assigned to the
-# @property decorators match the names in saq.database.Alert.
-#
-# The saq.database.Alert class essentially overwrites these properties with
-# SQLAlchemy column objects.
-#
-# Thus, when working with saq.analysis.Alert objects the properties you are
-# working with are the _underscore values stored inside the object.  When
-# working with the database object you are accessing Column - based objects.
-# Essentially, the _underscore objects are *ignored* when working with the
-# database Alert object.
-#
-# Therefor, it is important to NOT use the _underscore properties (use the
-# decoratored @property instead.)
 #
 
-class RootAnalysis(LocalLockableObject, Analysis):
-    """Root of analysis.  This can potentially become an Alert."""
+class RootAnalysis(Analysis):
+    """Root of analysis. Also see saq.database.Alert."""
 
     def __init__(self, 
                  tool=None, 
@@ -2012,6 +2062,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
                  storage_dir=None,
                  company_name=None,
                  company_id=None,
+                 analysis_mode=None,
                  *args, **kwargs):
 
         import uuid as uuidlib
@@ -2025,6 +2076,10 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
         # we are the root
         self.root = self
+
+        self._analysis_mode = None
+        if analysis_mode:
+            self.analysis_mode = analysis_mode
 
         self._uuid = str(uuidlib.uuid4()) # default is new uuid
         if uuid:
@@ -2093,6 +2148,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
             self._company_name = company_name
 
         try:
+            # we take the default company ownership from the config file (if specified)
             self._company_id = saq.CONFIG['global'].getint('company_id')
         except KeyError:
             pass
@@ -2143,6 +2199,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
     #
     
     # json keys
+    KEY_ANALYSIS_MODE = 'analysis_mode'
     KEY_ID = 'id'
     KEY_UUID = 'uuid'
     KEY_TOOL = 'tool'
@@ -2167,6 +2224,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
     def json(self):
         result = Analysis.json.fget(self)
         result.update({
+            RootAnalysis.KEY_ANALYSIS_MODE: self.analysis_mode,
             RootAnalysis.KEY_UUID: self.uuid,
             RootAnalysis.KEY_TOOL: self.tool,
             RootAnalysis.KEY_TOOL_INSTANCE: self.tool_instance,
@@ -2198,6 +2256,8 @@ class RootAnalysis(LocalLockableObject, Analysis):
         Analysis.json.fset(self, value)
 
         # load this alert from the given json data
+        if RootAnalysis.KEY_ANALYSIS_MODE in value:
+            self.analysis_mode = value[RootAnalysis.KEY_ANALYSIS_MODE]
         if RootAnalysis.KEY_UUID in value:
             self.uuid = value[RootAnalysis.KEY_UUID]
         if RootAnalysis.KEY_TOOL in value:
@@ -2230,6 +2290,15 @@ class RootAnalysis(LocalLockableObject, Analysis):
                 self.delayed_analysis_tracking[key] = dateutil.parser.parse(self.delayed_analysis_tracking[key])
         if RootAnalysis.KEY_DEPENDECY_TRACKING in value:
             self.dependency_tracking = value[RootAnalysis.KEY_DEPENDECY_TRACKING]
+
+    @property
+    def analysis_mode(self):
+        return self._analysis_mode
+
+    @analysis_mode.setter
+    def analysis_mode(self, value):
+        assert value is None or ( isinstance(value, str) and value )
+        self._analysis_mode = value
 
     @property
     def uuid(self):
@@ -2287,22 +2356,31 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
     @property
     def event_time(self):
-        #"""YYYY-MM-DD HH:MM:SS UTC <-- the time the event occurred, NOT when SAQ received it."""
+        """Returns a datetime object representing the time this event was created or occurred."""
         return self._event_time
 
     @event_time.setter
     def event_time(self, value):
+        """Sets the event_time. Accepts a datetime object or a string in the format %Y-%m-%d %H:%M:%S %z."""
         if value is None:
             self._event_time = None
         elif isinstance(value, datetime.datetime):
-            self._event_time = value.strftime(event_time_format) 
-        elif isinstance(value, str):
+            # if we didn't specify a timezone then we use the timezone of the local system
+            if value.tzinfo is None:
+                value = saq.LOCAL_TIMEZONE.localize(value)
             self._event_time = value
+        elif isinstance(value, str):
+            self._event_time = parse_event_time(value)
         else:
             raise ValueError("event_time must be a datetime.datetime object or a string in the format "
-                             "%Y-%m-%d %H:%M:%S you passed {}".format(type(value).__name__))
+                             "%Y-%m-%d %H:%M:%S %z but you passed {}".format(type(value).__name__))
 
         self.set_modified()
+
+    @property
+    def event_time_datetime(self):
+        """This returns the same thing as event_time. It remains for backwards compatibility."""
+        return self._event_time
 
     # override the summary property of the Analysis object to reflect the description
     @property
@@ -2313,13 +2391,6 @@ class RootAnalysis(LocalLockableObject, Analysis):
     def summary(self, value):
         """This does nothing, but it does get called when you assign to the json property."""
         pass
-
-    @property
-    def event_time_datetime(self):
-        """Return a datetime.datetime representation of self.event_time."""
-        if self._event_time is None:
-            return None
-        return datetime.datetime.strptime(self._event_time, event_time_format)
 
     @property
     def action_counters(self):
@@ -2437,6 +2508,20 @@ class RootAnalysis(LocalLockableObject, Analysis):
         self.set_modified()
 
     @property
+    def whitelisted(self):
+        """A boolean value (stored as a state field) that indicates the entire analysis has been whitelisted.
+           Analysis that is whitelisted does not become an alert."""
+        if STATE_KEY_WHITELISTED not in self.state:
+            return False
+
+        return self.state[STATE_KEY_WHITELISTED]
+
+    @whitelisted.setter
+    def whitelisted(self, value):
+        assert isinstance(value, bool)
+        self.state[STATE_KEY_WHITELISTED] = value
+
+    @property
     def company_name(self):
         """The organzaition this analysis belongs to."""
         return self._company_name
@@ -2456,25 +2541,19 @@ class RootAnalysis(LocalLockableObject, Analysis):
         self.set_modified()
 
     @property
-    def delayed_dir(self):
-        """Returns the subdirectory the contains tracking files for delayed analysis."""
-        if not self.storage_dir:
-            return None
-
-        return os.path.join(self.storage_dir, '.delayed')
-
-    @property
     def delayed(self):
         """Returns True if any delayed analysis is outstanding."""
-        try:
-            return len(os.listdir(self.delayed_dir)) > 0
-        except FileNotFoundError:
-            return False
+        for observable in self.observables:
+            for analysis in observable.all_analysis:
+                if analysis.delayed:
+                    return True
+
+        return False
 
     @delayed.setter
     def delayed(self, value):
         """This is computed so this value is thrown away."""
-        pass
+        raise RuntimeError("delayed is read-only on RootAnalysis object")
 
     def get_delayed_analysis_start_time(self, observable, analysis_module):
         """Returns the time of the first attempt to delay analysis for this analysis module and observable, or None otherwise."""
@@ -2484,39 +2563,13 @@ class RootAnalysis(LocalLockableObject, Analysis):
         except KeyError:
             return None
 
-    def track_delayed_analysis_start(self, observable, analysis_module):
+    def set_delayed_analysis_start_time(self, observable, analysis_module):
         """Called by the engine when we need to start tracking delayed analysis for a given observable."""
-        if not os.path.isdir(self.delayed_dir):
-            os.mkdir(self.delayed_dir)
-        
-        target_file = os.path.join(self.delayed_dir, '{}-{}'.format(analysis_module.config_section, observable.id))
-        if os.path.exists(target_file):
-            logging.warning("delayed analysis tracking file {} already exists".format(target_file))
-        else:
-            with open(target_file, 'w') as fp:
-                pass
-
-            logging.debug("delayed analysis tracking start {}".format(target_file))
-
         # if this is the first time we've delayed analysis (for this analysis module and observable)
         # then we want to remember when we started so we can eventually time out
         key = '{}:{}'.format(analysis_module.config_section, observable.id)
         if key not in self.delayed_analysis_tracking:
             self.delayed_analysis_tracking[key] = datetime.datetime.now()
-
-    def track_delayed_analysis_stop(self, observable, analysis_module):
-        """Called by the engine when we need to stop tracking delayed analysis for a given observable."""
-        if not os.path.isdir(self.delayed_dir):
-            logging.warning("missing tracking directory {}".format(self.delayed_dir))
-            return
-        
-        target_file = os.path.join(self.delayed_dir, '{}-{}'.format(analysis_module.config_section, observable.id))
-        if not os.path.exists(target_file):
-            logging.warning("missing delayed analysis tracking file {}".format(target_file))
-            return
-
-        os.remove(target_file)
-        logging.debug("delayed analysis tracking stop {}".format(target_file))
 
     def add_dependency(self, source_observable, source_analysis, target_observable, target_analysis):
         from saq.modules import AnalysisModule
@@ -2667,11 +2720,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
         assert isinstance(o_type, str)
         assert isinstance(self.observable_store, dict)
-        assert o_time is None or isinstance(o_time, str) or isinstance(o_time, datetime.datetime)
-
-        # if we passed in an actual datetime object for the time then we need to convert into the expected string
-        if isinstance(o_time, datetime.datetime):
-            o_time = o_time.strftime(event_time_format)
+        assert o_time is None or isinstance(o_time, datetime.datetime)
 
         # create a temporary object to make use of any defined custom __eq__ ops
         observable = create_observable(o_type, o_value, o_time=o_time)
@@ -2680,77 +2729,10 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
         return self.record_observable(observable)
 
-    def submit(self, target_company=None):
-        """Submit this RootAnalysis as an Alert to the ACE system."""
-        from saq.network_client import submit_alerts
-
-        # has this already been submitted?
-        if self.alerted:
-            logging.debug("{} already submitted (not submitting)".format(self))
-            return
-
-        # save everything to disk
-        self.save()
-
-        # if a target_company is specified then we look up where to send it
-        # otherwise we default to what is in the network_client_ace section (old default)
-
-        # submit this to ACE for correlation
-        logging.info("submitting {} to ACE".format(self))
-        remote_host = saq.CONFIG['network_client_ace']['remote_host']
-        remote_port = saq.CONFIG['network_client_ace'].getint('remote_port')
-        ssl_hostname = saq.CONFIG['network_client_ace']['ssl_hostname']
-        ssl_cert = saq.CONFIG['network_client_ace']['ssl_cert']
-        ssl_key = saq.CONFIG['network_client_ace']['ssl_key']
-        ca_path = saq.CONFIG['network_client_ace']['ca_path']
-
-        if target_company:
-            try:
-                target_section = 'network_client_ace_{}'.format(target_company)
-                logging.info("sending alert {} to {}".format(self, target_company))
-                remote_host = saq.CONFIG[target_section]['remote_host']
-                remote_port = saq.CONFIG[target_section].getint('remote_port')
-                ssl_hostname = saq.CONFIG[target_section]['ssl_hostname']
-                ssl_cert = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_cert'])
-                ssl_key = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_key'])
-                ca_path = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ca_path'])
-
-            except Exception as e:
-                logging.warning("invalid company selection for alert target: {}".format(e))
-            
-        try:
-            submit_alerts(remote_host, remote_port, ssl_cert, ssl_hostname, ssl_key, ca_path, self.storage_dir)
-        except Exception as e:
-            logging.error("unable to submit {} to remote host {} remote port {} hostname {}: {}".format(
-                          self.storage_dir,
-                          remote_host,
-                          remote_port,
-                          ssl_hostname,
-                          e))
-            
-            # copy the failed alert into a directory so it can be submitted later
-            failed_dir = os.path.join(saq.SAQ_HOME, 
-                                      saq.CONFIG['network_client_ace']['failed_dir'])
-
-            if not os.path.isdir(failed_dir):
-                try:
-                    os.makedirs(failed_dir)
-                except Exception as e:
-                    logging.error("unable to create directory {}: {}".format(failed_dir, e))
-                    report_exception()
-                    return False
-
-            target_dir = os.path.join(failed_dir, os.path.basename(self.storage_dir))
-
-            try:
-                shutil.copytree(self.storage_dir, target_dir, copy_function=os.link)
-                logging.warning("copy failed submission {} to {}".format(self.storage_dir, target_dir))
-            except Exception as e:
-                logging.error("unable to copy {} to {}: {}".format(self.storage_dir, target_dir, e))
-                report_exception()
-
-        # remember that we sent this
-        self.alerted = True
+    def schedule(self, exclusive_uuid=None):
+        """See saq.database.add_workload."""
+        from saq.database import add_workload
+        add_workload(self, exclusive_uuid=exclusive_uuid)
 
     def save(self):
         """Saves the Alert to disk. Resolves AttachmentLinks into Attachments. Note that this does not insert the Alert into the system."""
@@ -3071,7 +3053,7 @@ class RootAnalysis(LocalLockableObject, Analysis):
 
         # remove any empty directories left behind
         logging.debug("removing empty directories inside {}".format(self.storage_dir))
-        p = Popen(['find', os.path.join(saq.SAQ_HOME, self.storage_dir), '-type', 'd', '-empty', '-delete'])
+        p = Popen(['find', os.path.join(saq.DATA_DIR, self.storage_dir), '-type', 'd', '-empty', '-delete'])
         p.wait()
 
     def archive(self):
@@ -3146,8 +3128,8 @@ class RootAnalysis(LocalLockableObject, Analysis):
         assert self.storage_dir
 
         # we must be locked for this to work
-        if not self.is_locked():
-            raise RuntimeError("tried to move unlocked analysis {}".format(self))
+        #if not self.is_locked():
+            #raise RuntimeError("tried to move unlocked analysis {}".format(self))
 
         if os.path.exists(dest_dir):
             raise RuntimeError("destination directory {} already exists".format(dest_dir))
@@ -3199,6 +3181,18 @@ class RootAnalysis(LocalLockableObject, Analysis):
     def get_observables_by_type(self, o_type):
         """Returns the list of Observables that match the given type."""
         return [o for o in self.all_observables if o.type == o_type]
+
+    def find_observable(self, func):
+        """Returns the first observable where func(observable) returns True, or None if none are found."""
+        for observable in self.all_observables:
+            if func(observable):
+                return observable
+
+        return None
+
+    def find_observables(self, func):
+        """Returns all observables where func(observable) returns True."""
+        return [o for o in self.all_observables if func(o)]
 
     @property
     def all(self):
@@ -3269,13 +3263,13 @@ class RootAnalysis(LocalLockableObject, Analysis):
         """Returns True if this RootAnalysis could become an Alert (has at least one DetectionPoint somewhere.)"""
         if saq.FORCED_ALERTS:
             return True
-        if self.has_detection_points:
+        if self.has_detection_points():
             return True
         for a in self.all_analysis:
-            if a.has_detection_points:
+            if a.has_detection_points():
                 return True
         for o in self.all_observables:
-            if o.has_detection_points:
+            if o.has_detection_points():
                 return True
 
 def recurse_down(target, callback):

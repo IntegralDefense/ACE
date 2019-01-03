@@ -110,7 +110,6 @@ archive/
 crontab
 load_local_environment
 splunk_logs/
-ssl/
 stats/
 ace.out/
 error_reports/
@@ -120,3 +119,13 @@ backups/
 data/
 extra/
 bro/ace_local.bro
+
+# SSL
+!ssl/root/ca/openssl.cnf
+!ssl/root/ca/intermediate/openssl.cnf
+ssl/
+
+# crawlphish unittesting
+etc/crawlphish.unittest.blacklist
+etc/crawlphish.unittest.regex
+etc/crawlphish.unittest.whitelist

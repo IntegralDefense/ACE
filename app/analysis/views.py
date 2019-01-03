@@ -41,8 +41,10 @@ from saq.constants import *
 from saq.crits import update_status
 from saq.analysis import Tag
 from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Event, EventMapping, \
-                         ObservableMapping, Observable, Tag, TagMapping, EngineWorkload, Malware, \
+                         ObservableMapping, Observable, Tag, TagMapping, Malware, \
                          MalwareMapping, Company, CompanyMapping, Campaign, Alert, \
+                         Workload, DelayedAnalysis, \
+                         acquire_lock, release_lock, \
                          ProfilePointAlertMapping, ProfilePoint, ProfilePointTagMapping
 from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
@@ -221,7 +223,7 @@ def download_json():
     edges.extend(tag_edges)
 
     response = make_response(json.dumps({'nodes': nodes, 'edges': edges}))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
 
 @analysis.route('/redirect_to', methods=['GET', "POST"])
@@ -456,7 +458,7 @@ def download_file():
         return response
     elif mode == 'zip':
         try:
-            dest_file = '{}.zip'.format(os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], str(uuid.uuid4())))
+            dest_file = '{}.zip'.format(os.path.join(saq.TEMP_DIR, str(uuid.uuid4())))
             logging.debug("creating encrypted zip file {} for {}".format(dest_file, full_path))
             p = Popen(['zip', '-e', '--junk-paths', '-P', 'infected', dest_file, full_path])
             p.wait()
@@ -702,29 +704,38 @@ def add_observable():
         flash("internal error")
         return redirection
 
-    if not alert.lock():
-        flash("unable to modify alert: alert is currently being analyzed")
+    lock_uuid = acquire_lock(alert.uuid)
+    if not lock_uuid:
+        flash("unable to modify alert: alert is currently locked")
         return redirection
 
     try:
-        if not alert.load():
-            raise RuntimeError("alert.load() returned false")
-    except Exception as e:
-        logging.error("unable to load alert {0} from filesystem: {1}".format(uuid, str(e)))
-        flash("internal error")
+        try:
+            if not alert.load():
+                raise RuntimeError("alert.load() returned false")
+        except Exception as e:
+            logging.error("unable to load alert {0} from filesystem: {1}".format(uuid, str(e)))
+            flash("internal error")
+            return redirection
+
+        alert.add_observable(o_type, o_value, None if o_time == '' else o_time)
+
+        try:
+            alert.sync()
+        except Exception as e:
+            logging.error("unable to sync alert: {0}".format(str(e)))
+            flash("internal error")
+            return redirection
+
+        flash("added observable")
         return redirection
 
-    alert.add_observable(o_type, o_value, None if o_time == '' else o_time)
-
-    try:
-        alert.sync()
-    except Exception as e:
-        logging.error("unable to sync alert: {0}".format(str(e)))
-        flash("internal error")
-        return redirection
-
-    flash("added observable")
-    return redirection
+    finally:
+        try:
+            release_lock(alert.uuid, lock_uuid)
+        except Exception as e:
+            logging.error("unable to release lock {}: {}".format(alert.uuid, LOCK_UUID))
+        
 
 @analysis.route('/add_comment', methods=['POST'])
 @login_required
@@ -958,7 +969,7 @@ def new_alert():
     alert.description = description
     alert.event_time = insert_date
     alert.details = {'user': current_user.username, 'comment': comment}
-    alert.storage_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], alert.uuid)
+    alert.storage_dir = os.path.join(temp_dir, alert.uuid)
 
     # create alert directory structure
     dest_path = os.path.join(SAQ_HOME, alert.storage_dir)
@@ -1763,7 +1774,7 @@ def manage():
     display_disposition = True
 
     # build the SQL query based on the filter settings
-    query = db.session.query(GUIAlert)
+    query = db.session.query(GUIAlert).with_labels()
 
     if filters[FILTER_CB_OPEN].value:
         # query = query.join(UserWorkload, GUIAlert.id == UserWorkload.alert_id).filter(UserWorkload.user_id == current_user.id)
@@ -2008,9 +2019,10 @@ def manage():
                 #TagMapping.tag_id.in_([t.id for t in tags])).subquery()))
         filter_english.extend(tag_filters_english)
 
-    query = query.options(joinedload('workload_item'))
+    query = query.options(joinedload('workload'))
     query = query.options(joinedload('delayed_analysis'))
-    query = query.options(joinedload('observable_mappings'))
+    query = query.options(joinedload('lock'))
+    #query = query.options(joinedload('observable_mappings'))
     query = query.options(joinedload('event_mapping'))
 
     count_query = query.statement.with_only_columns([func.count(distinct(saq.database.Alert.id))]).order_by(None)
@@ -3505,9 +3517,9 @@ def analyze_alert():
     alert = get_current_alert()
 
     try:
-        alert.request_correlation()
+        alert.schedule()
     except:
-        flash("Unable to sync alert")
+        flash("unable to schedule alert for analysis")
 
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
@@ -3682,7 +3694,7 @@ def query_message_ids():
             result[source][archive_id] = result[source][archive_id].json
 
     response = make_response(json.dumps(result))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
 
 class EmailRemediationTarget(object):
@@ -3805,5 +3817,5 @@ def remediate_emails():
         targets[key] = targets[key].json
     
     response = make_response(json.dumps(targets))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response

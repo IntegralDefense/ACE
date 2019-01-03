@@ -7,6 +7,8 @@ import os
 import os.path
 import re
 import signal
+import sys
+import threading
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -16,7 +18,7 @@ import saq
 from saq.analysis import Analysis, Observable
 from saq.error import report_exception
 from saq.network_semaphore import NetworkSemaphoreClient
-from saq.util import create_timedelta
+from saq.util import create_timedelta, parse_event_time
 
 from splunklib import SplunkQueryObject
 
@@ -78,6 +80,56 @@ class AnalysisModule(object):
 
         # a list (set) of files that are currently being watched
         self.watched_files = {} # key = path, value = WatchedFile
+
+        # set to true if this is a threaded module
+        self.is_threaded = False
+        if 'threaded' in self.config:
+            self.is_threaded = self.config.getboolean('threaded')
+
+        # how often self.execute_threaded is called from the self.execute_threaded_loop
+        self.threaded_execution_frequency = 1
+        if 'threaded_execution_frequency' in self.config:
+            self.threaded_execution_frequency = self.config.getint('threaded_execution_frequency')
+
+        # the actual thread performing the work
+        self.threaded_execution_thread = None
+
+        # event to signal the thread can stop
+        self.threaded_execution_stop_event = None
+
+    def start_threaded_execution(self):
+        if not self.is_threaded:
+            return
+
+        self.threaded_execution_stop_event = threading.Event()
+        self.threaded_execution_thread = threading.Thread(target=self.execute_threaded_loop,
+                                                          name="Threaded Module {}".format(self))
+        self.threaded_execution_thread.start()
+        logging.info("started thread {}".format(self.threaded_execution_thread))
+
+    def stop_threaded_execution(self):
+        if not self.is_threaded:
+            return
+
+        logging.info("stopping threaded execution for {}".format(self))
+
+        self.threaded_execution_stop_event.set()
+        start = datetime.datetime.now()
+        while True:
+            self.threaded_execution_thread.join(5)
+            if not self.threaded_execution_thread.is_alive():
+                break
+
+            logging.error("thread {} is not stopping".format(self.threaded_execution_thread))
+
+            # have we been waiting for a really long time?
+            if (datetime.datetime.now() - start).total_seconds() >= saq.EXECUTION_THREAD_LONG_TIMEOUT:
+                logging.critical("execution thread {} is failing to stop - process dying".format(
+                                  self.threaded_execution_thread))
+                # suicide
+                os._exit(1)
+
+        logging.debug("threaded execution module {} has stopped ({})".format(self, self.threaded_execution_thread))
 
     def reset(self):
         """Resets the module to initialized state."""
@@ -181,15 +233,16 @@ class AnalysisModule(object):
                 raise RuntimeError("cannot find {} used by {}".format(path, self))
 
     def create_required_directory(self, dir):
-        """Creates the given directory if it does not already exist.  Relative paths are relative to SAQ_HOME."""
+        """Creates the given directory if it does not already exist.  Relative paths are relative to DATA_DIR."""
 
         if not os.path.isabs(dir):
-            dir = os.path.join(saq.SAQ_HOME, dir)
+            dir = os.path.join(saq.DATA_DIR, dir)
             
         if os.path.isdir(dir):
             return
 
         try:
+            logging.debug("creating required directory {}".format(dir))
             os.makedirs(dir)
         except Exception as e:
             logging.error("unable to create required directory {} for {}: {}".format(dir, self, e))
@@ -259,8 +312,8 @@ class AnalysisModule(object):
 
         if o_value not in self.observable_exclusions[o_type]:
             self.observable_exclusions[o_type].append(o_value)
-            logging.debug("loaded observable exclusion type {} value {} for {}".format(
-                o_type, o_value, self))
+            #logging.debug("loaded observable exclusion type {} value {} for {}".format(
+                #o_type, o_value, self))
 
     def is_excluded(self, observable):
         """Returns True if the given observable is excluded from analysis for this module."""
@@ -323,13 +376,17 @@ class AnalysisModule(object):
     @property
     def generated_analysis_type(self):
         """Returns the type of the Analysis-based class this AnalysisModule generates.  
-           You must override this function in your subclass."""
-        raise NotImplementedError()
+           Returns None if this AnalysisModule does not generate an Analysis object."""
+        return None
 
     def create_analysis(self, observable):
         """Initializes and adds the generated Analysis for this module to the given Observable. 
            Returns the generated Analysis."""
         # have we already created analysis for this observable?
+        if self.generated_analysis_type is None:
+            logging.critical("called create_analysis on {} which does not actually create Analysis".format(self))
+            return None
+
         analysis = observable.get_analysis(self.generated_analysis_type)
         if analysis:
             logging.debug("returning existing analysis {} in call to create analysis from {} for {}".format(
@@ -342,6 +399,7 @@ class AnalysisModule(object):
         observable.add_analysis(analysis)
         return analysis
 
+    # XXX this is not supported at all
     @property
     def valid_analysis_target_type(self):
         """Returns a valid analysis target type for this module.  
@@ -364,6 +422,11 @@ class AnalysisModule(object):
 
         # we still call execution on the module in cooldown mode
         # there may be things it can (or should) do while on cooldown
+
+        # if this analysis module does not generate analysis then we can skip this
+        # these are typically analysis modules that only do pre or post analysis work
+        if self.generated_analysis_type is None:
+            return False
 
         if self.valid_analysis_target_type is not None:
             if not isinstance(obj, self.valid_analysis_target_type):
@@ -433,7 +496,6 @@ class AnalysisModule(object):
 
     def cancel_analysis(self):
         """Try to cancel the analysis loop."""
-        #logging.debug("called stop() on {0}".format(self))
         self.cancel_analysis_flag = True
         
         # also try to cancel a semaphore acquire request, if there is one
@@ -561,9 +623,43 @@ class AnalysisModule(object):
         """Called to analyze Analysis or Observable objects after all other analysis has completed."""
         return False
 
-    def execute_post_analysis(self):
-        """Called to perform post processing work. Override this in your subclass."""
+    def execute_pre_analysis(self):
+        """This is called once at the very beginning of analysis."""
         pass
+
+    def execute_post_analysis(self):
+        """This is called once after all analysis work has been performed and no outstanding work is left."""
+        pass
+
+    def execute_threaded(self):
+        """This is called on a thread if the module is configured as threaded."""
+        pass
+
+    def execute_threaded_loop(self):
+        # continue to execute until analysis has completed
+        while True:
+            try:
+                self.execute_threaded()
+            except Exception as e:
+                logging.error("{} failed threaded execution on {}: {}".format(self, self.root, e))
+                report_exception()
+                return
+
+            # wait for self.threaded_execution_frequency seconds before we execute again
+            # make sure we exit when we're asked to
+            timeout = self.threaded_execution_frequency
+            while not self.engine.cancel_analysis_flag and \
+                  not self.threaded_execution_stop_event.is_set() and \
+                  timeout > 0:
+
+                time.sleep(1)
+                timeout -= 1
+
+            if self.engine.cancel_analysis_flag:
+                return
+
+            if self.threaded_execution_stop_event.is_set():
+                return
 
     def auto_reload(self):
         """Called every N seconds (see auto_reload_frequency in abstract
@@ -584,20 +680,6 @@ configuration."""
     def maintenance_frequency(self):
         """Returns how often to execute the maintenance function, in seconds, or None to disable (the default.)"""
         return None
-
-class PostAnalysisModule(AnalysisModule):
-    """An AnalysisModule that is only expected to execute the execute_post_analysis function."""
-    
-    @property
-    def valid_observable_types(self):
-        return None
-
-    @property
-    def required_directives(self):
-        return [ ]
-
-    def execute_analysis(self, target):
-        return False
 
 class TagAnalysisModule(AnalysisModule):
     """These types of modules ignore any exclusion rules."""
@@ -705,26 +787,27 @@ class LDAPAnalysisModule(AnalysisModule):
 def splunktime_to_datetime(splunk_time):
     """Convert a splunk time in 2015-02-19T09:50:49.000-05:00 format to a datetime object."""
     assert isinstance(splunk_time, str)
-    return datetime.datetime.strptime(splunk_time.split('.')[0], '%Y-%m-%dT%H:%M:%S')
-    
+    #return datetime.datetime.strptime(splunk_time.split('.')[0], '%Y-%m-%dT%H:%M:%S')
+    return parse_event_time(splunk_time)
 
 def splunktime_to_saqtime(splunk_time):
     """Convert a splunk time in 2015-02-19T09:50:49.000-05:00 format to SAQ time format YYYY-MM-DD HH:MM:SS."""
     assert isinstance(splunk_time, str)
+    return parse_event_time(splunk_time).strftime(event_time_format_json_tz)
 
-    m = re.match(r'^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\.[0-9]{3}[-+][0-9]{2}:[0-9]{2}$', splunk_time)
-    if not m:
-        logging.error("_time field does not match expected format: {0}".format(splunk_time))
-        return None
+    #m = re.match(r'^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\.[0-9]{3}[-+][0-9]{2}:[0-9]{2}$', splunk_time)
+    #if not m:
+        #logging.error("_time field does not match expected format: {0}".format(splunk_time))
+        #return None
 
    # reformat this time for SAQ
-    return '{0}-{1}-{2} {3}:{4}:{5}'.format(
-        m.group(1),
-        m.group(2),
-        m.group(3),
-        m.group(4),
-        m.group(5),
-        m.group(6))
+    #return '{0}-{1}-{2} {3}:{4}:{5}'.format(
+        #m.group(1),
+        #m.group(2),
+        #m.group(3),
+        #m.group(4),
+        #m.group(5),
+        #m.group(6))
 
 class SplunkAnalysisModule(AnalysisModule, SplunkQueryObject):
     """An analysis module that uses Splunk."""

@@ -41,6 +41,9 @@ __all__ = [
     'F_PROCESS_GUID',
     'F_TEST',
     'event_time_format',
+    'event_time_format_tz',
+    'event_time_format_json_tz',
+    'event_time_format_json',
     'OBSERVABLE_DESCRIPTIONS',
     'OBSERVABLE_NODE_COLORS',
     'VALID_OBSERVABLE_TYPES',
@@ -76,9 +79,11 @@ __all__ = [
     'DIRECTIVE_EXTRACT_URLS',
     'DIRECTIVE_SANDBOX',
     'DIRECTIVE_ORIGINAL_EMAIL',
+    'DIRECTIVE_ORIGINAL_SMTP',
     'DIRECTIVE_NO_SCAN',
     'DIRECTIVE_DELAY',
     'DIRECTIVE_EXCLUDE_ALL',
+    'DIRECTIVE_WHITELISTED',
     'VALID_DIRECTIVES',
     'is_valid_directive',
     'TAG_LEVEL_FALSE_POSITIVE',
@@ -124,6 +129,19 @@ __all__ = [
     'TARGET_EMAIL_RCPT_TO',
     'TARGET_VX_IPDOMAINSTREAMS',
     'VALID_TARGETS',
+    'ANALYSIS_MODE_CORRELATION',
+    'ANALYSIS_MODE_ANALYSIS',
+    'ANALYSIS_MODE_BINARY',
+    'ANALYSIS_MODE_EMAIL',
+    'ANALYSIS_MODE_HTTP',
+    'ANALYSIS_MODE_FILE',
+    'ANALYSIS_MODE_CLI',
+    'ANALYSIS_MODE_CLOUDPHISH',
+    'ANALYSIS_TYPE_MAILBOX',
+    'ANALYSIS_TYPE_BRO_SMTP',
+    'ANALYSIS_TYPE_BRO_HTTP',
+    'ANALYSIS_TYPE_GENERIC',
+    'ANALYSIS_TYPE_CLOUDPHISH',
 ]
 
 # 
@@ -305,7 +323,14 @@ def create_file_location(hostname, full_path):
     return '{}@{}'.format(hostname, full_path)
 
 # the expected format of the event_time of an alert
+event_time_format_tz = '%Y-%m-%d %H:%M:%S %z'
+# the old time format before we started storing timezones
 event_time_format = '%Y-%m-%d %H:%M:%S'
+# the "ISO 8601" format that ACE uses to store datetime objects in JSON with a timezone
+# NOTE this is the preferred format
+event_time_format_json_tz = '%Y-%m-%dT%H:%M:%S.%f%z'
+# the "ISO 8601" format that ACE uses to store datetime objects in JSON without a timezone
+event_time_format_json = '%Y-%m-%dT%H:%M:%S.%f'
 
 # alert dispositions
 DISPOSITION_FALSE_POSITIVE = 'FALSE_POSITIVE'
@@ -399,6 +424,8 @@ DIRECTIVE_EXTRACT_URLS = 'extract_urls'
 DIRECTIVE_SANDBOX = 'sandbox'
 # treat this file as the original email file
 DIRECTIVE_ORIGINAL_EMAIL = 'original_email'
+# treat this file as the original smtp stream
+DIRECTIVE_ORIGINAL_SMTP = 'original_smtp'
 # do not scan this file with yara
 DIRECTIVE_NO_SCAN = 'no_scan'
 # instructs various analysis modules that supprt this directive
@@ -406,16 +433,21 @@ DIRECTIVE_NO_SCAN = 'no_scan'
 DIRECTIVE_DELAY = 'delay'
 # instructs ACE to NOT analyze this observable at all
 DIRECTIVE_EXCLUDE_ALL = 'exclude_all'
+# indicates this observable was whitelisted, causing the entire analysis to also become whitelisted
+DIRECTIVE_WHITELISTED = 'whitelisted'
 
 VALID_DIRECTIVES = [
     DIRECTIVE_COLLECT_FILE,
     DIRECTIVE_CRAWL,
     DIRECTIVE_EXTRACT_URLS,
     DIRECTIVE_ORIGINAL_EMAIL,
+    DIRECTIVE_ORIGINAL_SMTP,
     DIRECTIVE_SANDBOX,
     DIRECTIVE_FORCE_DOWNLOAD,
     DIRECTIVE_DELAY,
     DIRECTIVE_EXCLUDE_ALL,
+    DIRECTIVE_NO_SCAN,
+    DIRECTIVE_WHITELISTED,
 ]
 
 def is_valid_directive(directive):
@@ -516,3 +548,19 @@ VALID_TARGETS = [
 # constants defined for keys to dicts (typically in json files)
 KEY_DESCRIPTION = 'description'
 KEY_DETAILS = 'details'
+
+# analysis modes (more can be added)
+ANALYSIS_MODE_CORRELATION = 'correlation'
+ANALYSIS_MODE_CLI = 'cli'
+ANALYSIS_MODE_ANALYSIS = 'analysis'
+ANALYSIS_MODE_EMAIL = 'email'
+ANALYSIS_MODE_HTTP = 'http'
+ANALYSIS_MODE_FILE = 'file'
+ANALYSIS_MODE_CLOUDPHISH = 'cloudphish'
+ANALYSIS_MODE_BINARY = 'binary'
+
+ANALYSIS_TYPE_GENERIC = 'generic'
+ANALYSIS_TYPE_MAILBOX = 'mailbox'
+ANALYSIS_TYPE_BRO_SMTP = 'bro - smtp'
+ANALYSIS_TYPE_BRO_HTTP = 'bro - http'
+ANALYSIS_TYPE_CLOUDPHISH = 'cloudphish'
