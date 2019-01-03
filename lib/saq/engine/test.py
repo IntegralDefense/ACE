@@ -1886,3 +1886,40 @@ class TestCase(ACEEngineTestCase):
         # we should have one lock left, belong to the "other node"
         c.execute("SELECT lock_owner FROM locks")
         self.assertEquals(c.fetchone()[0], 'some_other_node.local-unittest-12345')
+
+    def test_action_counters(self):
+        
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        t1 = root.add_observable(F_TEST, 'test_action_counter_1')
+        t2 = root.add_observable(F_TEST, 'test_action_counter_2')
+        t3 = root.add_observable(F_TEST, 'test_action_counter_3')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we have an action count limit of 2, so 2 of these should have analysis and 1 should not
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        t1 = root.get_observable(t1.id)
+        t2 = root.get_observable(t2.id)
+        t3 = root.get_observable(t3.id)
+    
+        self.assertIsNotNone(t1)
+        self.assertIsNotNone(t2)
+        self.assertIsNotNone(t3)
+
+        from saq.modules.test import BasicTestAnalysis
+        analysis_count = 0
+        for t in [ t1, t2, t3 ]:
+            if t.get_analysis(BasicTestAnalysis):
+                analysis_count += 1
+
+        self.assertEquals(analysis_count, 2)
