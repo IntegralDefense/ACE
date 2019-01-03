@@ -315,9 +315,12 @@ def _create_analysis(url, reprocess, details, db, c):
 
     # so first we try to insert it
     try:
-        execute_with_retry(db, c, """INSERT INTO cloudphish_analysis_results ( sha256_url, uuid, insert_date ) 
-                                     VALUES ( UNHEX(%s), %s, NOW() )""",
-                           (sha256_url, _uuid), commit=True)
+        execute_with_retry(db, c, ["""INSERT INTO cloudphish_analysis_results ( sha256_url, uuid, insert_date ) 
+                                      VALUES ( UNHEX(%s), %s, NOW() )""",
+                                   """INSERT INTO cloudphish_url_lookup ( sha256_url, url )
+                                      VALUES ( UNHEX(%s), %s )"""],
+                           [(sha256_url, _uuid)
+                            (sha256_url, url)], commit=True)
     except pymysql.err.IntegrityError as e:
         # (<class 'pymysql.err.IntegrityError'>--(1062, "Duplicate entry
         # if we get a duplicate key entry here then it means that an entry was created between when we asked
