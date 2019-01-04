@@ -1768,6 +1768,12 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             except Exception as e:
                 logging.error("unable to save failed analysis {}: {}".format(self.root, e))
 
+            # clear any outstanding delayed analysis requests
+            try:
+                saq.database.clear_delayed_analysis_requests(self.root)
+            except Exception as e:
+                logging.error(f"unable to clear delayed analysis requests for {self.root}: {e}")
+
         finally:
             # make sure we remove the logging handler that we added
             logging.getLogger().removeHandler(logging_handler)
