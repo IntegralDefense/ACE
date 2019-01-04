@@ -266,28 +266,33 @@ class WorkerManager(object):
         while not CURRENT_ENGINE.controlled_shutdown \
                   and not CURRENT_ENGINE.shutdown:
 
-            # start any workers that need to be started
-            for worker in self.workers:
-                worker.check()
+            try:
 
-            # do we need to restart the workers?
-            if self.restart_workers_event.is_set():
-                logging.info("got command to restart workers")
-                self.restart_workers_event.clear()
+                # start any workers that need to be started
                 for worker in self.workers:
-                    worker.stop()
+                    worker.check()
 
-                # make sure we're up to date on the config
-                saq.load_configuration()
+                # do we need to restart the workers?
+                if self.restart_workers_event.is_set():
+                    logging.info("got command to restart workers")
+                    self.restart_workers_event.clear()
+                    for worker in self.workers:
+                        worker.stop()
 
-                for worker in self.workers:
-                    worker.start()
+                    # make sure we're up to date on the config
+                    saq.load_configuration()
 
-                for worker in self.workers:
-                    worker.wait_for_start()
+                    for worker in self.workers:
+                        worker.start()
 
-            # don't spin the cpu
-            time.sleep(1)
+                    for worker in self.workers:
+                        worker.wait_for_start()
+
+                # don't spin the cpu
+                time.sleep(1)
+
+            except KeyboardInterrupt:
+                break
 
         # make sure all the processes exit with you
         for worker in self.workers:
