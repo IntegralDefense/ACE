@@ -1854,6 +1854,11 @@ def add_delayed_analysis_request(root, observable, analysis_module, next_analysi
                          root, analysis_module.config_section, observable, e))
         report_exception()
         return False
+
+@use_db
+def clear_delayed_analysis_requests(root, db, c):
+    """Clears all delayed analysis requests for the given RootAnalysis object."""
+    execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE uuid = %s", (root.uuid,), commit=True)
     
 def initialize_database():
 
