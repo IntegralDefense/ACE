@@ -290,7 +290,7 @@ class CloudphishAnalyzer(AnalysisModule):
         if analysis is None:
             try:
                 if len(self.state['requests']) >= self.cloudphish_request_limit:
-                    logging.debug(f"reached cloudphish limit for {self.root}")
+                    logging.info(f"skipping cloudphis analysis for {url.value} reached cloudphish limit for {self.root}")
                     return False
 
                 # do basic URL sanity checks
