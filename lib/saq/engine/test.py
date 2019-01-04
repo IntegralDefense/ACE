@@ -970,6 +970,25 @@ class TestCase(ACEEngineTestCase):
         
         self.assertEquals(log_count('ACE has been analyzing'), 1)
 
+    def test_maximum_cumulative_analysis_warning_time_analysis_mode(self):
+        # same thing as before except we set the timeout for just the analysis mode
+        # setting this to zero should cause it to happen right away
+        saq.CONFIG['analysis_mode_test_groups']['maximum_cumulative_analysis_warning_time'] = '0'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
+        root.initialize_storage()
+        test_observable = root.add_observable(F_TEST, 'test_1')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+        
+        self.assertEquals(log_count('ACE has been analyzing'), 1)
+
     def test_maximum_cumulative_analysis_fail_time(self):
         # setting this to zero should cause it to happen right away
         saq.CONFIG['global']['maximum_cumulative_analysis_fail_time'] = '0'
@@ -988,9 +1007,48 @@ class TestCase(ACEEngineTestCase):
 
         self.assertEquals(log_count('ACE took too long to analyze'), 1)
 
+    def test_maximum_cumulative_analysis_fail_time_analysis_mode(self):
+        # same thing as before except we set the timeout for just the analysis mode
+        # setting this to zero should cause it to happen right away
+        saq.CONFIG['analysis_mode_test_groups']['maximum_cumulative_analysis_fail_time'] = '0'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
+        root.initialize_storage()
+        test_observable = root.add_observable(F_TEST, 'test_1')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        self.assertEquals(log_count('ACE took too long to analyze'), 1)
+
     def test_maximum_analysis_time(self):
         # setting this to zero should cause it to happen right away
         saq.CONFIG['global']['maximum_analysis_time'] = '0'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
+        root.initialize_storage()
+        test_observable = root.add_observable(F_TEST, 'test_4')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # will fire again in final analysis
+        self.assertEquals(log_count('excessive time - analysis module'), 2)
+
+    def test_maximum_analysis_time_analysis_mode(self):
+        # same thing as before except we set the timeout for just the analysis mode
+        # setting this to zero should cause it to happen right away
+        saq.CONFIG['analysis_mode_test_groups']['maximum_analysis_time'] = '0'
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
