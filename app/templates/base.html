@@ -82,8 +82,12 @@
                 <li><a href="{{ url_for('main.index') }}">Overview</a></li>
                 <li><a href="{{ url_for('analysis.file') }}">Manual Analysis</a></li>
                 <li><a href="{{ url_for('analysis.manage') }}">Manage Alerts</a></li>
-                <li><a href="{{ url_for('analysis.events') }}">Events</a></li>
-                <li><a href="{{ url_for('analysis.metrics') }}">Metrics</a></li>
+		    {% if config.GUI_DISPLAY_EVENTS %}
+                        <li><a href="{{ url_for('analysis.events') }}">Events</a></li>
+		    {% endif %}
+	            {% if config.GUI_DISPLAY_METRICS  %}
+		        <li><a href="{{ url_for('analysis.metrics') }}">Metrics</a></li>
+		    {% endif %}
                 <!--<li><a href="{{ url_for('analysis.search') }}" target="_blank">Search</a></li>-->
                 <li><a href="{{ url_for('auth.logout') }}">Sign Out</a></li>
                 {% else %}
