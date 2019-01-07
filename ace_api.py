@@ -22,18 +22,23 @@ except ImportError:
     print("You need to install the tzlocal library (see https://pypi.org/project/tzlocal/)")
     sys.exit(1)
 
+import copy
 import datetime
+import inspect
 import io
 import json
 import logging
 import os
 import os.path
+import pickle
+import shutil
 import socket
 import sys
 import tarfile
 import tempfile
 import traceback
 import urllib3
+import uuid
 import warnings
 
 # ignoring this: /usr/lib/python3/dist-packages/urllib3/connection.py:344:
@@ -64,8 +69,11 @@ def set_default_ssl_ca_path(ssl_verification):
     global default_ssl_verification
     default_ssl_verification = ssl_verification
 
-# dictionary that maps command names to their functions
-commands = { }
+# list of api commands
+api_commands = []
+
+# list of support commands
+support_commands = []
 
 # the default remote host to use when no remote host is provided
 default_remote_host = 'localhost'
@@ -78,8 +86,13 @@ LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
 DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
 
 def api_command(func):
-    global commands
-    commands[func.__name__] = func
+    global api_commands
+    api_commands.append(func)
+    return func
+
+def support_command(func):
+    global support_commands
+    support_commands.append(func)
     return func
 
 def _execute_api_call(command, 
@@ -151,6 +164,7 @@ def submit(
     tags=[],
     files=[],
     *args, **kwargs):
+    """Submit an analysis request to ACE."""
 
     # make sure you passed in *something* for the description
     assert(description)
@@ -176,7 +190,9 @@ def submit(
 
         # make sure any times are formatted
         if 'time' in o and isinstance(o['time'], datetime.datetime):
-            o['time'] = LOCAL_TIMEZONE.localize(o['time']).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
+            if o['time'].tzinfo is None:
+                o['time'] = LOCAL_TIMEZONE.localize(o['time'])
+            o['time'] = o['time'].astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
 
     # make sure the tags are strings
     for t in tags:
@@ -208,6 +224,7 @@ def submit(
             'tags': tags, 
         }),
     }, files=files_params, method=METHOD_POST, *args, **kwargs).json()
+
 
 @api_command
 def get_analysis(uuid, *args, **kwargs):
@@ -356,23 +373,247 @@ def cloudphish_clear_alert(url=None, sha256=None, *args, **kwargs):
 
     return _execute_api_call('cloudphish/clear_alert', params=params).status_code == 200
 
+#
+# supporting backwards comptability for the old ace_client_lib.client library
+#
+
+class Alert(object):
+    def __init__(self, *args, **kwargs):
+        # these just get passed to ace_api.submit function
+        self.submit_args = args
+        self.submit_kwargs = kwargs
+
+        # we only use this (now) when we save a failed submission
+
+        # default submission
+        self.submit_kwargs = {
+            'description': None,
+            'analysis_mode': 'correlation',
+            'tool': 'ace_api',
+            'tool_instance': 'ace_api:{}'.format(socket.getfqdn()),
+            'type': 'generic',
+            'event_time': None,
+            'details': {},
+            'observables': [],
+            'tags': [],
+            'files': [],
+        }
+
+        # support the old api
+        for key, value in kwargs.items():
+            if key == 'desc':
+                key = 'description'
+            elif key == 'alert_type':
+                key = 'type'
+
+        # remove parameters no longer supported/needed
+        if 'name' in kwargs:
+            del kwargs['name']
+
+        self.submit_kwargs.update(kwargs)
+        
+        # this gets set after a successful call to submit
+        self.uuid = None
+
+        # and this gets set after an unsuccessful call to subit
+        self.url = None
+        self.key = None
+        self.ssl_verification = None
+
+    def __str__(self):
+        return f'Alert({self.submit_kwargs})'
+
+    def add_tag(self, value):
+        self.submit_kwargs['tags'].append(value)
+
+    def add_observable(self, o_type, o_value, o_time=None, is_suspect=False, directives=[]):
+        o = {
+            'type': o_type,
+            'value': o_value
+        }
+
+        if o_time is not None:
+            o['time'] = o_time
+
+        if directives:
+            o['directives'] = directives
+
+        self.submit_kwargs['observables'].append(o)
+
+    def add_attachment_link(self, source_path, relative_storage_path):
+        self.submit_kwargs['files'].append((source_path, relative_storage_path))
+
+    def submit(self, uri=None, key=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
+
+        if uri is None:
+            uri = self.uri
+
+        if key is None:
+            key = self.key
+
+        if ssl_verification is None:
+            ssl_verification = self.ssl_verification
+
+        from urllib.parse import urlparse
+        parsed_url = urlparse(uri)
+        remote_host = parsed_url.netloc
+
+        kwargs = {}
+        kwargs.update(self.submit_kwargs)
+        # currently kwargs['files'] is a tuple of (source_path, relative_storage_path)
+        # the file params should be a tuple of (remote_name, file descriptor)
+        kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in kwargs['files']]
+
+        try:
+            result = submit(remote_host=remote_host, 
+                               # the old "api" didn't even use SSL so we just use the ACE default SSL cert location
+                               ssl_verification=ssl_verification if ssl_verification else '/opt/ace/ssl/ca-chain.cert.pem', 
+                               *self.submit_args, **kwargs)
+
+            if 'result' in result:
+                if 'uuid' in result['result']:
+                    self.uuid = result['result']['uuid']
+
+            return self.uuid
+
+        except Exception as submission_error:
+            logging.warning(f"unable to submit alert {self}: {submission_error} (attempting to save alert to {fail_dir})")
+
+            if not save_on_fail:
+                raise submission_error
+
+            if fail_dir is None:
+                logging.error("save_on_fail is set to True but fail_dir is set to None")
+                raise submission_error
+
+            self.uuid = str(uuid.uuid4())
+            dest_dir = os.path.join(fail_dir, self.uuid)
+            if not os.path.isdir(dest_dir):
+                try:
+                    os.makedirs(dest_dir)
+                except Exception as e:
+                    logging.error(f"unable to create directory {dest_dir} to save alert {self}: {e}")
+                    raise e
+
+            # copy any files we wanted to submit to the directory
+            for source_path, relative_storage_path in self.submit_kwargs['files']:
+                destination_path = os.path.join(dest_dir, relative_storage_path)
+                destination_dir = os.path.dirname(destination_path)
+                if destination_dir:
+                    if not os.path.isdir(destination_dir):
+                        os.makedirs(destination_dir)
+
+                try:
+                    shutil.copy2(source_path, destination_path)
+                except Exception as e:
+                    logging.error(f"unable to copy file from {source_path} to {destination_path}: {e}")
+
+            # now we need to reference the copied files
+            self.submit_kwargs['files'] = [(os.path.join(dest_dir, f[1]), f[1]) for f in self.submit_kwargs['files']]
+
+            # remember these values for submit_failed_alerts()
+            self.uri = uri
+            self.key = key
+            self.ssl_verification = ssl_verification
+                
+            # to write it out to the filesystem
+            with open(os.path.join(dest_dir, 'alert'), 'wb') as fp:  
+                pickle.dump(self, fp)
+
+            logging.debug(f"saved alert {self} to {dest_dir}")
+            raise submission_error
+
+        finally:
+            # we make sure we close our file descriptors
+            for file_name, fp in kwargs['files']:
+                try:
+                    fp.close()
+                except Exception as e:
+                    logging.error(f"unable to close file descriptor for {file_name}")
+
+@support_command
+def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq_alerts', delete_on_success=True, *args, **kwargs):
+    """Submits any alerts found in .saq_alerts, or, the directory specified by the fail_dir parameter."""
+    if not os.path.isdir(fail_dir):
+        return
+
+    for subdir in os.listdir(fail_dir):
+        target_path = os.path.join(fail_dir, subdir, 'alert')
+        try:
+            logging.info(f"loading {target_path}")
+            with open(target_path, 'rb') as fp:
+                alert = pickle.load(fp)
+        except Exception as e:
+            logging.error(f"unable to load {target_path}: {e}")
+            continue
+
+        try:
+            # we allow the user to change what server we're sending to
+            # otherwise
+            kwargs = {}
+            if remote_host is not None:
+                kwargs['uri'] = f'https://{remote_host}'
+            if ssl_verification is not None:
+                kwargs['ssl_verification'] = ssl_verification
+
+            alert.submit(save_on_fail=False, **kwargs)
+
+            if delete_on_success:
+                try:
+                    target_dir = os.path.join(fail_dir, subdir)
+                    shutil.rmtree(target_dir)
+                except Exception as e:
+                    logging.error(f"unable to delete directory {target_dir}: {e}")
+        except Exception as e:
+            logging.error(f"unable to submit {target_path}: {e}")
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
-    parser.add_argument('remote_host', help="The remote host to connect to in host[:port] format.")
-    parser.add_argument('command', choices=commands.keys(), help="The API command to execute.")
-    parser.add_argument('command_arguments', nargs='*', help="The arguments to the API call.")
-    parser.add_argument('--ssl-verification', required=False, default='/opt/ace/ssl/ca-chain.cert.pem',
-        help="Optional path to root CA ssl to load.")
+    subparsers = parser.add_subparsers(dest='cmd')
+
+    all_commands = api_commands[:]
+    all_commands.extend(support_commands)
+
+    for command in all_commands:
+        subcommand_parser = subparsers.add_parser(command.__name__.replace('_', '-'), help=command.__doc__)
+        if command in api_commands:
+            subcommand_parser.add_argument('remote_host', help="The remote host to connect to in host[:port] format.")
+            subcommand_parser.add_argument('--ssl-verification', required=False, default='/opt/ace/ssl/ca-chain.cert.pem',
+                help="Optional path to root CA ssl to load.")
+        command_signature = inspect.signature(command)
+        for p_name, parameter in command_signature.parameters.items():
+            if p_name not in [ 'args', 'kwargs' ]:
+                # if this command does NOT have a default_value then it's a positional command
+                if parameter.default == inspect.Parameter.empty:
+                    subcommand_parser.add_argument(parameter.name, help="(REQUIRED)")
+                else:
+                    subcommand_parser.add_argument('--{}'.format(parameter.name.replace('_', '-')), 
+                                                   required=False,
+                                                   dest=parameter.name,
+                                                   default=parameter.default,
+                                                   help=f"(default: {parameter.default})")
+
+        subcommand_parser.set_defaults(func=command)
+
     args = parser.parse_args()
 
     try:
-        result = commands[args.command](remote_host=args.remote_host, 
-                                        ssl_verification=args.ssl_verification, 
-                                        *args.command_arguments)
-        print(json.dumps(result, sort_keys=True, indent=4))
+        # call the handler for the given command
+        params = copy.copy(vars(args))
+        del params['cmd']
+        del params['func']
+        result = args.func(**params)
+        #result = commands[args.command](remote_host=args.remote_host, 
+                                        #ssl_verification=args.ssl_verification, 
+                                        #*args.command_arguments)
+
+        if args.func in api_commands:
+            print(json.dumps(result, sort_keys=True, indent=4))
+
     except Exception as e:
         sys.stderr.write("unable to execute api call: {}\n".format(e))
+        traceback.print_exc()
         if hasattr(e, 'response'):
             print(e.response.text)
 
