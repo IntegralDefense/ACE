@@ -973,7 +973,7 @@ def new_alert(db, c):
     comment = ''
 
     tool = "gui"
-    tool_instance = socket.gethostname()
+    tool_instance = saq.CONFIG['global']['instance_name']
     alert_type = "manual"
     description = request.form.get('new_alert_description', 'Manual Alert')
     event_time = event_time
@@ -3504,7 +3504,7 @@ def upload_file():
     if not alert_uuid:
         alert = Alert()
         alert.tool = 'Manual File Upload - '+file_name
-        alert.tool_instance = socket.gethostname()
+        alert.tool_instance = saq.CONFIG['global']['instance_name']
         alert.alert_type = 'manual_upload'
         alert.description = 'Manual File upload {0}'.format(file_name)
         alert.event_time = datetime.datetime.now()
