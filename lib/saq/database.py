@@ -301,7 +301,7 @@ def _get_db_connection(name='ace'):
             else:
                 kwargs['ssl']['cert'] = _section['ssl_cert']
 
-    logging.debug("opening database connection {} args {}".format(name, kwargs))
+    logging.debug("opening database connection {}".format(name))
     return pymysql.connect(**kwargs)
     #return pymysql.connect(host=_section['hostname'] if 'hostname' in _section else None,
                            #port=3306 if 'port' not in _section else _section.getint('port'),
@@ -338,7 +338,7 @@ import logging
 import os.path
 from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum
 from sqlalchemy.dialects.mysql import BOOLEAN
-from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref
+from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates
 from sqlalchemy.orm.exc import NoResultFound, DetachedInstanceError
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
@@ -758,6 +758,13 @@ class Alert(RootAnalysis, Base):
     description = Column(
         String(1024),
         nullable=False)
+
+    @validates('description')
+    def validate_description(self, key, value):
+        max_length = getattr(self.__class__, key).prop.columns[0].type.length
+        if value and len(value) > max_length:
+            return value[:max_length]
+        return value
 
     priority = Column(
         Integer,
@@ -1847,6 +1854,11 @@ def add_delayed_analysis_request(root, observable, analysis_module, next_analysi
                          root, analysis_module.config_section, observable, e))
         report_exception()
         return False
+
+@use_db
+def clear_delayed_analysis_requests(root, db, c):
+    """Clears all delayed analysis requests for the given RootAnalysis object."""
+    execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE uuid = %s", (root.uuid,), commit=True)
     
 def initialize_database():
 
@@ -1890,3 +1902,43 @@ def initialize_node(db, c):
         else:
             saq.SAQ_NODE_ID = row[0]
             logging.info("allocated node id {} for {}".format(saq.SAQ_NODE_ID, saq.SAQ_NODE))
+
+@use_db
+def get_available_nodes(company_id, target_analysis_modes, db, c):
+    assert isinstance(company_id, int)
+    assert isinstance(target_analysis_modes, str) or isinstance(target_analysis_modes, list)
+    if isinstance(target_analysis_modes, str):
+        target_analysis_modes = [ target_analysis_modes ]
+
+    sql = """
+SELECT
+    nodes.id, 
+    nodes.name, 
+    nodes.location, 
+    nodes.any_mode,
+    nodes.last_update,
+    node_modes.analysis_mode,
+    COUNT(workload.id) AS 'WORKLOAD_COUNT'
+FROM
+    nodes LEFT JOIN node_modes ON nodes.id = node_modes.node_id
+    LEFT JOIN workload ON nodes.id = workload.node_id
+WHERE
+    nodes.company_id = %s
+    AND nodes.is_local = 0
+    AND ( nodes.any_mode OR node_modes.analysis_mode in ( {} ) )
+GROUP BY
+    nodes.id,
+    nodes.name,
+    nodes.location,
+    nodes.any_mode,
+    nodes.last_update,
+    node_modes.analysis_mode
+ORDER BY
+    WORKLOAD_COUNT ASC,
+    nodes.last_update ASC
+""".format(','.join(['%s' for _ in target_analysis_modes]))
+
+    params = [ company_id ]
+    params.extend(target_analysis_modes)
+    c.execute(sql, tuple(params))
+    return c.fetchall()

@@ -12,6 +12,7 @@ import re
 import shutil
 import smtplib
 import socket
+import tempfile
 import traceback
 import uuid
 import zipfile
@@ -45,12 +46,15 @@ from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Eve
                          MalwareMapping, Company, CompanyMapping, Campaign, Alert, \
                          Workload, DelayedAnalysis, \
                          acquire_lock, release_lock, \
-                         ProfilePointAlertMapping, ProfilePoint, ProfilePointTagMapping
+                         ProfilePointAlertMapping, ProfilePoint, ProfilePointTagMapping, \
+                         get_available_nodes, use_db
 from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
 from saq.gui import GUIAlert
 from saq.performance import record_execution_time
 from saq.network_client import submit_alerts
+
+import ace_api
 
 from app import db
 from app.analysis import *
@@ -62,6 +66,8 @@ from sqlalchemy import and_, or_, func, distinct
 from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql import text, func
+
+import pytz
 
 # used to determine where to redirect to after doing something
 REDIRECT_MAP = {
@@ -946,104 +952,119 @@ def unremediate():
 
 @analysis.route('/new_alert', methods=['POST'])
 @login_required
-def new_alert():
+@use_db
+def new_alert(db, c):
+                     
     # get submitted data
     insert_date = request.form.get('new_alert_insert_date', None)
     # reformat date
-    insert_date = datetime.datetime.strptime(insert_date, '%m-%d-%Y %H:%M:%S').strftime(event_time_format)
-    description = request.form.get('new_alert_description', None)
+    event_time = datetime.datetime.strptime(insert_date, '%m-%d-%Y %H:%M:%S')
+    # set the timezone
+    try:
+        timezone_str = request.form.get('timezone')
+        timezone = pytz.timezone(timezone_str)
+        event_time = timezone.localize(event_time)
+    except Exception as e:
+        error_message = f"unable to set timezone to {timezone_str}: {e}"
+        logging.error(error_message)
+        flask(error_message)
+        return redirect(url_for('analysis.manage'))
 
     comment = ''
 
-    # create alert from data
-    alert = Alert()
-    alert.company_id = saq.CONFIG['gui'].getint('default_company_id')
-    target_company = request.form.get('target_company', None)
-    if target_company is not None:
-        if int(target_company) != -1: # if it is not the default...
-            alert.company_id = int(target_company)
-    alert.uuid = str(uuid.uuid4())
-    alert.tool = "gui"
-    alert.tool_instance = socket.gethostname()
-    alert.alert_type = "manual"
-    alert.description = description
-    alert.event_time = insert_date
-    alert.details = {'user': current_user.username, 'comment': comment}
-    alert.storage_dir = os.path.join(temp_dir, alert.uuid)
+    tool = "gui"
+    tool_instance = socket.gethostname()
+    alert_type = "manual"
+    description = request.form.get('new_alert_description', 'Manual Alert')
+    event_time = event_time
+    details = {'user': current_user.username, 'comment': comment}
 
-    # create alert directory structure
-    dest_path = os.path.join(SAQ_HOME, alert.storage_dir)
-    if not os.path.isdir(dest_path):
-        try:
-            os.makedirs(dest_path)
-        except Exception as e:
-            logging.error("unable to create directory {0}: {1}".format(dest_path, str(e)))
-            report_exception()
-            return
-    alert.save()
-
-    # add observables to alert
-    for key in request.form.keys():
-        if key.startswith("observables_types_"):
-            index = key[18:]
-            otype = request.form.get("observables_types_{}".format(index))
-            otime = request.form.get("observables_times_{}".format(index))
-            if otime == "":
-                otime = None
-            else:
-                otime = datetime.datetime.strptime(otime, '%m-%d-%Y %H:%M:%S').strftime(event_time_format)
-            if otype == 'file':
-                upload_file = request.files["observables_values_{}".format(index)]
-                save_path = os.path.join(SAQ_HOME, alert.storage_dir, os.path.basename(upload_file.filename))
-
-                try:
-                    upload_file.save(save_path)
-                except Exception as e:
-                    flash("unable to save {}: {}".format(save_path, str(e)))
-                    report_exception()
-                    return redirect(url_for('analysis.manage'))
-
-                alert.add_observable(F_FILE, os.path.relpath(save_path, start=os.path.join(SAQ_HOME, alert.storage_dir)), o_time=otime)
-            else:
-                ovalue = request.form.get("observables_values_{}".format(index))
-                alert.add_observable(otype, ovalue, o_time=otime)
-
-    alert.save()
-
-    target_company = None
-    with get_db_connection() as db:
-        c = db.cursor()
-        c.execute("SELECT `name` FROM company WHERE `id` = %s", (alert.company_id,))
-        result = c.fetchone()
-        if not result:
-            flash("unknown company_id {}".format(alert.company_id))
-            return redirect(url_for('analysis.manage'))
-
-        target_company = result[0]
-
-    # what host we select here depends on what company we are targeting the analysis for
-    target_section = 'network_client_ace_{}'.format(target_company)
-    if target_section not in saq.CONFIG:
-        flash("company {} does not have a network_client_ace section in the configuratiuon".format(target_company))
-        return redirect(url_for('analysis.manage'))
-    
-    remote_host = saq.CONFIG[target_section]['remote_host']
-    remote_port = saq.CONFIG[target_section].getint('remote_port')
-    ssl_hostname = saq.CONFIG[target_section]['ssl_hostname']
-    ssl_cert = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_cert'])
-    ssl_key = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_key'])
-    ca_path = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ca_path'])
+    observables = []
+    tags = []
+    files = []
+    temp_file_paths = []
 
     try:
-        submit_alerts(remote_host, remote_port, ssl_cert, ssl_hostname, ssl_key, ca_path, os.path.join(SAQ_HOME, alert.storage_dir))
-    except Exception as e:
-        logging.error("unable to submit alert: {}".format(e))
-        flash("unable to submit alert: {}".format(e))
-        report_exception()
+        for key in request.form.keys():
+            if key.startswith("observables_types_"):
+                index = key[18:]
+                o_type = request.form.get(f'observables_types_{index}')
+                o_value = request.form.get(f'observables_values_{index}')
+                o_time = request.form.get(f'observables_times_{index}')
 
-    shutil.rmtree(os.path.join(SAQ_HOME, alert.storage_dir))
+                observable = {
+                    'type': o_type,
+                    'value': o_value,
+                }
 
-    return redirect(url_for('analysis.manage'))
+                if o_time:
+                    otime = datetime.datetime.strptime(otime, '%m-%d-%Y %H:%M:%S')
+                    observable['time'] = timezone.localize(o_time)
+
+                if o_type == F_FILE:
+                    upload_file = request.files.get(f'observables_values_{index}', None)
+                    if upload_file:
+                        fp, save_path = tempfile.mkstemp(suffix='.upload', dir=os.path.join(saq.TEMP_DIR))
+                        os.close(fp)
+
+                        temp_file_paths.append(save_path)
+
+                        try:
+                            upload_file.save(save_path)
+                        except Exception as e:
+                            flash(f"unable to save {save_path}: {e}")
+                            report_exception()
+                            return redirect(url_for('analysis.manage'))
+
+                        files.append((upload_file.filename, open(save_path, 'rb')))
+
+                    observable['value'] = upload_file.filename
+
+                observables.append(observable)
+
+        # get the location for this node id
+        c.execute("SELECT location FROM nodes WHERE id = %s", (int(request.form.get('target_node_id'))))
+        node_location = c.fetchone()
+        node_location = node_location[0] # meh ...
+            
+        try:
+            result = ace_api.submit(
+                remote_host = node_location,
+                ssl_verification = saq.CONFIG['SSL']['ca_chain_path'],
+                description = description,
+                analysis_mode = ANALYSIS_MODE_CORRELATION,
+                tool = tool,
+                tool_instance = tool_instance,
+                type = ANALYSIS_TYPE_MANUAL,
+                event_time = event_time,
+                details = details,
+                observables = observables,
+                tags = tags,
+                files = files)
+
+            if 'result' in result and 'uuid' in result['result']:
+                uuid = result['result']['uuid']
+                return redirect(url_for('analysis.index', direct=uuid))
+
+        except Exception as e:
+            logging.error(f"unable to submit alert: {e}")
+            flash(f"unable to submit alert: {e}")
+            #report_exception()
+
+        return redirect(url_for('analysis.manage'))
+
+    finally:
+        for file_path in temp_file_paths:
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                logging.error(f"unable to remove {file_path}: {e}")
+
+        for file_name, fp in files:
+            try:
+                fp.close()
+            except:
+                logging.error(f"unable to close file descriptor for {file_name}")
 
 @analysis.route('/new_malware_option', methods=['POST', 'GET'])
 @login_required
@@ -1217,9 +1238,9 @@ def set_dispositions(alert_uuids, disposition, user_comment=None):
                           VALUES ( %s, %s, %s )""", ( current_user.id, uuid, user_comment))
 
         # and insert these alerts back into the workstream
-        c.execute("""
-                  INSERT INTO workload ( alert_id ) 
-                  SELECT id FROM alerts WHERE uuid IN ( {} )""".format(uuid_where_clause))
+        #c.execute("""
+                  #INSERT INTO workload ( alert_id ) 
+                  #SELECT id FROM alerts WHERE uuid IN ( {} )""".format(uuid_where_clause))
         db.commit()
 
 @analysis.route('/set_disposition', methods=['POST'])
@@ -2022,7 +2043,7 @@ def manage():
     query = query.options(joinedload('workload'))
     query = query.options(joinedload('delayed_analysis'))
     query = query.options(joinedload('lock'))
-    query = query.options(joinedload('observable_mappings'))
+    #query = query.options(joinedload('observable_mappings'))
     query = query.options(joinedload('event_mapping'))
 
     count_query = query.statement.with_only_columns([func.count(distinct(saq.database.Alert.id))]).order_by(None)
@@ -3431,16 +3452,34 @@ def index():
 
 @analysis.route('/file', methods=['GET'])
 @login_required
-def file():
+@use_db
+def file(db, c):
+    # get the list of available nodes (for all companies)
+    sql = """
+SELECT
+    nodes.id,
+    nodes.name, 
+    nodes.location,
+    company.id,
+    company.name
+FROM
+    nodes LEFT JOIN node_modes ON nodes.id = node_modes.node_id
+    JOIN company ON nodes.company_id = company.id
+WHERE
+    nodes.is_local = 0
+    AND ( nodes.any_mode OR node_modes.analysis_mode = %s )
+ORDER BY
+    company.name,
+    nodes.location
+"""
+    c.execute(sql, (ANALYSIS_MODE_CORRELATION,))
+    available_nodes = c.fetchall()
     date = datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-    target_companies = [] # of tuple(id, name)
-    with get_db_connection() as db:
-        c = db.cursor()
-        c.execute("SELECT `id`, `name` FROM company WHERE `name` != 'legacy' ORDER BY name")
-        for row in c:
-            target_companies.append(row)
-
-    return render_template('analysis/analyze_file.html', observable_types=VALID_OBSERVABLE_TYPES, date=date, target_companies=target_companies)
+    return render_template('analysis/analyze_file.html', 
+                           observable_types=VALID_OBSERVABLE_TYPES,     
+                           date=date, 
+                           available_nodes=available_nodes,
+                           timezones=pytz.common_timezones)
 
 @analysis.route('/upload_file', methods=['POST'])
 @login_required

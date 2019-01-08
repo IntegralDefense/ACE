@@ -729,18 +729,15 @@ def correlation_engine(args):
         ace_engine = None
 
         # add the capability for a graceful shutdown
-        def handle_sigterm(signum, frame):
-            logging.warning("received SIGTERM")
+        def handle_signal(signum, frame):
             ace_engine.stop()
 
-        signal.signal(signal.SIGTERM, handle_sigterm)
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
 
         try:
             ace_engine = Engine()
             ace_engine.start()
-            ace_engine.wait()
-        except KeyboardInterrupt:
-            logging.warning("caught user interrupt")
             ace_engine.wait()
         except Exception as e:
             logging.error("uncaught exception: {}".format(e))

@@ -5,6 +5,7 @@ import hashlib
 import io
 import logging
 import os.path
+import pickle
 import shutil
 import tempfile
 import uuid
@@ -17,7 +18,7 @@ from saq.constants import *
 from saq.database import acquire_lock, use_db
 from saq.test import *
 from api.cloudphish.test import CloudphishTestCase, TEST_URL
-from saq.util import storage_dir_from_uuid, parse_event_time
+from saq.util import *
 
 import pytz
 import tzlocal
@@ -367,6 +368,126 @@ class TestCase(ACEEngineTestCase):
 
         self.assertTrue(os.path.exists(root.storage_dir))
 
+    def test_legacy_submit(self):
+        
+        alert = ace_api.Alert(description='Test Alert')
+        alert.add_observable(F_IPV4, '1.2.3.4', local_time(), directives=[DIRECTIVE_NO_SCAN])
+        alert.add_tag('test')
+        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
+        with open(temp_path, 'w') as fp:
+            fp.write('test')
+
+        alert.add_attachment_link(temp_path, 'dest/test.txt')
+        uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertTrue(validate_uuid(uuid))
+
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+
+        self.assertEquals(root.description, 'Test Alert')
+        ipv4_observable = root.find_observable(lambda o: o.type == F_IPV4)
+        self.assertIsNotNone(ipv4_observable)
+        self.assertEquals(ipv4_observable.value, '1.2.3.4')
+        self.assertTrue(ipv4_observable.has_directive(DIRECTIVE_NO_SCAN))
+        
+        file_observable = root.find_observable(lambda o: o.type == F_FILE)
+        self.assertIsNotNone(file_observable)
+        self.assertEquals(file_observable.value, 'dest/test.txt')
+        with open(os.path.join(root.storage_dir, file_observable.value), 'r') as fp:
+            self.assertEquals(fp.read(), 'test')
+
+    def test_legacy_import(self):
+        
+        from ace_client_lib.client import Alert
+        from ace_api import Alert as Alert_2
+
+        # these two should be the same thing
+        self.assertTrue(Alert is Alert_2)
+
+    def test_failed_submit(self):
+
+        self.stop_api_server()
+    
+        alert = ace_api.Alert(description='Test Alert')
+        alert.add_observable(F_IPV4, '1.2.3.4', local_time(), directives=[DIRECTIVE_NO_SCAN])
+        alert.add_tag('test')
+        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
+        with open(temp_path, 'w') as fp:
+            fp.write('test')
+
+        alert.add_attachment_link(temp_path, 'dest/test.txt')
+        with self.assertRaises(Exception):
+            uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+
+        self.assertEquals(log_count('unable to submit alert'), 1)
+
+        # the .saq_alerts directory should have a single subdirectory
+        dir_list = os.listdir('.saq_alerts')
+        self.assertEquals(len(dir_list), 1)
+        
+        # load the alert
+        target_path = os.path.join('.saq_alerts', dir_list[0], 'alert')
+        with open(target_path, 'rb') as fp:
+            new_alert = pickle.load(fp)
+
+        self.assertEquals(new_alert.submit_kwargs, alert.submit_kwargs)
+
+        # try to submit it
+        self.start_api_server()
+        uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertTrue(validate_uuid(uuid))
+
+        #root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        #root.load()
+
+        #self.assertEquals(root.description, 'Test Alert')
+        #ipv4_observable = root.find_observable(lambda o: o.type == F_IPV4)
+        #self.assertIsNotNone(ipv4_observable)
+        #self.assertEquals(ipv4_observable.value, '1.2.3.4')
+        #self.assertTrue(ipv4_observable.has_directive(DIRECTIVE_NO_SCAN))
+        
+        #file_observable = root.find_observable(lambda o: o.type == F_FILE)
+        #self.assertIsNotNone(file_observable)
+        #self.assertEquals(file_observable.value, 'dest/test.txt')
+        #with open(os.path.join(root.storage_dir, file_observable.value), 'r') as fp:
+            #self.assertEquals(fp.read(), 'test')
+
+    def test_submit_failed_alerts(self):
+
+        self.stop_api_server()
+    
+        alert = ace_api.Alert(description='Test Alert')
+        alert.add_observable(F_IPV4, '1.2.3.4', local_time(), directives=[DIRECTIVE_NO_SCAN])
+        alert.add_tag('test')
+        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
+        with open(temp_path, 'w') as fp:
+            fp.write('test')
+
+        alert.add_attachment_link(temp_path, 'dest/test.txt')
+        with self.assertRaises(Exception):
+            uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+
+        self.assertEquals(log_count('unable to submit alert'), 1)
+
+        # the .saq_alerts directory should have a single subdirectory
+        dir_list = os.listdir('.saq_alerts')
+        self.assertEquals(len(dir_list), 1)
+        
+        # load the alert
+        target_path = os.path.join('.saq_alerts', dir_list[0], 'alert')
+        with open(target_path, 'rb') as fp:
+            new_alert = pickle.load(fp)
+
+        self.assertEquals(new_alert.submit_kwargs, alert.submit_kwargs)
+
+        # try to submit it using submit_failed_alerts
+        self.start_api_server()
+        ace_api.submit_failed_alerts(delete_on_success=True)
+        
+        # this directory should be cleared out
+        dir_list = os.listdir('.saq_alerts')
+        self.assertEquals(len(dir_list), 0)
+
 class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 
     def setUp(self, *args, **kwargs):
@@ -448,3 +569,4 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # and verify that
         submission_result = ace_api.cloudphish_submit(TEST_URL)
         self.assertEquals(submission_result[saq.cloudphish.KEY_ANALYSIS_RESULT], saq.cloudphish.SCAN_RESULT_CLEAR)
+

@@ -778,7 +778,7 @@ class SubprocessServer(object):
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(self.unix_socket)
             except:
-                logging.error("unable to connect to {} to close connection: {}".format(self.socket_path, e))
+                logging.error("unable to connect to {} to close connection: {}".format(self.unix_socket, e))
             finally:
                 try:
                     s.close()
@@ -810,6 +810,7 @@ class SubprocessServer(object):
             self.shutdown = True
 
         signal.signal(signal.SIGTERM, _handler)
+        signal.signal(signal.SIGINT, _handler)
 
     def initialize_socket(self):
         # start server socket for receiving connections
