@@ -74,7 +74,7 @@ sudo -E bin/reset-unittest-databases || fail "unittest database installation fai
 # set up environment
 echo -e "\\nsource $SAQ_HOME/load_environment" >> ~/.bashrc
 
-for l in ace apache amc_mda carbon_black email_scanner http_scanner gui
+for l in ace api apache amc_mda carbon_black email_scanner http_scanner gui
 do
 	if [ ! -e etc/$l\_logging.ini ]
 	then
