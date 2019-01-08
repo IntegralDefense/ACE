@@ -175,10 +175,14 @@ def submit(
 
     # no timezone yet?
     # convert to UTC and then to the correct datetime format string for ACE
-    if event_time.tzinfo is None:
-        formatted_event_time = LOCAL_TIMEZONE.localize(event_time).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
+    if isinstance(event_time, datetime.datetime):
+        if event_time.tzinfo is None:
+            formatted_event_time = LOCAL_TIMEZONE.localize(event_time).astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
+        else:
+            formatted_event_time = event_time.astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
     else:
-        formatted_event_time = event_time.astimezone(pytz.UTC).strftime(DATETIME_FORMAT)
+        # otherwise we assume the event time is already formatted
+        formatted_event_time = event_time
 
     # make sure the observables are in the correct format
     for o in observables:
@@ -399,18 +403,15 @@ class Alert(object):
             'files': [],
         }
 
-        # support the old api
         for key, value in kwargs.items():
-            if key == 'desc':
-                key = 'description'
+            if key in self.submit_kwargs:
+                self.submit_kwargs[key] = value
+            elif key == 'desc':
+                self.submit_kwargs['description'] = value
             elif key == 'alert_type':
-                key = 'type'
-
-        # remove parameters no longer supported/needed
-        if 'name' in kwargs:
-            del kwargs['name']
-
-        self.submit_kwargs.update(kwargs)
+                self.submit_kwargs['type'] = value
+            else:
+                logging.debug("ignoring parameter {}".format(key))
         
         # this gets set after a successful call to submit
         self.uuid = None
@@ -422,6 +423,13 @@ class Alert(object):
 
     def __str__(self):
         return f'Alert({self.submit_kwargs})'
+
+    @property
+    def description(self):
+        if 'description' in self.submit_kwargs:
+            return self.submit_kwargs['description']
+
+        return None
 
     def add_tag(self, value):
         self.submit_kwargs['tags'].append(value)
