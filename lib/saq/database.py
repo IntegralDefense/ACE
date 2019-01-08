@@ -1937,6 +1937,7 @@ ORDER BY
     WORKLOAD_COUNT ASC,
     nodes.last_update ASC
 """.format(','.join(['%s' for _ in target_analysis_modes]))
+
     params = [ company_id ]
     params.extend(target_analysis_modes)
     c.execute(sql, tuple(params))
