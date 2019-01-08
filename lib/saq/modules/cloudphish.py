@@ -242,10 +242,15 @@ class CloudphishAnalyzer(AnalysisModule):
     def frequency(self):
         return self.config.getint('frequency')
 
+    @property
+    def cloudphish_request_limit(self):
+        return self.config.getint('cloudphish_request_limit')
+
     def verify_environment(self):
         self.verify_config_exists('timeout')
         self.verify_config_exists('use_proxy')
         self.verify_config_exists('frequency')
+        self.verify_config_exists('cloudphish_request_limit')
 
     def get_cloudphish_server(self):
         """Returns the next cloudphish hostname[:port] to use.  This will round robin available selections."""
@@ -276,9 +281,18 @@ class CloudphishAnalyzer(AnalysisModule):
         return result
 
     def execute_analysis(self, url):
+        # we keep track of what URLs we've given to cloudphish to process
+        if self.state is None:
+            self.state = {}
+            self.state['requests'] = {}
+        
         analysis = url.get_analysis(CloudphishAnalysis)
         if analysis is None:
             try:
+                if len(self.state['requests']) >= self.cloudphish_request_limit:
+                    logging.info(f"skipping cloudphis analysis for {url.value} reached cloudphish limit for {self.root}")
+                    return False
+
                 # do basic URL sanity checks
                 parsed_url = urlparse(url.value)
             
@@ -286,7 +300,7 @@ class CloudphishAnalyzer(AnalysisModule):
                     #logging.debug("ignoring invalid FQDN {} in url {}".format(parsed_url.hostname, url.value))
                     #return False
 
-                # only analyze http, https and ftp schemes
+                # only analyze http, https and ftp schemes 
                 if parsed_url.scheme not in [ 'http', 'https', 'ftp' ]:
                     logging.debug("{} is not a supported scheme for cloudphish".format(parsed_url.scheme))
                     return False
@@ -315,9 +329,6 @@ class CloudphishAnalyzer(AnalysisModule):
 
         # once we decide on a cloudphish server to use we need to keep using the same one 
         # for the same url
-        if self.state is None:
-            self.state = {}
-
         if 'cloudphish_server' in self.state:
             cloudphish_server = self.state['cloudphish_server']
         else:
@@ -341,18 +352,6 @@ class CloudphishAnalyzer(AnalysisModule):
 
             logging.debug("got result {} for cloudphish query @ {} for {}".format(response, cloudphish_server, url.value))
 
-            #response = requests.request('POST', self.get_submit_url(), params = { 
-                   #'url': url.value, 
-                   #'c': self.root.uuid, # context
-                   #'i': self.root.company_name if self.root.company_name else saq.CONFIG['global']['company_name'],
-                   #'d': self.root.company_id if self.root.company_id else saq.CONFIG['global'].getint('company_id') }
-                #data = { 
-                    #'t': json.dumps(self.engine.get_tracking_information(self.root)), },
-                #timeout=self.timeout,
-                #proxies=saq.PROXIES if self.use_proxy else {},
-                #verify=saq.CA_CHAIN_PATH,
-                #stream=False)
-
         except Exception as e:
             logging.warning("cloudphish request failed: {}".format(e))
             analysis.result = RESULT_ERROR
@@ -363,15 +362,8 @@ class CloudphishAnalyzer(AnalysisModule):
         # if the analysis isn't ready yet then we come back later
         if response[KEY_RESULT] == RESULT_OK:
             if response[KEY_STATUS] == STATUS_ANALYZING or response[KEY_STATUS] == STATUS_NEW:
-                # deal with the possibility that cloudphish messed up
-                # XXX where did this come from?
-                #if response[KEY_ANALYSIS_RESULT] != SCAN_RESULT_ALERT:
-                    # has the clock expired?
-                    #if int(time.time()) - analysis.query_start > self.query_timeout:
-                        #logging.warning("cloudphish query for {} has timed out".format(url.value))
-                        #analysis.result = RESULT_ERROR
-                        #analysis.result_details = 'QUERY TIMED OUT'
-                        #return False
+                # keep track of the requests that resulted in work for ACE
+                self.state['requests'][url.value] = True
 
                 # otherwise we delay analysis
                 logging.info("waiting for cloudphish analysis of {} ({})".format(

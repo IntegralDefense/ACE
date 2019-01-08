@@ -97,6 +97,10 @@ class AnalysisModule(object):
         # event to signal the thread can stop
         self.threaded_execution_stop_event = None
 
+        # the priority of the analysis module
+        # lower priority scores go first
+        self.priority = self.config.getint('priority', fallback=2**32)
+
     def start_threaded_execution(self):
         if not self.is_threaded:
             return
