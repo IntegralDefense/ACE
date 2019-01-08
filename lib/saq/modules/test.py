@@ -549,3 +549,54 @@ class CloudphishDelayedTestAnalyzer(AnalysisModule):
         # cause a timeout in the cloudphish test
         time.sleep(5)
         return True
+
+class HighPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class HighPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return HighPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class LowPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class LowPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return LowPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class NoPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class NoPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return NoPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True

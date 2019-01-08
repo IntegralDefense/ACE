@@ -357,7 +357,7 @@ class TestCase(ACEEngineTestCase):
         engine.wait()
 
         # there should be 13 analysis modules loaded
-        self.assertEquals(log_count('loading module '), 13)
+        self.assertEquals(log_count('loading module '), 16)
 
     def test_locally_enabled_modules(self):
         
@@ -1981,3 +1981,97 @@ class TestCase(ACEEngineTestCase):
                 analysis_count += 1
 
         self.assertEquals(analysis_count, 2)
+
+    def test_module_priority(self):
+        
+        root = create_root_analysis()
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        t1 = root.add_observable(F_TEST, 'test')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_high_priority')
+        engine.enable_module('analysis_module_low_priority')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should see the high priority execute before the low priority
+        hp_log_entry = search_log('analyzing test(test) with HighPriorityAnalyzer')
+        self.assertEquals(len(hp_log_entry), 1)
+        hp_log_entry = hp_log_entry[0]
+
+        lp_log_entry = search_log('analyzing test(test) with LowPriorityAnalyzer')
+        self.assertEquals(len(lp_log_entry), 1)
+        lp_log_entry = lp_log_entry[0]
+        
+        self.assertLess(hp_log_entry.created, lp_log_entry.created)
+
+        # swap the priorities
+        saq.CONFIG['analysis_module_high_priority']['priority'] = '1'
+        saq.CONFIG['analysis_module_low_priority']['priority'] = '0'
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        t1 = root.add_observable(F_TEST, 'test')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_high_priority')
+        engine.enable_module('analysis_module_low_priority')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should see the high priority execute before the low priority
+        hp_log_entry = search_log('analyzing test(test) with HighPriorityAnalyzer')
+        self.assertEquals(len(hp_log_entry), 2)
+        hp_log_entry = hp_log_entry[1]
+
+        lp_log_entry = search_log('analyzing test(test) with LowPriorityAnalyzer')
+        self.assertEquals(len(lp_log_entry), 2)
+        lp_log_entry = lp_log_entry[1]
+        
+        self.assertLess(lp_log_entry.created, hp_log_entry.created)
+
+        # test a high priority analysis against an analysis without a priority
+        saq.CONFIG['analysis_module_high_priority']['priority'] = '0'
+        del saq.CONFIG['analysis_module_low_priority']['priority']
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        t1 = root.add_observable(F_TEST, 'test')
+        root.save()
+        root.schedule()
+
+        saq.CONFIG['analysis_module_high_priority']['priority'] = '0'
+        saq.CONFIG['analysis_module_low_priority']['priority'] = '1'
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_high_priority')
+        engine.enable_module('analysis_module_low_priority')
+        engine.enable_module('analysis_module_no_priority')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should see the high priority execute before the low priority
+        hp_log_entry = search_log('analyzing test(test) with HighPriorityAnalyzer')
+        self.assertEquals(len(hp_log_entry), 3)
+        hp_log_entry = hp_log_entry[2]
+
+        lp_log_entry = search_log('analyzing test(test) with LowPriorityAnalyzer')
+        self.assertEquals(len(lp_log_entry), 3)
+        lp_log_entry = lp_log_entry[2]
+
+        np_log_entry = search_log('analyzing test(test) with NoPriorityAnalyzer')
+        self.assertEquals(len(np_log_entry), 1)
+        np_log_entry = np_log_entry[0]
+        
+        self.assertLess(hp_log_entry.created, lp_log_entry.created)
+        self.assertLess(lp_log_entry.created, np_log_entry.created)

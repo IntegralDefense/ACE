@@ -22,6 +22,7 @@ import time
 import uuid
 
 from multiprocessing import Process, Queue, Semaphore, Event, Pipe, cpu_count
+from operator import attrgetter
 from queue import PriorityQueue, Empty, Full
 from subprocess import Popen, PIPE
 
@@ -2225,8 +2226,8 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 logging.debug("analysis for {} limited to {}".format(work_item, work_item.analysis_module))
                 analysis_modules = [work_item.analysis_module]
 
-            # analyze this thing with the analysis modules we've selected
-            for analysis_module in analysis_modules:
+            # analyze this thing with the analysis modules we've selected sorted by priority
+            for analysis_module in sorted(analysis_modules, key=attrgetter('priority')):
 
                 if self.cancel_analysis_flag:
                     break
