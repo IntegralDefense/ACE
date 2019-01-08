@@ -184,6 +184,13 @@ def submit():
                 logging.error("unable to save analysis")
                 abort(Response("an error occured trying to save the alert - review the logs", 400))
 
+            # if we received a submission for correlation mode then we go ahead and add it to the database
+            if root.analysis_mode == ANALYSIS_MODE_CORRELATION:
+                alert = saq.database.Alert()
+                alert.storage_dir = root.storage_dir
+                alert.load()
+                alert.sync()
+
             # add this analysis to the workload
             root.schedule()
 
