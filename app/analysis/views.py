@@ -969,7 +969,7 @@ def new_alert():
     alert.description = description
     alert.event_time = insert_date
     alert.details = {'user': current_user.username, 'comment': comment}
-    alert.storage_dir = os.path.join(temp_dir, alert.uuid)
+    alert.storage_dir = os.path.join(saq.TEMP_DIR, alert.uuid)
 
     # create alert directory structure
     dest_path = os.path.join(SAQ_HOME, alert.storage_dir)
