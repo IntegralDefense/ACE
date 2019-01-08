@@ -257,8 +257,10 @@ def _get_cached_analysis(url, db, c):
                 root.load()
                 root_details = root.details
             except Exception as e:
-                logging.error("unable to load cloudphish analysis {}: {}".format(uuid, e))
-                report_exception()
+                # this isn't really an error -- another process may be in the middle of processing this url
+                # the database contents should be correct though
+                logging.debug("unable to load cloudphish analysis {}: {}".format(uuid, e))
+                #report_exception()
 
         return CloudphishAnalysisResult(RESULT_OK,      # result
                                         root_details,   # details 
@@ -313,9 +315,12 @@ def _create_analysis(url, reprocess, details, db, c):
 
     # so first we try to insert it
     try:
-        execute_with_retry(db, c, """INSERT INTO cloudphish_analysis_results ( sha256_url, uuid, insert_date ) 
-                                     VALUES ( UNHEX(%s), %s, NOW() )""",
-                           (sha256_url, _uuid), commit=True)
+        execute_with_retry(db, c, ["""INSERT INTO cloudphish_analysis_results ( sha256_url, uuid, insert_date ) 
+                                      VALUES ( UNHEX(%s), %s, NOW() )""",
+                                   """INSERT INTO cloudphish_url_lookup ( sha256_url, url )
+                                      VALUES ( UNHEX(%s), %s )"""],
+                           [(sha256_url, _uuid),
+                            (sha256_url, url)], commit=True)
     except pymysql.err.IntegrityError as e:
         # (<class 'pymysql.err.IntegrityError'>--(1062, "Duplicate entry
         # if we get a duplicate key entry here then it means that an entry was created between when we asked

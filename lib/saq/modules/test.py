@@ -60,6 +60,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_8(test)
         elif test.value == 'test_worker_death':
             return self.execute_analysis_worker_death(test)
+        elif test.value.startswith('test_action_counter'):
+            return self.execute_analysis_test_action_counter(test)
         else:
             return False
 
@@ -97,6 +99,14 @@ class BasicTestAnalyzer(AnalysisModule):
         analysis = self.create_analysis(test)
         analysis.add_detection_point('test detection')
         self.root.whitelisted = True
+        return True
+    
+    def execute_analysis_test_action_counter(self, test):
+        if self.root.get_action_counter('test') >= 2:
+            return False
+
+        self.root.increment_action_counter('test')
+        analysis = self.create_analysis(test)
         return True
 
     def execute_analysis_worker_death(self, test):
@@ -538,4 +548,55 @@ class CloudphishDelayedTestAnalyzer(AnalysisModule):
         analysis = self.create_analysis(url)
         # cause a timeout in the cloudphish test
         time.sleep(5)
+        return True
+
+class HighPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class HighPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return HighPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class LowPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class LowPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return LowPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class NoPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class NoPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return NoPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
         return True

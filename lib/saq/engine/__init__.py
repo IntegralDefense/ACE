@@ -22,6 +22,7 @@ import time
 import uuid
 
 from multiprocessing import Process, Queue, Semaphore, Event, Pipe, cpu_count
+from operator import attrgetter
 from queue import PriorityQueue, Empty, Full
 from subprocess import Popen, PIPE
 
@@ -38,7 +39,7 @@ from saq.database import Alert, use_db, release_cached_db_connection, enable_cac
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 from saq.performance import record_metric
-from saq.util import human_readable_size, storage_dir_from_uuid
+from saq.util import *
 
 import iptools
 import psutil
@@ -266,28 +267,33 @@ class WorkerManager(object):
         while not CURRENT_ENGINE.controlled_shutdown \
                   and not CURRENT_ENGINE.shutdown:
 
-            # start any workers that need to be started
-            for worker in self.workers:
-                worker.check()
+            try:
 
-            # do we need to restart the workers?
-            if self.restart_workers_event.is_set():
-                logging.info("got command to restart workers")
-                self.restart_workers_event.clear()
+                # start any workers that need to be started
                 for worker in self.workers:
-                    worker.stop()
+                    worker.check()
 
-                # make sure we're up to date on the config
-                saq.load_configuration()
+                # do we need to restart the workers?
+                if self.restart_workers_event.is_set():
+                    logging.info("got command to restart workers")
+                    self.restart_workers_event.clear()
+                    for worker in self.workers:
+                        worker.stop()
 
-                for worker in self.workers:
-                    worker.start()
+                    # make sure we're up to date on the config
+                    saq.load_configuration()
 
-                for worker in self.workers:
-                    worker.wait_for_start()
+                    for worker in self.workers:
+                        worker.start()
 
-            # don't spin the cpu
-            time.sleep(1)
+                    for worker in self.workers:
+                        worker.wait_for_start()
+
+                # don't spin the cpu
+                time.sleep(1)
+
+            except KeyboardInterrupt:
+                break
 
         # make sure all the processes exit with you
         for worker in self.workers:
@@ -459,6 +465,7 @@ class Engine(object):
         # this gets set to true when we receive a unix signal
         self.sigterm_received = False
         self.sighup_received = False
+        self.sigint_received = False
 
         # how often do we automatically reload the workers?
         self.auto_refresh_frequency = self.config.getint('auto_refresh_frequency')
@@ -488,13 +495,14 @@ class Engine(object):
         # set to True after engine is started
         self.started = False
 
+        # the following times can be overrided for individual analysis modes
         # amount of time (in seconds) until we think analysis might be tied up
         self.maximum_cumulative_analysis_warning_time = \
-                saq.CONFIG['global'].getint('maximum_cumulative_analysis_warning_time') * 60
+                saq.CONFIG['global'].getint('maximum_cumulative_analysis_warning_time')
 
         # amount of time (in seconds until we give up entirely
         self.maximum_cumulative_analysis_fail_time = \
-                saq.CONFIG['global'].getint('maximum_cumulative_analysis_fail_time') * 60
+                saq.CONFIG['global'].getint('maximum_cumulative_analysis_fail_time')
 
         # maximum amount of time (in seconds) that an individual analysis module should take
         self.maximum_analysis_time = saq.CONFIG['global'].getint('maximum_analysis_time')
@@ -696,15 +704,33 @@ class Engine(object):
 
         execute_with_retry(db, c, sql, params, commit=True)
 
+        if not self.is_local:
+            # clear any outstanding locks left over from a previous execution
+            # we use the lock_owner columns of the locks table to determine if any locks are outstanding for this node
+            # the format of the value of the column is node-mode-pid
+            # ace-qa2.local-email-25203
+            c.execute("SELECT COUNT(*) FROM locks WHERE lock_owner LIKE CONCAT(%s, '-%%')", (saq.SAQ_NODE,))
+            result = c.fetchone()
+            if result:
+                logging.info(f"clearing {result[0]} locks from previous execution")
+                execute_with_retry(db, c, "DELETE FROM locks WHERE lock_owner LIKE CONCAT(%s, '-%%')", (saq.SAQ_NODE,), commit=True)
+
     def initialize_signal_handlers(self):
         def handle_sighup(signum, frame):
+            logging.info("received SIGHUP")
             self.sighup_received = True
 
         def handle_sigterm(signal, frame):
+            logging.info("received SIGTERM")
             self.sigterm_received = True
+
+        def handle_sigint(signal, frame):
+            logging.info("received SIGINT")
+            self.sigint_received = True
 
         signal.signal(signal.SIGTERM, handle_sigterm)
         signal.signal(signal.SIGHUP, handle_sighup)
+        signal.signal(signal.SIGINT, handle_sigint)
 
     def initialize_modules(self):
         """Loads all configured analysis modules and prepares the analysis mode mapping."""
@@ -1007,7 +1033,7 @@ class Engine(object):
                     except Exception as e:
                         logging.error("unable to send SIGTERM to {}: {}".format(self.engine_process.pid, e))
                     finally:
-                        sigterm_received = False
+                        self.sigterm_received = False
 
                 if self.sighup_received:
                     try:
@@ -1016,7 +1042,7 @@ class Engine(object):
                     except Exception as e:
                         logging.error("unable to send SIGHUP to {}: {}".format(self.engine_process.pid, e))
                     finally:
-                        sighup_received = False
+                        self.sighup_received = False
 
             except Exception as e:
                 logging.error("unable to join engine process {}".format(e))
@@ -1230,8 +1256,8 @@ class Engine(object):
 
         try:
             while True:
-                if self.sigterm_received:
-                    logging.info("recevied SIGTERM -- shutting down")
+                if self.sigterm_received or self.sigint_received:
+                    logging.info("received signal to shut down")
                     self.stop()
                     break
 
@@ -1715,6 +1741,15 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         elapsed_time = None
         error_report_path = None
         try:
+            # we keep track of the total amount of time we've spent on this entire analysis (in seconds)
+            if 'total_analysis_time_seconds' not in self.root.state:
+                self.root.state['total_analysis_time_seconds'] = 0
+
+            # and when we actually started to analyze this
+            if 'analysis_start_time' not in self.root.state:
+                self.root.state['analysis_start_time'] = local_time()
+            
+            total_analysis_time_seconds = self.root.state['total_analysis_time_seconds']
             start_time = time.time()
 
             # don't even start if we're already cancelled
@@ -1733,6 +1768,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         report_exception()
 
             elapsed_time = time.time() - start_time
+            self.root.state['total_analysis_time_seconds'] = (total_analysis_time_seconds + elapsed_time)
             logging.info("completed analysis {} in {:.2f} seconds".format(target, elapsed_time))
 
             # save all the changes we've made
@@ -1748,6 +1784,12 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 self.root.save()
             except Exception as e:
                 logging.error("unable to save failed analysis {}: {}".format(self.root, e))
+
+            # clear any outstanding delayed analysis requests
+            try:
+                saq.database.clear_delayed_analysis_requests(self.root)
+            except Exception as e:
+                logging.error(f"unable to clear delayed analysis requests for {self.root}: {e}")
 
         finally:
             # make sure we remove the logging handler that we added
@@ -1966,9 +2008,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             for observable in self.root.all_observables:
                 work_stack.append(observable)
 
-            #work_stack.extend([WorkTarget(analysis=a) for a in self.root.all_analysis])
-            #work_stack.extend([WorkTarget(observable=o) for o in self.root.all_observables])
-
         def _workflow_callback(target, event, *args, **kwargs):
             if isinstance(target, Analysis) or isinstance(target, Observable):
                 logging.debug("WORKFLOW: detected change to {} with event {}".format(target, event))
@@ -2020,8 +2059,10 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         # this gives modules the ability to delay their analysis until everything else is done
         final_analysis_mode = False
 
-        # when we started analyzing this
+        # when we started analyzing (this time)
         start_time = datetime.datetime.now()
+        total_analysis_time_seconds = self.root.state['total_analysis_time_seconds']
+
         # the last time we logged a warning about analysis taking too long
         last_analyze_time_warning = None
     
@@ -2031,21 +2072,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             # the current WorkTarget
             work_item = None
 
-            # how long have we been analyzing?
-            elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
-            if elapsed_time >= self.maximum_cumulative_analysis_warning_time:
-                if ( last_analyze_time_warning is None or 
-                     (datetime.datetime.now() - last_analyze_time_warning).total_seconds() > 60 ):
-                    last_analyze_time_warning = datetime.datetime.now()
-                    logging.warning("ACE has been analyzing {} for {} seconds".format(self.root, elapsed_time))
-
-            if elapsed_time >= self.maximum_cumulative_analysis_fail_time:
-                raise AnalysisTimeoutError("ACE took too long to analyze {}".format(self.root))
-
             # are we done?
             logging.debug("work stack size {} active dependencies {}".format(len(work_stack), len(self.root.active_dependencies)))
             if len(work_stack) == 0 and len(self.root.active_dependencies) == 0:
-            #if len(work_stack) == 0:
                 # are we in final analysis mode?
                 if final_analysis_mode:
                     # then we are truly done
@@ -2174,7 +2203,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
             # select the analysis modules we want to use
             # first we limit ourselves to whatever analysis modules are available for the current analysis mode
-            #logging.debug("analyzing {} in mode {}".format(self.root, self.root.analysis_mode))
             # if we didn't specify an analysis mode then we just use the default
             analysis_modules = self.get_analysis_modules_by_mode(self.root.analysis_mode)
                 
@@ -2198,11 +2226,45 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 logging.debug("analysis for {} limited to {}".format(work_item, work_item.analysis_module))
                 analysis_modules = [work_item.analysis_module]
 
-            # analyze this thing with the analysis modules we've selected
-            for analysis_module in analysis_modules:
+            # analyze this thing with the analysis modules we've selected sorted by priority
+            for analysis_module in sorted(analysis_modules, key=attrgetter('priority')):
 
                 if self.cancel_analysis_flag:
                     break
+
+                # how long have we been analyzing?
+                elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
+                current_total_time = elapsed_time + total_analysis_time_seconds
+                
+                # get the limits for the current analysis mode
+                # first we default to the global settings
+                maximum_cumulative_analysis_warning_time = self.maximum_cumulative_analysis_warning_time
+                maximum_cumulative_analysis_fail_time = self.maximum_cumulative_analysis_fail_time
+                maximum_analysis_time = self.maximum_analysis_time
+
+                # we look to see if the current analysis mode has it's own settings
+                section_name = 'analysis_mode_{}'.format(self.root.analysis_mode)
+                if section_name in saq.CONFIG:
+                    key = 'maximum_cumulative_analysis_warning_time'
+                    if key in saq.CONFIG[section_name]:
+                        maximum_cumulative_analysis_warning_time = saq.CONFIG[section_name].getint(key)
+
+                    key = 'maximum_cumulative_analysis_fail_time'
+                    if key in saq.CONFIG[section_name]:
+                        maximum_cumulative_analysis_fail_time = saq.CONFIG[section_name].getint(key)
+
+                    key = 'maximum_analysis_time'
+                    if key in saq.CONFIG[section_name]:
+                        maximum_analysis_time = saq.CONFIG[section_name].getint(key)
+
+                if current_total_time >= maximum_cumulative_analysis_warning_time:
+                    if ( last_analyze_time_warning is None or 
+                         (datetime.datetime.now() - last_analyze_time_warning).total_seconds() > 10 ):
+                        last_analyze_time_warning = datetime.datetime.now()
+                        logging.warning(f"ACE has been analyzing {self.root} for {current_total_time} seconds")
+
+                if current_total_time >= maximum_cumulative_analysis_fail_time:
+                    raise AnalysisTimeoutError(f"ACE took too long to analyze {self.root}")
 
                 # if this module does not generate analysis then we skip this part
                 # (it may execute pre and post analysis though)
@@ -2238,17 +2300,18 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
                         def _monitor(monitor_event, monitor_module, monitor_target):
                             monitor_start_time = datetime.datetime.now()
-                            monitor_event.wait(timeout=self.maximum_analysis_time)
-                            monitor_elapsed_time = (datetime.datetime.now() - monitor_start_time).total_seconds()
-                            if monitor_elapsed_time > self.maximum_analysis_time:
-                                while True:
-                                    logging.warning("excessive time - analysis module {} has been analyzing {} for {} seconds".format(
-                                                     monitor_module, monitor_target, monitor_elapsed_time))
+                            monitor_event.wait(timeout=maximum_analysis_time)
+                            while True:
+                                monitor_elapsed_time = (datetime.datetime.now() - monitor_start_time).total_seconds()
+                                if monitor_elapsed_time > maximum_analysis_time:
+                                    logging.warning(f"excessive time - analysis module {monitor_module} " \
+                                                    f"has been analyzing {monitor_target} " \
+                                                    f"for {monitor_elapsed_time} seconds")
 
-                                    # repeat warning every 10 seconds until we bail
-                                    # TODO possibly kill the analysis somehow
-                                    if monitor_event.wait(timeout=10):
-                                        break
+                                # repeat warning every 10 seconds until we bail
+                                # TODO possibly kill the analysis somehow
+                                if monitor_event.wait(timeout=5):
+                                    break
 
                         # start a side thread that watches how long a single analysis request can take
                         if not self.single_threaded_mode:
