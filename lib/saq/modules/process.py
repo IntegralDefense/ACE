@@ -305,6 +305,13 @@ class ProcessGUIDAnalyzer(AnalysisModule):
         return F_PROCESS_GUID
 
     def execute_analysis(self, observable):
+        try:
+            return self.execute_analysis_wrapper(observable)
+        except ApiError as e:
+            logging.error(f"carbon black API error when analyzing {observable}: {e}")
+            return False
+
+    def execute_analysis_wrapper(self, observable):
 
         # we only analyze observables that came with the alert and ones with detection points
         #if not observable in self.root.observables and not observable.is_suspect:
