@@ -392,4 +392,4 @@ class FAQueueAlertAnalyzer(AnalysisModule):
         total_crits_indicators_updated = update_status(crits_id, crits_analysis_value)
         logging.info("updated {} crits indicators".format(total_crits_indicators_updated))
 
-        return True
+        return False

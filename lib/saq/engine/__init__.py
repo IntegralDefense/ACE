@@ -55,6 +55,7 @@ CURRENT_ENGINE = None
 
 # state flag that indicates pre-analysis has been executed on a RootAnalysis
 STATE_PRE_ANALYSIS_EXECUTED = 'pre_analysis_executed'
+STATE_POST_ANALYSIS_EXECUTED = 'post_analysis_executed'
 
 class AnalysisTimeoutError(RuntimeError):
     pass
@@ -1724,10 +1725,14 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         for analysis_module in self.analysis_modules:
             analysis_module.root = self.root
 
-        # track module pre-analysis execution
+        # track module pre and post analysis execution
         if STATE_PRE_ANALYSIS_EXECUTED not in self.root.state:
             self.root.state[STATE_PRE_ANALYSIS_EXECUTED] = {} # key = analysis_module.config_section
                                                               # value = boolean result of function call
+
+        if STATE_POST_ANALYSIS_EXECUTED not in self.root.state:
+            self.root.state[STATE_POST_ANALYSIS_EXECUTED] = {} # key = analysis_module.config_section
+                                                               # value = boolean result of function call
 
         # when something goes wrong it helps to have the logs specific to this analysis
         logging_handler = logging.FileHandler(os.path.join(self.root.storage_dir, 'saq.log'))
@@ -1757,18 +1762,28 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 self.execute_module_analysis()
 
             # do we NOT have any outstanding delayed analysis requests?
-            if not self.root.delayed:
+            if not self.root.delayed: # XXX <- is this working !?
+                logging.debug("executing post analysis routines for {}".format(self.root))
+                state = self.root.state[STATE_POST_ANALYSIS_EXECUTED]
                 for analysis_module in self.get_analysis_modules_by_mode(initial_mode):
+                    if analysis_module.config_section not in state:
+                        state[analysis_module.config_section] = None
+
+                    # has this post analysis already executed and completed?
+                    if state[analysis_module.config_section]:
+                        continue
+
                     try:
                         # give the modules an opportunity to do something after all analysis has completed
                         # NOTE that this does NOT allow adding any new observables or analysis
-                        analysis_module.execute_post_analysis()
+                        state[analysis_module.config_section] = analysis_module.execute_post_analysis()
                     except Exception as e:
-                        logging.error("post analysis module {} failed".format(analysis_module))
+                        logging.error("post analysis module {} failed: {}".format(analysis_module, e))
+                        state[analysis_module.config_section] = True
                         report_exception()
 
             elapsed_time = time.time() - start_time
-            self.root.state['total_analysis_time_seconds'] = (total_analysis_time_seconds + elapsed_time)
+             
             logging.info("completed analysis {} in {:.2f} seconds".format(target, elapsed_time))
 
             # save all the changes we've made
