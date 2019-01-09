@@ -514,7 +514,7 @@ class CloudphishRequestAnalyzer(AnalysisModule):
 
         # make sure we've got what we need first
         if not self._sanity_check():
-            return 
+            return True
 
         url = None
         for o in self.root.observables:
@@ -524,7 +524,7 @@ class CloudphishRequestAnalyzer(AnalysisModule):
 
         if not url:
             logging.error("cannot find original url for {}".format(self.root))
-            return
+            return False
 
         # get the crawlphish analysis for this url
         from saq.modules.url import CrawlphishAnalysisV2
@@ -536,7 +536,7 @@ class CloudphishRequestAnalyzer(AnalysisModule):
             # something went wrong with the analysis of the url
             logging.warning("missing crawlphish analysis for {}".format(url.value))
             update_cloudphish_result(sha256_url, status=STATUS_ANALYZED, result=SCAN_RESULT_ERROR)
-            return
+            return False
 
         # update the database with the results
         if crawlphish_analysis.filtered_status:
@@ -608,3 +608,5 @@ class CloudphishRequestAnalyzer(AnalysisModule):
 
         if sha256_content:
             update_content_metadata(sha256_content, saq.SAQ_NODE, file_name)
+
+        return True

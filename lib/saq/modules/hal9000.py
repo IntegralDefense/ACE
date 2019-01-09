@@ -174,7 +174,7 @@ class HAL9000Analyzer(AnalysisModule):
             # if the disposition didn't change then we don't care
             if previous_disposition == new_disposition:
                 logging.debug("same disposition {} == {} - not updating".format(new_disposition, self.root.disposition))
-                return
+                return False
 
             with get_db_connection('hal9000') as db:
                 c = db.cursor()
@@ -249,14 +249,14 @@ class HAL9000Analyzer(AnalysisModule):
             self.state['previous_disposition'] = self.root.disposition
 
             logging.debug("updated {} observables in hal9000".format(update_count))
-            return
+            return False
 
         # if we're not in the database AND we're not going to be an Alert...
         elif not self.root.has_detections:
             # sanity check
             if not hasattr(self, 'hal9000_observables'):
                 logging.error("missing hal9000_observables property")
-                return
+                return False
 
             with get_db_connection('hal9000') as db:
                 c = db.cursor()
@@ -271,8 +271,8 @@ class HAL9000Analyzer(AnalysisModule):
 
                 db.commit()
 
-            return
+            return False
 
         # otherwise we don't care
         logging.debug("{} is not an alert or does not have a disposition".format(self)) 
-        return
+        return False

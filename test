@@ -52,7 +52,6 @@ then
         saq.collectors.test_http \
         saq.collectors.test_email \
         saq.collectors.test_smtp \
-        saq.collectors.test_cb_binaries \
         saq.test_observables \
         saq.test_crawlphish \
         saq.test_crypto \
@@ -71,6 +70,8 @@ then
         api.engine.test \
         api.cloudphish.test \
         test_ace_api \
+
+        #saq.collectors.test_cb_binaries \
 
         # TODO reintroduce these next two somehow
         #saq.engine.test_cloudphish \
