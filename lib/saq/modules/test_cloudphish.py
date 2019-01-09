@@ -11,7 +11,7 @@ from subprocess import Popen, PIPE
 
 import saq, saq.test
 from api.cloudphish.test import CloudphishTestCase
-from saq.analysis import RootAnalysis
+from saq.analysis import RootAnalysis, Analysis
 from saq.cloudphish import *
 from saq.constants import *
 from saq.database import get_db_connection, use_db
@@ -386,3 +386,44 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         # however we should have an alert generated
         c.execute("SELECT COUNT(*) FROM alerts")
         self.assertEquals(c.fetchone()[0], 1)
+
+    def test_request_limit(self):
+        
+        # only allow one request
+        saq.CONFIG['analysis_module_cloudphish']['cloudphish_request_limit'] = '1'
+        
+        # don't clear the analysis
+        saq.CONFIG['analysis_mode_analysis']['cleanup'] = 'no'
+        
+
+        self.start_api_server()
+        
+        root = create_root_analysis(analysis_mode=ANALYSIS_MODE_ANALYSIS)
+        root.initialize_storage()
+        url_1 = root.add_observable(F_URL, TEST_URL)
+        url_2 = root.add_observable(F_URL, 'http://invalid_domain.local/some/path')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={},
+                            local_analysis_modes=[ANALYSIS_MODE_ANALYSIS, ANALYSIS_MODE_CLOUDPHISH])
+
+        engine.enable_module('analysis_module_cloudphish', ANALYSIS_MODE_ANALYSIS)
+        engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
+
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        url_1 = root.get_observable(url_1.id)
+        url_2 = root.get_observable(url_2.id)
+
+        from saq.modules.cloudphish import CloudphishAnalysis
+        analysis_1 = url_1.get_analysis(CloudphishAnalysis)
+        analysis_2 = url_2.get_analysis(CloudphishAnalysis)
+
+        self.assertTrue((isinstance(analysis_1, Analysis) and analysis_2 is False) or (analysis_1 is False and isinstance(analysis_2, Analysis)))
+        self.assertEquals(log_count('reached cloudphish limit'), 1)

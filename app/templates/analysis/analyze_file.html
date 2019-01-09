@@ -6,11 +6,15 @@
     <h4>Alert Info</h4>
     <table style="width:100%;table-layout:auto;">
       <tr><th style="padding-right:10px;">Insert Date</th><td style="width:100%;"><input type="text" class="form-control" id="new_alert_insert_date" name="new_alert_insert_date" value="{{date}}"/></td></tr>
+      <tr><th style="padding-right:10px;">Timezone</th><td style="width:100%;"><select class="form-control" name="timezone">
+      {% for timezone in timezones %}
+        <option value="{{timezone}}" {% if timezone == 'UTC' %}SELECTED{% endif %}>{{timezone}}</option>
+      {% endfor %}
+      </select></td></tr>
       <tr><th style="padding-right:10px;">Description</th><td style="width:100%;"><input type="text" class="form-control" name="new_alert_description" value="Manual Correlation"/></td></tr>
-      <tr><th style="padding-right:10px;">Target Company</th><td style="width:100%;"><select class="form-control" name="target_company">
-        <option value="-1" selected>default</option>
-      {% for company_id, company_name in target_companies %}
-        <option value="{{company_id}}">{{company_name}}</option>
+      <tr><th style="padding-right:10px;">Target ACE Node</th><td style="width:100%;"><select class="form-control" name="target_node_id">
+      {% for node_id, node_name, node_location, company_id, company_name in available_nodes %}
+        <option value="{{node_id}}">{{node_location}} ({{company_name}})</option>
       {% endfor %}
       </select></td></tr>
     </table>
