@@ -15,7 +15,7 @@ from .. import db, json_result, json_request
 import saq
 from saq import LOCAL_TIMEZONE
 from saq.analysis import RootAnalysis, _JSONEncoder
-from saq.database import get_db_connection
+from saq.database import get_db_connection, ALERT
 from saq.error import report_exception
 from saq.constants import *
 from saq.util import parse_event_time, storage_dir_from_uuid, validate_uuid
@@ -186,10 +186,7 @@ def submit():
 
             # if we received a submission for correlation mode then we go ahead and add it to the database
             if root.analysis_mode == ANALYSIS_MODE_CORRELATION:
-                alert = saq.database.Alert()
-                alert.storage_dir = root.storage_dir
-                alert.load()
-                alert.sync()
+                ALERT(root)
 
             # add this analysis to the workload
             root.schedule()

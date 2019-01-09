@@ -1942,3 +1942,10 @@ ORDER BY
     params.extend(target_analysis_modes)
     c.execute(sql, tuple(params))
     return c.fetchall()
+
+def ALERT(root: RootAnalysis) -> Alert:
+    """Converts the given RootAnalysis object to an Alert by inserting it into the database. Returns the (detached) Alert object."""
+    alert = Alert(storage_dir=root.storage_dir)
+    alert.load()
+    alert.sync()
+    return alert
