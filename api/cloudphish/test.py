@@ -149,7 +149,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # force this analysis to become an alert
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
+        #engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -322,7 +322,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # force this analysis to become an alert
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
+        #engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()
