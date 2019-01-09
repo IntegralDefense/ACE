@@ -308,11 +308,54 @@ class PostAnalysisTest(AnalysisModule):
     def valid_observable_types(self):
         return F_TEST
 
-    def execute_analysis(self, *args, **kwargs):
+    def execute_analysis(self, test):
+        if test.value == 'test_delayed':
+            return self.execute_analysis_delayed(test)
+        else:
+            return self.execute_analysis_default(test)
+
+    def execute_analysis_delayed(self, test):
+        analysis = test.get_analysis(PostAnalysisTestResult)
+        if analysis is None:
+            analysis = self.create_analysis(test)
+            self.delay_analysis(test, analysis, seconds=3)
+
+        return True
+
+    def execute_analysis_default(self, *args, **kwargs):
         return False
 
     def execute_post_analysis(self):
         logging.info("execute_post_analysis called")
+        return False
+
+class PostAnalysisMultiModeTestResult(TestAnalysis):
+    def initialize_details(self):
+        pass
+
+class PostAnalysisMultiModeTest(AnalysisModule):
+    @property
+    def generated_analysis_type(self):
+        return PostAnalysisMultiModeTestResult
+
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    def execute_analysis(self, test):
+        return False
+
+    def execute_post_analysis(self):
+        logging.info("execute_post_analysis called")
+        if self.root.analysis_mode == 'test_groups':
+            self.root.analysis_mode = 'test_single'
+            return False
+
+        if self.root.analysis_mode == 'test_single':
+            self.root.analysis_mode = 'test_empty'
+            return True
+
+        return True
 
 class DelayedAnalysisTimeoutTestResult(TestAnalysis):
     def initialize_details(self):

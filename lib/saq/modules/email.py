@@ -324,21 +324,23 @@ class BroSMTPStreamAnalyzer(AnalysisModule):
 
     def execute_post_analysis(self):
         if self.root.alert_type != ANALYSIS_TYPE_BRO_SMTP:
-            return 
+            return True
 
         # find the email we extracted from the stmp stream
         email_observable = self.root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_EMAIL))
         if email_observable is None:
-            return
+            return True
 
         email_analysis = email_observable.get_analysis(EmailAnalysis)
         if email_analysis is None or isinstance(email_analysis, bool):
-            return
+            return True
 
         if email_analysis.decoded_subject is not None:
             self.root.description += ' Subject: {}'.format(email_analysis.decoded_subject)
         elif email_analysis.subject is not None:
             self.root.decoded_subject += ' Subject: {}'.format(email_analysis.subject)
+
+        return True
 
 class EncryptedArchiveAnalysis(Analysis):
     def initialize_details(self):
@@ -1832,7 +1834,7 @@ class EmailArchiveAction(AnalysisModule):
 
     def verify_environment(self):
         self.verify_config_exists('archive_dir')
-        self.verify_path_exists(self.config['archive_dir'])
+        self.create_required_directory(self.config['archive_dir'])
 
     @property
     def valid_observable_types(self):
@@ -2376,6 +2378,8 @@ class EmailLoggingAnalyzer(AnalysisModule):
                 continue
 
             self.process_email(f)
+
+        return True
 
     def process_email(self, email_file):
 
