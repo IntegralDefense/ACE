@@ -973,7 +973,7 @@ def new_alert(db, c):
     comment = ''
 
     tool = "gui"
-    tool_instance = socket.gethostname()
+    tool_instance = saq.CONFIG['global']['instance_name']
     alert_type = "manual"
     description = request.form.get('new_alert_description', 'Manual Alert')
     event_time = event_time
@@ -2644,6 +2644,10 @@ def generate_intel_tables():
 @login_required
 def metrics():
 
+    if not saq.CONFIG['gui'].getboolean('display_metrics'):
+        # redirect to index
+        return redirect(url_for('analysis.index'))
+
     # object representations of the filters to define types and value verification routines
     # this later gets augmented with the dynamic filters
     filters = {
@@ -2843,6 +2847,11 @@ def metrics():
 @analysis.route('/events', methods=['GET', 'POST'])
 @login_required
 def events():
+
+    if not saq.CONFIG['gui'].getboolean('display_events'):
+        # redirect to index
+        return redirect(url_for('analysis.index'))
+
     filters = {
         'filter_event_open': SearchFilter('filter_event_open', FILTER_TYPE_CHECKBOX, True),
         'event_daterange': SearchFilter('event_daterange', FILTER_TYPE_TEXT, ''),
@@ -3495,7 +3504,7 @@ def upload_file():
     if not alert_uuid:
         alert = Alert()
         alert.tool = 'Manual File Upload - '+file_name
-        alert.tool_instance = socket.gethostname()
+        alert.tool_instance = saq.CONFIG['global']['instance_name']
         alert.alert_type = 'manual_upload'
         alert.description = 'Manual File upload {0}'.format(file_name)
         alert.event_time = datetime.datetime.now()

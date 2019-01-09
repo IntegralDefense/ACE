@@ -9,6 +9,9 @@ class Config(object):
 
     INSTANCE_NAME = saq.CONFIG.get('global', 'instance_name')
 
+    GUI_DISPLAY_METRICS = saq.CONFIG['gui'].getboolean('display_metrics')
+    GUI_DISPLAY_EVENTS = saq.CONFIG['gui'].getboolean('display_events')
+
     # also see lib/saq/database.py:initialize_database
     SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://{username}:{password}@{hostname}/{database}?charset=utf8'.format(
         username=saq.CONFIG.get('database_ace', 'username'),
