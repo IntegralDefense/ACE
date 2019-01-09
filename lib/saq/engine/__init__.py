@@ -35,7 +35,7 @@ from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
                          add_delayed_analysis_request, clear_expired_locks, clear_expired_local_nodes, \
-                         initialize_node
+                         initialize_node, ALERT
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 from saq.performance import record_metric
@@ -1641,6 +1641,10 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         if self.root.analysis_mode != current_analysis_mode:
             logging.info("analysis mode for {} changed from {} to {}".format(
                           self.root, current_analysis_mode, self.root.analysis_mode))
+
+            # did this analysis become an alert?
+            if self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
+                ALERT(self.root)
 
             try:
                 add_workload(self.root, exclusive_uuid=self.exclusive_uuid)
