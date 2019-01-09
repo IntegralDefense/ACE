@@ -632,8 +632,10 @@ class AnalysisModule(object):
         pass
 
     def execute_post_analysis(self):
-        """This is called once after all analysis work has been performed and no outstanding work is left."""
-        pass
+        """This is called after all analysis work has been performed and no outstanding work is left.
+           If the function returns False then the function can possibly get called again if the analysis mode changes.
+           If the function returns True then the function will not get called again."""
+        return True
 
     def execute_threaded(self):
         """This is called on a thread if the module is configured as threaded."""
