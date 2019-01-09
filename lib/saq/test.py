@@ -582,12 +582,15 @@ class ACEBasicTestCase(TestCase):
     @use_db
     def reset_correlation(self, db, c):
         data_subdir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE)
-        if os.path.isdir(data_subdir):
-            try:
-                shutil.rmtree(data_subdir)
-                os.mkdir(data_subdir)
-            except Exception as e:
-                logging.error("unable to clear {}: {}".format(data_subdir, e))
+        failed_alert_subdir = os.path.join(saq.SAQ_HOME, '.saq_alerts')
+
+        for subdir in [ data_subdir, failed_alert_subdir ]:
+            if os.path.isdir(subdir):
+                try:
+                    shutil.rmtree(subdir)
+                    os.mkdir(subdir)
+                except Exception as e:
+                    logging.error(f"unable to clear {subdir}: {e}")
 
         c.execute("DELETE FROM alerts")
         c.execute("DELETE FROM workload")

@@ -5,11 +5,21 @@ from .forms import LoginForm
 from ..models import User
 from .. import db
 import logging
+import saq
 
 @auth.route('/login', methods=['GET', 'POST'])
 def login():
     form = LoginForm()
-    if form.validate_on_submit():
+    # default: log in the "default" user if authentication is off
+    if not saq.CONFIG['gui'].getboolean('authentication'):
+        form.username.data = saq.CONFIG['gui']['default_user']
+        user = db.session.query(User).filter_by(username=form.username.data).one()
+        login_user(user, form.remember_me.data)
+        response = redirect(request.args.get('next') or url_for('main.index'))
+        # remember the username so we can autofill the field
+        response.set_cookie('username', user.username)
+        return response
+    elif form.validate_on_submit():
         user = db.session.query(User).filter_by(username=form.username.data).one()
         if user is not None and user.verify_password(form.password.data):
             login_user(user, form.remember_me.data)

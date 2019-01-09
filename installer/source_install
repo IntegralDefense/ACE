@@ -10,6 +10,12 @@ sudo update-locale LANG=en_US.utf8
 # uncomment the following for apache2 to use the system locale 
 sudo sed -i '/^#. \/etc\/default\/locale/s/^#//' /etc/apache2/envvars 
 
+# If ACE is cloned from Github the dir becomes /opt/ACE but we want it lower case at /opt/ace
+if [ ! -d /opt/ace ]; then
+	echo renaming /opt/ACE to /opt/ace
+	mv /opt/ACE /opt/ace
+fi
+
 # make sure we've already set the SAQ_HOME environment variable
 if [ -z "${SAQ_HOME}" ]
 then
@@ -68,7 +74,7 @@ sudo -E bin/reset-unittest-databases || fail "unittest database installation fai
 # set up environment
 echo -e "\\nsource $SAQ_HOME/load_environment" >> ~/.bashrc
 
-for l in ace apache amc_mda amc_client brotex carbon_black email_scanner http_scanner gui
+for l in ace api apache amc_mda carbon_black email_scanner http_scanner gui
 do
 	if [ ! -e etc/$l\_logging.ini ]
 	then
@@ -83,7 +89,7 @@ if [ ! -e etc/startup ]; then cp -a etc/startup.example etc/startup || fail "una
 if [ ! -e etc/remote_assignments.yar ]; then cp etc/remote_assignments.example.yar etc/remote_assignments.yar; fi
 if [ ! -e etc/blacklist.yar ]; then cp etc/blacklist.example.yar etc/blacklist.yar; fi
 if [ ! -e etc/amc_mda.ini ]; then cp etc/amc_mda.example.ini etc/amc_mda.ini; fi
-if [ ! -e etc/amc_client.ini ]; then cp etc/amc_client.example.ini etc/amc_client.ini; fi
+#if [ ! -e etc/amc_client.ini ]; then cp etc/amc_client.example.ini etc/amc_client.ini; fi
 
 if grep ACE_DB_USER_PASSWORD etc/saq.ini > /dev/null 2>&1
 then

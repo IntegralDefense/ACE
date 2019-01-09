@@ -127,7 +127,7 @@ class EmailCollector(Collector):
                         details = {},
                         observables = [ { 'type': F_FILE, 
                                         'value': 'email.rfc822', 
-                                        'directives': [ DIRECTIVE_NO_SCAN, DIRECTIVE_ORIGINAL_EMAIL ], } ],
+                                        'directives': [ DIRECTIVE_NO_SCAN, DIRECTIVE_ORIGINAL_EMAIL, DIRECTIVE_ARCHIVE ], } ],
                         tags = [],
                         files=[(email_path, 'email.rfc822')],
                         group_assignments=group_assignments))
