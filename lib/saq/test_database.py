@@ -22,7 +22,7 @@ from saq.test import *
 
 import pymysql.err
 
-class DatabaseTestCase(ACEBasicTestCase):
+class TestCase(ACEBasicTestCase):
 
     @use_db
     def test_execute_with_retry(self, db, c):
@@ -385,3 +385,19 @@ class DatabaseTestCase(ACEBasicTestCase):
 
         disable_cached_db_connections()
         self.assertEquals(len(saq.database._global_db_cache), 0)
+
+    def test_insert_alert(self):
+        #root_analysis = create_root_analysis()
+        #root_analysis.save()
+        #alert = Alert(storage_dir=root_analysis.storage_dir)
+        #alert.load()
+        #alert.sync()
+
+        # make an alert with a description that is too long
+        root_analysis = create_root_analysis(desc = 'A' * 1025)
+        root_analysis.save()
+        alert = Alert(storage_dir=root_analysis.storage_dir)
+        alert.load()
+        alert.sync()
+
+        self.assertEquals(len(alert.description), 1024)
