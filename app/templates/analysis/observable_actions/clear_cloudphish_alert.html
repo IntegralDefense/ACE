@@ -12,7 +12,7 @@
             'success': function(data, textStatus, jqXHR) {
                 alert("SUCCESS: " + data['row_count'] + " records updated");
             },
-            'url': "{{ config['analysis_module_cloudphish']['cloudphish.1'] }}/clear_alert"
+            'url': "{{ ace_config['analysis_module_cloudphish']['cloudphish.1'] }}/clear_alert"
         });
     });
 </script>
