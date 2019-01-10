@@ -19,4 +19,4 @@ def index():
         else:
             return redirect(url_for('analysis.index'))
 
-    return render_template('index.html', form=form)
+    return render_template('index.html', form=form)#, ace_config=saq.CONFIG)
