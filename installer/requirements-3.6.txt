@@ -12,8 +12,8 @@ SQLAlchemy==1.2.7
 WTForms
 beautifulsoup4
 businesstime
-cbapi
-cbinterface==1.1.6
+cbapi==1.3.6
+cbinterface==1.2.1
 dnspython
 html2text
 iptools
