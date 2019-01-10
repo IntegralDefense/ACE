@@ -1,6 +1,6 @@
 -- MySQL dump 10.13  Distrib 5.7.24, for Linux (x86_64)
 --
--- Host: localhost    Database: ace-unittest
+-- Host: localhost    Database: ace-qa
 -- ------------------------------------------------------
 -- Server version	5.7.24-0ubuntu0.18.04.1
 
@@ -58,7 +58,7 @@ CREATE TABLE `alerts` (
   KEY `idx_disposition` (`disposition`),
   KEY `idx_alert_type` (`alert_type`),
   CONSTRAINT `fk_company` FOREIGN KEY (`company_id`) REFERENCES `company` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=159 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=1466 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -123,9 +123,11 @@ DROP TABLE IF EXISTS `cloudphish_url_lookup`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `cloudphish_url_lookup` (
   `sha256_url` binary(32) NOT NULL COMMENT 'The SHA256 value of the URL.',
+  `last_lookup` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'The last time this URL was looked up. This is updated every time a query is made to cloudphish for this url. URLs that are not looked up after a period of time are cleared out.',
   `url` text NOT NULL COMMENT 'The value of the URL.',
   PRIMARY KEY (`sha256_url`),
   KEY `idx_url` (`url`(767)),
+  KEY `idx_last_lookup` (`last_lookup`),
   CONSTRAINT `fk_sha256_url` FOREIGN KEY (`sha256_url`) REFERENCES `cloudphish_analysis_results` (`sha256_url`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -162,7 +164,7 @@ CREATE TABLE `company` (
   `name` varchar(128) NOT NULL,
   PRIMARY KEY (`name`),
   KEY `id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -204,7 +206,7 @@ CREATE TABLE `delayed_analysis` (
   KEY `idx_node` (`node_id`),
   KEY `idx_node_delayed_until` (`node_id`,`delayed_until`),
   CONSTRAINT `fk_delayed_analysis_node_id` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=260 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=181644 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -262,7 +264,7 @@ CREATE TABLE `incoming_workload` (
   PRIMARY KEY (`id`),
   KEY `fk_type_id_idx` (`type_id`),
   CONSTRAINT `fk_type_id` FOREIGN KEY (`type_id`) REFERENCES `incoming_workload_type` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2578 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -277,7 +279,7 @@ CREATE TABLE `incoming_workload_type` (
   `name` varchar(512) NOT NULL COMMENT 'The name of the work (http, email, etc…)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `name_UNIQUE` (`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -373,14 +375,14 @@ CREATE TABLE `nodes` (
   `location` varchar(1024) NOT NULL COMMENT 'Also called the API_PREFIX, this is the hostname:port portion of the URL for the api for the node.',
   `company_id` int(11) NOT NULL COMMENT 'The company this node belongs to (see [global] company_id in config file)',
   `last_update` datetime NOT NULL COMMENT 'The last time this node updated it’s status.',
-  `is_primary` tinyint(4) NOT NULL DEFAULT '0' COMMENT '0 - node is not the primary node\\\\n1 - node is the primary node\\\\n\\\\nThe primary node is responsible for doing some basic database cleanup procedures.',
+  `is_primary` tinyint(4) NOT NULL DEFAULT '0' COMMENT '0 - node is not the primary node\\n1 - node is the primary node\\n\\nThe primary node is responsible for doing some basic database cleanup procedures.',
   `any_mode` tinyint(4) NOT NULL DEFAULT '0' COMMENT 'If this is true then the node_modes table is ignored for this mode as it supports any analysis mode.',
   `is_local` tinyint(4) NOT NULL DEFAULT '0' COMMENT 'If a node is “local” then it is not considered for use by other non-“local” nodes. Typically this is used by the correlate command line utility to run the ace engine by itself.',
   PRIMARY KEY (`id`),
   UNIQUE KEY `node_UNIQUE` (`name`),
   KEY `fk_company_id_idx` (`company_id`),
   CONSTRAINT `fk_company_id` FOREIGN KEY (`company_id`) REFERENCES `company` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=183 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=199 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -413,7 +415,7 @@ CREATE TABLE `observables` (
   `value` varbinary(1024) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `index_type_value` (`type`,`value`(255))
-) ENGINE=InnoDB AUTO_INCREMENT=47 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=43720 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -518,7 +520,7 @@ CREATE TABLE `tags` (
   `name` varchar(256) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=312 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -536,7 +538,7 @@ CREATE TABLE `users` (
   `omniscience` int(11) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`,`email`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -570,7 +572,7 @@ CREATE TABLE `work_distribution_groups` (
   `name` varchar(128) NOT NULL COMMENT 'The name of the group (Production, QA, etc…)',
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_name_unique` (`name`)
-) ENGINE=InnoDB AUTO_INCREMENT=2512 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=1058 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -598,7 +600,7 @@ CREATE TABLE `workload` (
   KEY `idx_analysis_mode` (`analysis_mode`),
   CONSTRAINT `fk_workload_company_id` FOREIGN KEY (`company_id`) REFERENCES `company` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_workload_node_id` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=4662 DEFAULT CHARSET=latin1 COMMENT='the list of alerts that need to be analyzed';
+) ENGINE=InnoDB AUTO_INCREMENT=528959 DEFAULT CHARSET=latin1 COMMENT='the list of alerts that need to be analyzed';
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -610,4 +612,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-01-09 15:27:20
+-- Dump completed on 2019-01-10 17:31:51
