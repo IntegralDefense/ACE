@@ -146,7 +146,7 @@ UUID_REGEX = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
 def storage_dir_from_uuid(uuid):
     """Returns the path (relative to SAQ_HOME) to the storage directory for the given uuid."""
     validate_uuid(uuid)
-    return os.path.join(saq.DATA_DIR, saq.SAQ_NODE, uuid[0:3], uuid)
+    return os.path.relpath(os.path.join(saq.DATA_DIR, saq.SAQ_NODE, uuid[0:3], uuid), start=saq.SAQ_HOME)
 
 def validate_uuid(uuid):
     if not UUID_REGEX.match(uuid):

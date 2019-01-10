@@ -17,6 +17,7 @@ import smtplib
 import socket
 import sqlite3
 import sys
+import tempfile
 import time
 import trace
 import traceback
@@ -2572,6 +2573,58 @@ def cleanup_email_archive(args):
 cleanup_email_archive_parser = subparsers.add_parser('cleanup-email-archive',
     help="Removes emails from the archive that have expired.")
 cleanup_email_archive_parser.set_defaults(func=cleanup_email_archive)
+
+def cleanup_cloudphish(args):
+    from saq.database import get_db_connection
+
+    delete_counter = 0
+    url_counter = 0
+
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        c.execute("""
+SELECT 
+    LOWER(HEX(cloudphish_analysis_results.sha256_url)),
+    LOWER(HEX(cloudphish_analysis_results.sha256_content))
+FROM 
+    cloudphish_url_lookup JOIN cloudphish_analysis_results ON cloudphish_url_lookup.sha256_url = cloudphish_analysis_results.sha256_url 
+WHERE
+    cloudphish_analysis_results.result IN ( 'UNKNOWN', 'ERROR', 'CLEAR', 'PASS' )
+    AND status = 'ANALYZED'
+    AND cloudphish_url_lookup.last_lookup < NOW() - INTERVAL %s DAY
+""", ( args.cleanup_days, ))
+
+        results = c.fetchall()
+        db.commit()
+
+        logging.info(f"clearing {len(results)} cloudphish urls")
+        for sha256_url, sha256_content in results:
+            if sha256_content:
+                target_file = os.path.join(saq.DATA_DIR, saq.CONFIG['cloudphish']['cache_dir'], 
+                                           sha256_content[:2], sha256_content)
+
+                if os.path.exists(target_file):
+                    try:
+                        os.remove(target_file)
+                        delete_counter += 1
+                    except Exception as e:
+                        logging.error(f"unable to delete {target_file}: {e}")
+
+        for sha256_url, sha256_content in results:
+            c.execute("DELETE FROM cloudphish_analysis_results WHERE sha256_url = UNHEX(%s)", (sha256_url,))
+            url_counter += 1
+            if url_counter % 100 == 0:
+                db.commit()
+
+    logging.info(f"removed {url_counter} urls and deleted {delete_counter} files")
+    sys.exit(0)
+
+cleanup_cloudphish_parser = subparsers.add_parser('cleanup-cloudphish',
+    help="Cleans out old urls and content cached by cloudphish requests.")
+cleanup_cloudphish_parser.add_argument('--cleanup-days', type=int, default=7,
+    help="Select URLs that have not been requested in X days (defaults to 7 days.)")
+cleanup_cloudphish_parser.set_defaults(func=cleanup_cloudphish)
 
 def display_alert(args):
     from saq.analysis import RootAnalysis

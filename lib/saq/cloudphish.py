@@ -262,6 +262,12 @@ def _get_cached_analysis(url, db, c):
                 logging.debug("unable to load cloudphish analysis {}: {}".format(uuid, e))
                 #report_exception()
 
+        # keep track of the most popular URLs
+        # old URLs get cleaned out
+        c.execute("UPDATE cloudphish_url_lookup SET last_lookup = NOW() WHERE sha256_url = UNHEX(%s)",
+                 (sha256,))
+        db.commit()
+
         return CloudphishAnalysisResult(RESULT_OK,      # result
                                         root_details,   # details 
                                         status=status,
