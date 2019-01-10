@@ -3439,7 +3439,7 @@ def index():
                            alert_tags=alert_tags,
                            observable=observable,
                            analysis=analysis,
-                           config=saq.CONFIG,
+                           ace_config=saq.CONFIG,
                            User=User,
                            db=db,
                            current_time=datetime.datetime.now(),

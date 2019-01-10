@@ -11,6 +11,7 @@ class Config(object):
 
     GUI_DISPLAY_METRICS = saq.CONFIG['gui'].getboolean('display_metrics')
     GUI_DISPLAY_EVENTS = saq.CONFIG['gui'].getboolean('display_events')
+    AUTHENTICATION_ON = saq.CONFIG['gui'].getboolean('authentication')
 
     # also see lib/saq/database.py:initialize_database
     SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://{username}:{password}@{hostname}/{database}?charset=utf8'.format(
