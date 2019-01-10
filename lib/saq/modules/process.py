@@ -279,6 +279,8 @@ class ProcessGUIDAnalysis(Analysis):
         return "analysis/process_guid.html"
 
     def generate_summary(self):
+        if 'process_name' not in self.details:
+            return "CarbonBlack Process Analysis: ERROR occured, details missing."
         process_name = self.details['process_name']
         hostname = self.details['hostname']
         username = self.details['username']
