@@ -2,63 +2,81 @@
 cd /opt/ace || exit 1
 source load_environment
 
-# clear out old alerts
-# we have special support for this in the saq command
-if egrep '^correlation-engine$' etc/startup > /dev/null 2>&1
+DATA_DIR="$SAQ_HOME/$(ace config -v global.data_dir)"
+if [ -z "$DATA_DIR" ]
 then
-    ./ace cleanup-alerts >> logs/cleanup_$(date '+%Y%m%d').log 2>&1
+    echo "cannot determine data directory"
+    exit 1
 fi
 
+if [ ! -d "$DATA_DIR" ]
+then
+    echo "invalid data directory $DATA_DIR"
+    exit 1
+fi
+
+# make sure the logs directory exists in the data directory
+# since we redirect our cleanup logging into it
+LOG_DIR="$DATA_DIR/logs"
+if [ ! -d "$LOG_DIR" ]
+then
+    mkdir "$LOG_DIR" || { echo "cannot mkdir $LOG_DIR"; exit 1; }
+fi
+
+# clear out old alerts
+# we have special support for this in the saq command
+./ace cleanup-alerts >> "$LOG_DIR/cleanup_$(date '+%Y%m%d').log" 2>&1
+
 # clear out old cloudphish data
-./bin/cleanup_cloudphish >> logs/cleanup_cloudphish_$(date '+%Y%m%d').log 2>&1
+./ace cleanup-cloudphish >> "$LOG_DIR/cleanup_cloudphish_$(date '+%Y%m%d').log" 2>&1
 
 # clear out old logs
-find -L logs -name 'cleanup_*.log' -mtime +3 -delete
-find -L logs -mindepth 1 -maxdepth 1 -name '*.log' -mtime +3 -delete
+find -L "$LOG_DIR" -name 'cleanup_*.log' -mtime +3 -delete
+find -L "$LOG_DIR" -mindepth 1 -maxdepth 1 -name '*.log' -mtime +3 -delete
 
 # clear out old stats directories older than 7 days
-find -L stats/modules -maxdepth 2 -mindepth 2 -type d -mtime +7 -exec rm -rf '{}' \;
+find -L "$DATA_DIR/stats/modules" -maxdepth 2 -mindepth 2 -type d -mtime +7 -exec rm -rf '{}' \;
 
 # delete error reports older than 3 days
-find -L error_reports -maxdepth 1 -type f -mtime +3 -delete
-find -L error_reports -maxdepth 1 -mtime +3 -type d -exec rm -rf '{}' \;
+ERROR_REPORT_DIR="$DATA_DIR/$(ace config -v global.error_reporting_dir)"
+find -L "$ERROR_REPORT_DIR" -maxdepth 1 -type f -mtime +7 -delete
+find -L "$ERROR_REPORT_DIR" -maxdepth 1 -mtime +7 -type d -exec rm -rf '{}' \;
 
 # delete scan_failures older than 1 days
-find -L scan_failures -maxdepth 1 -mindepth 1 -type f -mtime +1 -delete
+SCAN_FAILURES_DIR="$DATA_DIR/$(ace config -v yara.scan_failure_dir)"
+find -L "$SCAN_FAILURES_DIR" -maxdepth 1 -mindepth 1 -type f -mtime +1 -delete
 
-# delete OLE files older than 30 days
-if [ -e ole ]
+# delete archived office files older than 30 days
+OFFICE_ARCHIVE_DIR="$DATA_DIR/$(ace config -v analysis_module_office_file_archiver.office_archive_dir)"
+if [ -d "$OFFICE_ARCHIVE_DIR" ]
 then
-    find -L ole -mindepth 2 -maxdepth 2 -type f -mtime +30 -delete
+    find -L "$OFFICE_ARCHIVE_DIR" -mindepth 2 -maxdepth 2 -type f -mtime +30 -delete
 fi
 
 # delete carbon black binaries older than 30 days
-if [ -e storage ]
+CB_BINARY_ARCHIVE_DIR="$DATA_DIR/storage"
+if [ -d "$CB_BINARY_ARCHIVE_DIR" ]
 then
-    find -L storage -maxdepth 2 -mindepth 2 -type f -mtime +15 -delete
+    find -L "$CB_BINARY_ARCHIVE_DIR" -maxdepth 2 -mindepth 2 -type f -mtime +15 -delete
 fi
 
 # delete backups older than 30 days
-if [ -e backups ]
+if [ -d "$DATA_DIR/backups" ]
 then
-    find -L backups -type f -name '*.sql.gz' -mtime +30 -delete
+    find -L "$DATA_DIR/backups" -type f -name '*.sql.gz' -mtime +30 -delete
 fi
 
-# keep cloudphish cache files under control
-if [ -e cloudphish_cache ]
+SPLUNK_LOG_DIR="$DATA_DIR/$(ace config -v splunk_logging.splunk_log_dir)"
+if [ -e "$SPLUNK_LOG_DIR" ]
 then
-    find -L cloudphish_cache -type f -mtime +3 -delete
+    find -L "$SPLUNK_LOG_DIR" -type f -name '*.log' -mtime +3 -delete
 fi
 
-if [ -e splunk_logs ]
+ELK_LOG_DIR="$DATA_DIR/$(ace config -v elk_logging.elk_log_dir)"
+if [ -d "$ELK_LOG_DIR" ]
 then
-    find splunk_logs -type f -name '*.log' -mtime +3 -delete
-fi
-
-if [ -d $(ace config -v elk_logging.elk_log_dir) ]
-then
-    find $(ace config -v elk_logging.elk_log_dir) -type f -name '*.json' -mtime +3 -delete
+    find -L "$ELK_LOG_DIR" -type f -name '*.json' -mtime +3 -delete
 fi
 
 # clean up the unix sockets for the process server that are no longer being used by any process
-find var -maxdepth 1 -name '*.socket' | while read s; do if ! ( lsof -U | fgrep "$s" > /dev/null ); then rm "$s"; fi; done
+find -L "$DATA_DIR/var" -maxdepth 1 -name '*.socket' | while read s; do if ! ( lsof -U | fgrep "$s" > /dev/null ); then rm "$s"; fi; done
