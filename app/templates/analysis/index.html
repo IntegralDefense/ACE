@@ -9,17 +9,17 @@
 <div class="col-md-7">
     <form class="form-horizontal" role="form" method="POST" action={{url_for('analysis.set_disposition')}}>
         <input type="hidden" name="alert_uuid" value="{{alert.uuid}}"></input>
-        <button type="submit" name="disposition" value="FALSE_POSITIVE" class="btn btn-success btn-sm"><span class="glyphicon glyphicon-ok-sign"></span> FP</button>
-        <button type="submit" name="disposition" value="IGNORE" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-ok-sign"></span> Ignore</button>
-        <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#disposition_modal"><span class="glyphicon glyphicon-thumbs-up"></span> Disposition</button>
+	<button type="submit" name="disposition" value="FALSE_POSITIVE" class="btn btn-success btn-sm" {%if not ace_config['gui'].getboolean('dispositioning') %}tabindex="-1" disabled{% endif %}><span class="glyphicon glyphicon-ok-sign"></span> FP</button>
+        <button type="submit" name="disposition" value="IGNORE" class="btn btn-default btn-sm" {%if not ace_config['gui'].getboolean('dispositioning') %}tabindex="-1" disabled{% endif %}><span class="glyphicon glyphicon-ok-sign"></span> Ignore</button>
+        <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#disposition_modal" {%if not ace_config['gui'].getboolean('dispositioning') %}tabindex="-1" disabled{% endif %}><span class="glyphicon glyphicon-thumbs-up"></span> Disposition</button>
         <button id="add_comment_button_alert" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#comment_modal" uuid="{{alert.uuid}}"><span class="glyphicon glyphicon-comment"></span> Add Comment</button>
-        <button id="btn-take-ownership" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-lock"></span> Take Ownership</button>
-        <button id="btn-assign-ownership-dialog" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#assign_ownership_modal"><span class="glyphicon glyphicon-user"></span> Assign Ownership</button>
-        <button id="btn-add-observable" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#add_observable_modal" {% if alert.is_locked() %}disabled{% endif %}><span class="glyphicon glyphicon-plus-sign"></span> Add Observable</button>
+        <button id="btn-take-ownership" type="button" class="btn btn-default btn-sm" {%if not ace_config['gui'].getboolean('ownership') %}tabindex="-1" disabled{% endif %}><span class="glyphicon glyphicon-lock"></span> Take Ownership</button>
+        <button id="btn-assign-ownership-dialog" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#assign_ownership_modal" {%if not ace_config['gui'].getboolean('ownership') %}tabindex="-1" disabled{% endif %}><span class="glyphicon glyphicon-user"></span> Assign Ownership</button>
+        <button id="btn-add-observable" type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#add_observable_modal" {% if alert.is_locked() or not ace_config['gui'].getboolean('add_observable') %}tabindex="-1" disabled{% endif %}><span class="glyphicon glyphicon-plus-sign"></span> Add Observable</button>
         <button type="button" name="btn-show-add-tags" class="btn btn-default btn-sm" data-toggle="modal" data-target="#tag_modal"><span class="glyphicon glyphicon-tags"></span> Add Tag(s)</button>
-        <button id="btn-analyze_alert" type="button" class="btn btn-default btn-sm" {% if alert.is_locked() %}disabled{% endif %}><span class="glyphicon glyphicon-lock"></span> Analyze Alert</button>
-        <button id="btn-remediate-alerts" type="button" class="btn btn-default btn-sm"><span class="glyphicon glyphicon-envelope"></span> Email Remediation</button>
-        <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#event_modal"><span class="glyphicon glyphicon-plus-sign"></span> Add To Event</button>
+        <button id="btn-analyze_alert" type="button" class="btn btn-default btn-sm" {% if alert.is_locked() or not ace_config['gui'].getboolean('analyze_alert') %}disabled{% endif %}><span class="glyphicon glyphicon-lock"></span> Analyze Alert</button>
+        <button id="btn-remediate-alerts" type="button" class="btn btn-default btn-sm" {%if not ace_config['gui'].getboolean('email_remediation') %}tabindex="-1" disabled{% endif %} ><span class="glyphicon glyphicon-envelope"></span> Email Remediation</button>
+        <button type="button" class="btn btn-default btn-sm" data-toggle="modal" data-target="#event_modal" {%if not ace_config['gui'].getboolean('event_management') %}tabindex="-1" disabled{% endif %}><span class="glyphicon glyphicon-plus-sign"></span> Add To Event</button>
     </form>
 </div>
 <div class="col-md-5">
