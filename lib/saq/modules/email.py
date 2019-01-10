@@ -1833,6 +1833,9 @@ class EmailArchiveAction(AnalysisModule):
         self.server_id = None
 
     def verify_environment(self):
+        if saq.ENCRYPTION_PASSWORD is None:
+            raise RuntimeError("email archiving is enabled but you have not set the encryption password")
+
         self.verify_config_exists('archive_dir')
         self.create_required_directory(self.config['archive_dir'])
 

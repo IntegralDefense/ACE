@@ -178,68 +178,6 @@ class IPv4TagAnalysis(TagAnalysis):
 class UserTagAnalysis(TagAnalysis):
     pass
 
-class EmailNotificationAnalysis(TagAnalysis):
-    pass
-
-class EmailNotification(AnalysisModule):
-    """Alerts with specific tags will cause emails to be generated."""
-    @property
-    def generated_analysis_type(self):
-        return EmailNotificationAnalysis
-
-    @property
-    def valid_analysis_target_type(self):
-        return None
-
-    @property
-    def valid_observable_types(self):
-        return None
-
-    def execute_analysis(self, alert):
-        if not isinstance(alert, Alert):
-            return
-
-        for option in saq.CONFIG.options(self.config_section):
-            if option.startswith('tag_distro_'):
-                tag_list, email_list = saq.CONFIG[self.config_section][option].split(':')
-                tags = tag_list.split(',')
-                emails = email_list.split(',')
-
-                # does this alert have these tags?
-                expected_tags = tags[:]
-                for tag in self.root.tags:
-                    try:
-                        expected_tags.remove(tag.name)
-                    except:
-                        pass
-
-                if len(expected_tags) == 0:
-
-                    # have we already sent out an email for this tag combination?
-                    email_submission_marker = os.path.join(alert.storage_dir, 'email_submission_{0}'.format(option))
-                    if os.path.exists(email_submission_marker):
-                        continue
-
-                    try:
-                        # send out the email
-                        logging.info("sending email notification for {0}".format(alert))
-                        email_message = "From: {0}\r\nTo: {1}\r\nSubject: {2}\r\n\r\n{3}".format(
-                            saq.CONFIG[self.config_section]['smtp_mail_from'],
-                            email_list,
-                            "{0}: {1}".format(saq.CONFIG[self.config_section]['smtp_subject_prefix'], alert.description),
-                            alert.to_email_message)
-                
-                        server = smtplib.SMTP(saq.CONFIG[self.config_section]['smtp_server'])
-                        server.sendmail(saq.CONFIG[self.config_section]['smtp_mail_from'], emails, email_message)
-                        server.quit()
-
-                        # we create this file as a marker to indicate we've already sent an alert for this 
-                        with open(email_submission_marker, 'w'):
-                            pass
-
-                    except Exception as e:
-                        logging.error("unable to send email for {0}: {1}".format(alert, str(e)))
-
 class CorrelatedTagDefinition(object):
     def __init__(self, text, tags):
         self.text = text
