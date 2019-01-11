@@ -30,6 +30,8 @@ __all__ = [
     'search_log_regex',
     'search_log_condition',
     'TestEngine',
+    'UNITTEST_USER_NAME',
+    'UNITTEST_USER_ID',
 ]
 
 import atexit
@@ -56,6 +58,8 @@ from saq.util import storage_dir_from_uuid
 from splunklib import SplunkQueryObject
 
 test_dir = None
+UNITTEST_USER_NAME = 'unittest'
+UNITTEST_USER_ID = None
 
 # decorators
 #
@@ -512,6 +516,7 @@ class ACEBasicTestCase(TestCase):
     def reset(self):
         """Resets everything back to the default state."""
         self.reset_config()
+        self.reset_hal9000()
         self.reset_brocess()
         self.reset_cloudphish()
         self.reset_correlation()
@@ -552,6 +557,11 @@ class ACEBasicTestCase(TestCase):
         """Resets saq.CONFIG."""
         saq.load_configuration()
 
+    @use_db(name='hal9000')
+    def reset_hal9000(self, db, c):
+        c.execute("DELETE FROM observables")
+        db.commit()
+
     @use_db(name='brocess')
     def reset_brocess(self, db, c):
         # clear the brocess db
@@ -581,6 +591,8 @@ class ACEBasicTestCase(TestCase):
 
     @use_db
     def reset_correlation(self, db, c):
+        global UNITTEST_USER_ID
+
         data_subdir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE)
         failed_alert_subdir = os.path.join(saq.SAQ_HOME, '.saq_alerts')
 
@@ -604,6 +616,19 @@ class ACEBasicTestCase(TestCase):
         c.execute("UPDATE nodes SET is_primary = 0")
         c.execute("DELETE FROM locks")
         c.execute("DELETE FROM delayed_analysis")
+        c.execute("DELETE FROM users")
+
+        from app.models import User
+        u = User()
+        u.username = 'unittest'
+        u.email = 'unittest@localhost'
+        u.password = 'unittest'
+        c.execute("""
+            INSERT INTO users ( username, email, password_hash ) VALUES ( %s, %s, %s )""", 
+            (u.username, u.email, u.password_hash))
+
+        UNITTEST_USER_ID = c.lastrowid
+        logging.debug(f"got user id {UNITTEST_USER_ID} for unittest user")
         db.commit()
 
     def reset_email_archive(self):
@@ -782,4 +807,6 @@ class ACEModuleTestCase(ACEEngineTestCase):
     pass
 
 class TestEngine(Engine):
-    pass
+    def set_cleanup(self, mode, value):
+        saq.CONFIG[f'analysis_mode_{mode}']['cleanup'] = 'yes' if value else 'no'
+        logging.debug(f"set cleanup to {value} for analysis mode {mode}")
