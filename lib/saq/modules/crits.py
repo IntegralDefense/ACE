@@ -266,6 +266,8 @@ class CritsAnalysis(Analysis):
     def generate_summary(self):
         if self.details is None:
             return None
+        elif not saq.CONFIG['crits']['mongodb_uri']:
+            return "CRITS instance not available."
 
         if 'campaign' not in self.details or \
            'source' not in self.details or \
@@ -282,7 +284,10 @@ class CritsAnalysis(Analysis):
 
         if 'source' in self.details:
             sources = ','.join([x['name'] for x in self.details['source']])
-        
+       
+        if saq.CONFIG['gui'].getboolean('hide_intel'):
+            return 'CRITS Analysis - [HIDDEN] [HIDDEN] [{0}] [HIDDEN]'.format(self.details['type'])
+
         return 'CRITS Analysis - [{0}] [{1}] [{2}] [{3}]'.format(
             campaigns, sources, self.details['type'], self.details['value'])
 
@@ -300,6 +305,10 @@ class CritsAnalyzer(AnalysisModule):
         analysis = self.create_analysis(indicator)
 
         # download the crits indicator JSOn directly from the crits mongo database
+        mongodb_uri = saq.CONFIG['crits']['mongodb_uri']
+        if not mongodb_uri:
+            logging.warn("A Mongo DB URI is not configured for Crits Analysis.")
+            return False
         client = MongoClient(saq.CONFIG['crits']['mongodb_uri'])
         db = client['crits']
         collection = db['indicators']

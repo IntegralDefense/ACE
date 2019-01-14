@@ -1,4 +1,8 @@
 {% extends "analysis/default_observable.html" %}
 {% block observable_display %}
-<a href="{{ace_config.get('crits', 'url')}}/indicators/details/{{_observable.value}}/" target="_blank">{{_observable.type}} : {{_observable.value}}</a>
+{% if ace_config['gui'].getboolean('hide_intel') %}
+    <a>Hidden from public view.</a>
+{% else %}
+    <a href="{{ace_config.get('crits', 'url')}}/indicators/details/{{_observable.value}}/" target="_blank">{{_observable.type}} : {{_observable.value}}</a>
+{% endif %}
 {% endblock %}
