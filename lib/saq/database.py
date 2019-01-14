@@ -95,6 +95,8 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
                 results.append(sql_or_func(db, cursor, *params))
             else:
                 for (_sql, _params) in zip(sql_or_func, params):
+                    if saq.CONFIG['global'].getboolean('log_sql'):
+                        logging.debug(f"executing with retry (attempt #{count}) sql {_sql} with paramters {_params}")
                     cursor.execute(_sql, _params)
                     results.append(cursor.rowcount)
 
