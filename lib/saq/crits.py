@@ -107,8 +107,7 @@ def update_status(crits_id, status):
     assert status in [ 'Informational', 'Analyzed' ]
 
     # API support for changing the status message was not implemented at the time I wrote this
-
-    # download the crits indicator JSOn directly from the crits mongo database
+    # download the crits indicator JSON directly from the crits mongo database
     client = MongoClient(saq.CONFIG['crits']['mongodb_uri'])
     db = client['crits']
     collection = db['indicators']

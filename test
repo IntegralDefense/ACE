@@ -67,6 +67,7 @@ then
         saq.modules.test_email \
         saq.modules.test_http \
         saq.modules.test_hal9000 \
+        saq.modules.test_crits \
         api.analysis.test \
         api.engine.test \
         api.cloudphish.test \
