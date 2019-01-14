@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
 
-mysqldump saq-production --comments --no-data --no-create-db --user root -p
+cd $SAQ_HOME || exit 1
+db_auth="--user root -p"
+if [ -e etc/mysql_defaults.root ]
+then
+    db_auth="--defaults-file=etc/mysql_defaults.root"
+fi
 
+mysqldump $db_auth --comments --no-data --no-create-db ace | sed -e 's/\s*AUTO_INCREMENT=[0-9]*\s*//g' > sql/ace_schema.sql
+
+# create the v5.5 schema that has the 767 char size limit on indexes
+sed -e '/UNIQUE KEY `storage_dir_UNIQUE` (`storage_dir`)/ s/),$/(767)),/' \
+    -e '/UNIQUE KEY `node_UNIQUE` (`name`)/ s/),$/(767)),/' \
+    -e '/KEY `idx_location` (`location`)/ s/),$/(767)),/' sql/ace_schema.sql > sql/ace_schema.v5.5.sql
