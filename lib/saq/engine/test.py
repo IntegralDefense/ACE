@@ -2050,7 +2050,7 @@ class TestCase(ACEEngineTestCase):
         root.save()
         root.schedule()
 
-        saq.CONFIG['analysis_module_high_priority']['priority'] = '0'
+        saq.CONFIG['analysis_module_high_priority']['priority'] = '-1'
         saq.CONFIG['analysis_module_low_priority']['priority'] = '1'
         
         engine = TestEngine(pool_size_limit=1)

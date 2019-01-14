@@ -1237,10 +1237,25 @@ def set_dispositions(alert_uuids, disposition, user_comment=None):
                           INSERT INTO comments ( user_id, uuid, comment ) 
                           VALUES ( %s, %s, %s )""", ( current_user.id, uuid, user_comment))
 
-        # and insert these alerts back into the workstream
-        #c.execute("""
-                  #INSERT INTO workload ( alert_id ) 
-                  #SELECT id FROM alerts WHERE uuid IN ( {} )""".format(uuid_where_clause))
+        # now we need to insert each of these alert back into the workload
+        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
+        sql = f"""
+INSERT INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
+SELECT 
+    alerts.uuid, 
+    nodes.id,
+    %s, 
+    NOW(),
+    alerts.company_id, 
+    NULL, 
+    alerts.storage_dir 
+FROM 
+    alerts JOIN nodes ON alerts.location = nodes.name
+WHERE 
+    uuid IN ( {uuid_placeholders} )"""
+        params = [ ANALYSIS_MODE_CORRELATION ]
+        params.extend(alert_uuids)
+        c.execute(sql, tuple(params))
         db.commit()
 
 @analysis.route('/set_disposition', methods=['POST'])

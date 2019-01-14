@@ -1769,7 +1769,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             if not self.root.delayed: # XXX <- is this working !?
                 logging.debug("executing post analysis routines for {}".format(self.root))
                 state = self.root.state[STATE_POST_ANALYSIS_EXECUTED]
-                for analysis_module in self.get_analysis_modules_by_mode(initial_mode):
+                for analysis_module in sorted(self.get_analysis_modules_by_mode(initial_mode), key=attrgetter('priority')):
                     if analysis_module.config_section not in state:
                         state[analysis_module.config_section] = None
 
@@ -1780,6 +1780,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                     try:
                         # give the modules an opportunity to do something after all analysis has completed
                         # NOTE that this does NOT allow adding any new observables or analysis
+                        logging.debug(f"executing post analysis for module {analysis_module.config_section} on {self.root}")
                         state[analysis_module.config_section] = analysis_module.execute_post_analysis()
                     except Exception as e:
                         logging.error("post analysis module {} failed: {}".format(analysis_module, e))
@@ -1922,7 +1923,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 target_analysis_mode = self.default_analysis_mode
 
             state = self.root.state[STATE_PRE_ANALYSIS_EXECUTED]
-            for analysis_module in self.analysis_mode_mapping[target_analysis_mode]:
+            for analysis_module in sorted(self.analysis_mode_mapping[target_analysis_mode], key=attrgetter('priority')):
                 if analysis_module.config_section not in state:
                     try:
                         state[analysis_module.config_section] = bool(analysis_module.execute_pre_analysis())
