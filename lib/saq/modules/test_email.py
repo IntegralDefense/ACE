@@ -892,7 +892,7 @@ class TestCase(ACEModuleTestCase):
     def test_whitelisting_000_mail_from(self):
 
         import saq
-        whitelist_path = os.path.join('var', 'tmp', 'brotex.whitelist')
+        whitelist_path = os.path.join(saq.TEMP_DIR, 'brotex.whitelist')
         saq.CONFIG['analysis_module_email_analyzer']['whitelist_path'] = whitelist_path
 
         if os.path.exists(whitelist_path):
