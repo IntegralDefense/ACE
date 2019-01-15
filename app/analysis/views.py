@@ -2237,6 +2237,7 @@ def manage():
     return render_template(
         'analysis/manage.html',
         alerts=alerts,
+        ace_config=saq.CONFIG,
         checked=checked,
         comments=comments,
         alert_tags=alert_tags,

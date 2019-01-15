@@ -1,4 +1,8 @@
 <pre>{% autoescape off %}
-{{analysis.details | pprint}}
+{% if ace_config['gui'].getboolean('hide_intel') %}
+    Hidden from public view.
+{% else %}
+    {{analysis.details | pprint}}
+{% endif %}
 {% endautoescape %}
 </pre>
