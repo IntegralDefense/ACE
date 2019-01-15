@@ -1240,7 +1240,7 @@ def set_dispositions(alert_uuids, disposition, user_comment=None):
         # now we need to insert each of these alert back into the workload
         uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
         sql = f"""
-INSERT INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
+INSERT IGNORE INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
 SELECT 
     alerts.uuid, 
     nodes.id,
