@@ -91,7 +91,7 @@ class TestCase(ACEEngineTestCase):
                       observables=None,
                       tags=None):
 
-        temp_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'submit_test.dat')
+        temp_path = os.path.join(saq.SAQ_HOME, saq.TEMP_DIR, 'submit_test.dat')
         temp_data = os.urandom(1024)
 
         with open(temp_path, 'wb') as fp:
@@ -272,7 +272,7 @@ class TestCase(ACEEngineTestCase):
 
         self.assertIsNotNone(file_uuid)
 
-        output_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'get_file_test.dat')
+        output_path = os.path.join(saq.SAQ_HOME, saq.TEMP_DIR, 'get_file_test.dat')
         self.assertTrue(ace_api.get_analysis_file(uuid, file_uuid, output_file=output_path))
         with open(output_path, 'rb') as fp:
             self.assertEquals(fp.read(), b'Hello, world!')
@@ -315,7 +315,7 @@ class TestCase(ACEEngineTestCase):
         root.details = { 'hello': 'world' }
         root.save()
 
-        temp_dir = tempfile.mkdtemp(dir=saq.CONFIG['global']['tmp_dir'])
+        temp_dir = tempfile.mkdtemp(dir=saq.TEMP_DIR)
         try:
             result = ace_api.download(root.uuid, temp_dir)
             self.assertTrue(os.path.join(temp_dir, 'data.json'))
@@ -326,7 +326,7 @@ class TestCase(ACEEngineTestCase):
             shutil.rmtree(temp_dir)
 
     def test_upload(self):
-        root = create_root_analysis(uuid=str(uuid.uuid4()), storage_dir=os.path.join(saq.CONFIG['global']['tmp_dir'], 'unittest'))
+        root = create_root_analysis(uuid=str(uuid.uuid4()), storage_dir=os.path.join(saq.TEMP_DIR, 'unittest'))
         root.initialize_storage()
         root.details = { 'hello': 'world' }
         root.save()
