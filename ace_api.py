@@ -151,6 +151,72 @@ def get_valid_observables(*args, **kwargs):
 def ping(*args, **kwargs):
     return _execute_api_call('common/ping', *args, **kwargs).json()
 
+def parse_submit(args):
+    if args.event_time:
+        # make sure the time is formatted correctly
+        datetime.datetime.strptime(args.event_time, DATETIME_FORMAT)
+
+    # parse the details JSON
+    if args.details:
+        if args.details.startswith('@'):
+            with open(args.details, 'r') as fp:
+                args.details = fp.read()
+
+    # parse the observables
+    observables = []
+    if args.observables:
+        for o in args.observables:
+            o = o.split(':')
+            _type = o[0]
+            _value = o[1]
+            _time = _tags = _directives = _limited_analysis = None
+
+            if len(o) > 2:
+                if o[2].strip():
+                    datetime.datetime.strptime(o[2].strip(), DATETIME_FORMAT)
+                    _time = o[2].strip()
+
+            if len(o) > 3:
+                if o[3].strip():
+                    _tags = [_.strip() for _ in o[3].split(',')]
+
+            if len(o) > 4:
+                if o[4].strip():
+                    _directives = [_.strip() for _ in o[4].split(',')]
+
+            if len(o) > 5:
+                if o[5].strip():
+                    _limited_analysis = [_.strip() for _ in o[5].split(',')]
+
+            o = { 'type': _type, 'value': _value }
+            if _time:
+                o['time'] = _time
+            if _tags:
+                o['tags'] = _tags
+            if _directives:
+                o['directives'] = _directives
+            if _limited_analysis:
+                o['limited_analysis'] = _limited_analysis
+
+            observables.append(o)
+
+    args.observables = observables
+
+    files = []
+    if args.files:
+        for f in args.files:
+            if '-->' in f:
+                source_file, dest_file = f.split('-->')
+            else:
+                source_file = f
+                dest_file = os.path.basename(f)
+
+            files.append((dest_file, open(source_file, 'rb')))
+
+    args.files = files
+
+    return args
+
 @api_command
 def submit(
     description, 
@@ -202,6 +268,10 @@ def submit(
     for t in tags:
         assert isinstance(t, str), "tag {} is not a string".format(t)
 
+    # if details is a string interpret it as JSON
+    if isinstance(details, str):
+        details = json.loads(details)
+
     # make sure each file is a tuple of (something, str)
     _error_message = "file parameter {} invalid: each element of the file parameter must be a tuple of " \
                      "(file_name, file_descriptor)"
@@ -228,7 +298,6 @@ def submit(
             'tags': tags, 
         }),
     }, files=files_params, method=METHOD_POST, *args, **kwargs).json()
-
 
 @api_command
 def get_analysis(uuid, *args, **kwargs):
@@ -584,7 +653,7 @@ if __name__ == '__main__':
     all_commands.extend(support_commands)
 
     for command in all_commands:
-        subcommand_parser = subparsers.add_parser(command.__name__.replace('_', '-'), help=command.__doc__)
+        subcommand_parser = subparsers.add_parser('api-' + command.__name__.replace('_', '-'), help=command.__doc__)
         if command in api_commands:
             subcommand_parser.add_argument('remote_host', help="The remote host to connect to in host[:port] format.")
             subcommand_parser.add_argument('--ssl-verification', required=False, default='/opt/ace/ssl/ca-chain.cert.pem',
@@ -602,15 +671,57 @@ if __name__ == '__main__':
                                                    default=parameter.default,
                                                    help=f"(default: {parameter.default})")
 
-        subcommand_parser.set_defaults(func=command)
+        subcommand_parser.set_defaults(func=command, conv=None)
+
+    submit_command_parser = subparsers.add_parser('submit')
+    submit_command_parser.add_argument('remote_host', help="The remote host to connect to in host[:port] format.")
+    submit_command_parser.add_argument('description', help="The description (title) of the analysis.")
+    submit_command_parser.add_argument('--ssl-verification', required=False, default='/opt/ace/ssl/ca-chain.cert.pem',
+        help="Optional path to root CA ssl to load.")
+    submit_command_parser.add_argument('-m', '--mode', '--analysis_mode', dest='analysis_mode',
+        help="The mode of analysis. Defaults of analysis. Set it to correlation to automatically become an alert.")
+    submit_command_parser.add_argument('--tool', 
+        help="The name of the tool that generated the analysis request. Defaults to ace_api")
+    submit_command_parser.add_argument('--tool_instance',
+        help="The instance of the tool that generated the analysis request. Defautls to ace_api(ipv4).")
+    submit_command_parser.add_argument('--type',
+        help="The type of the analysis. Defaults to generic.")
+    submit_command_parser.add_argument('-t', '--time', '--event-time', dest='event_time',
+        help="""The time of the event that triggered the analysis, or the source reference time for all analysis. 
+                The expected format is {DATETIME_FORMAT}. Defaults to current time and current time zone.""")
+    submit_command_parser.add_argument('-d', '--details', dest='details',
+        help="""The free form JSON dict that makes up the details of the analysis.""")
+    submit_command_parser.add_argument('-o', '--observables', nargs='+', dest='observables',
+        help="""Adds the given observable to the analysis in the following format:
+                type:value:[:time][:tags_csv][:directives_csv][:limited_analysis_csv]
+                Any times must be in {DATETIME_FORMAT} format.""")
+    submit_command_parser.add_argument('-T', '--tags', nargs='+', dest='tags',
+        help="""The list of tags to add to the analysis.""")
+    submit_command_parser.add_argument('-f', '--files', nargs='+', dest='files',
+        help="""The list of files to add to the analysis.
+                Each file name can optionally be renamed in the remote submission by using the format
+                source_path-->dest_path where dest_path is a relative path.""")
+    submit_command_parser.set_defaults(func=submit, conv=parse_submit)
 
     args = parser.parse_args()
 
     try:
+        # do we need to preprocess the arguments?
+        if args.conv:
+            args = args.conv(args)
+
         # call the handler for the given command
         params = copy.copy(vars(args))
-        del params['cmd']
-        del params['func']
+        if 'cmd' in params:
+            del params['cmd']
+        if 'func' in params:
+            del params['func']
+        if 'conv' in params:
+            del params['conv']
+
+        # remove any parameters not set
+        params = {key: value for key, value in params.items() if value is not None}
+
         result = args.func(**params)
         #result = commands[args.command](remote_host=args.remote_host, 
                                         #ssl_verification=args.ssl_verification, 
@@ -623,5 +734,5 @@ if __name__ == '__main__':
         sys.stderr.write("unable to execute api call: {}\n".format(e))
         traceback.print_exc()
         if hasattr(e, 'response'):
-            print(e.response.text)
-
+            if hasattr(e.response, 'text'):
+                print(e.response.text)
