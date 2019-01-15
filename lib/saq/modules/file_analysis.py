@@ -3903,3 +3903,4 @@ class OfficeFileArchiver(AnalysisModule):
 
         analysis = self.create_analysis(_file)
         analysis.details = target_path
+        return True
