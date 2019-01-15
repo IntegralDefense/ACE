@@ -240,8 +240,8 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # now attempt to download the alert itself
         result = self.client.get(url_for('engine.download', uuid=_uuid))
         # we should get back a tar file
-        tar_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'download.tar')
-        output_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], 'download')
+        tar_path = os.path.join(saq.TEMP_DIR, 'download.tar')
+        output_dir = os.path.join(saq.TEMP_DIR, 'download')
 
         try:
             with open(tar_path, 'wb') as fp:
