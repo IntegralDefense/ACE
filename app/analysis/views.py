@@ -123,7 +123,8 @@ def get_current_alert():
 
     try:
         return db.session.query(GUIAlert).filter(GUIAlert.uuid == alert_uuid).one()
-    except:
+    except Exception as e:
+        logging.warn("Couldn't get alert: {}".format(e))
         pass
 
     return None
@@ -646,7 +647,7 @@ def add_tag():
             logging.debug("attempting to lock alert {} for tagging".format(uuid))
             alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
 
-            if not alert.lock():
+            if not alert.is_locked:
                 flash("unable to modify alert: alert is currently being analyzed")
                 return redirection
 
@@ -3548,12 +3549,12 @@ def upload_file():
         # we need to do this here so that the proper subdirectories get created
         alert.save()
 
-        if not alert.lock():
+        if not alert.is_locked:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
     else:
         alert = get_current_alert()
-        if not alert.lock():
+        if not alert.is_locked:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
 
@@ -3598,7 +3599,7 @@ def observable_action():
 
     logging.debug("alert {} observable {} action {}".format(alert, observable_uuid, action_id))
 
-    if not alert.lock():
+    if not alert.is_locked:
         return "Unable to lock alert.", 500
     try:
         if not alert.load():
@@ -3651,7 +3652,7 @@ def observable_action():
 def mark_suspect():
     alert = get_current_alert()
     observable_uuid = request.form.get("observable_uuid")
-    if not alert.lock():
+    if not alert.is_locked:
         flash("unable to lock alert")
         return "", 400
     try:
