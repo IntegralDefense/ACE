@@ -123,7 +123,8 @@ def get_current_alert():
 
     try:
         return db.session.query(GUIAlert).filter(GUIAlert.uuid == alert_uuid).one()
-    except:
+    except Exception as e:
+        logging.warn("Couldn't get alert: {}".format(e))
         pass
 
     return None
@@ -646,7 +647,8 @@ def add_tag():
             logging.debug("attempting to lock alert {} for tagging".format(uuid))
             alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
 
-            if not alert.lock():
+            alert.lock_uuid = acquire_lock(alert.uuid)
+            if not alert.is_locked:
                 flash("unable to modify alert: alert is currently being analyzed")
                 return redirection
 
@@ -669,7 +671,8 @@ def add_tag():
 
     finally:
         for alert in locked_alerts:
-            alert.unlock()
+            release_lock(alert.uuid, alert.lock_uuid)
+
 
 @analysis.route('/add_observable', methods=['POST'])
 @login_required
@@ -3548,12 +3551,14 @@ def upload_file():
         # we need to do this here so that the proper subdirectories get created
         alert.save()
 
-        if not alert.lock():
+        alert.lock_uuid = acquire_lock(alert.uuid)
+        if not alert.is_locked:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
     else:
         alert = get_current_alert()
-        if not alert.lock():
+        alert.lock_uuid = acquire_lock(alert.uuid)
+        if not alert.is_locked:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
 
@@ -3568,11 +3573,13 @@ def upload_file():
     except Exception as e:
         flash("unable to save {} to {}: {}".format(file_name, dest_path, str(e)))
         report_exception()
+        release_lock(alert.uuid, alert.lock_uuid)
         return redirect(url_for('analysis.file'))
 
     alert.add_observable(F_FILE, os.path.relpath(dest_path, start=os.path.join(SAQ_HOME, alert.storage_dir)))
     alert.sync()
-
+    
+    release_lock(alert.uuid, alert.lock_uuid)
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
 @analysis.route('/analyze_alert', methods=['POST'])
@@ -3598,7 +3605,8 @@ def observable_action():
 
     logging.debug("alert {} observable {} action {}".format(alert, observable_uuid, action_id))
 
-    if not alert.lock():
+    lock_uuid = acquire_lock(alert.uuid)
+    if not alert.is_locked:
         return "Unable to lock alert.", 500
     try:
         if not alert.load():
@@ -3642,7 +3650,7 @@ def observable_action():
         traceback.print_exc()
         return "Unable to load alert: {}".format(str(e)), 500
     finally:
-        alert.unlock()
+        release_lock(alert.uuid, lock_uuid)
 
     return "Action completed. ", 200
 
@@ -3651,7 +3659,9 @@ def observable_action():
 def mark_suspect():
     alert = get_current_alert()
     observable_uuid = request.form.get("observable_uuid")
-    if not alert.lock():
+
+    lock_uuid = acquire_lock(alert.uuid)
+    if not alert.is_locked:
         flash("unable to lock alert")
         return "", 400
     try:
@@ -3666,7 +3676,7 @@ def mark_suspect():
         traceback.print_exc()
         return "", 400
     finally:
-        alert.unlock()
+        release_lock(alert.uuid, lock_uuid)
 
     return url_for("analysis.index", direct=alert.uuid), 200
 
