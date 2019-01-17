@@ -9,9 +9,11 @@ class Config(object):
 
     INSTANCE_NAME = saq.CONFIG.get('global', 'instance_name')
 
+    # GUI configurations for base template use
     GUI_DISPLAY_METRICS = saq.CONFIG['gui'].getboolean('display_metrics')
     GUI_DISPLAY_EVENTS = saq.CONFIG['gui'].getboolean('display_events')
     AUTHENTICATION_ON = saq.CONFIG['gui'].getboolean('authentication')
+    GOOGLE_ANALYTICS = saq.CONFIG['gui'].getboolean('google_analytics')
 
     # also see lib/saq/database.py:initialize_database
     SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://{username}:{password}@{hostname}/{database}?charset=utf8'.format(
