@@ -3503,7 +3503,7 @@ ORDER BY
     available_nodes = c.fetchall()
     date = datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S")
     return render_template('analysis/analyze_file.html', 
-                           observable_types=VALID_OBSERVABLE_TYPES,     
+                           observable_types=VALID_OBSERVABLE_TYPES,
                            date=date, 
                            available_nodes=available_nodes,
                            timezones=pytz.common_timezones)
