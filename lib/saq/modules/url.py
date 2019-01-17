@@ -911,9 +911,6 @@ class LiveBrowserAnalyzer(AnalysisModule):
         parsed_url = None
 
         if _file.has_relationship(R_DOWNLOADED_FROM):
-            # are we set to alert?
-            if not self.engine.should_alert(self.root) and not self.root.alerted:
-                return False
 
             url = _file.get_relationship_by_type(R_DOWNLOADED_FROM).target
 
