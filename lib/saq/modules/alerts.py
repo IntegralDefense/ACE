@@ -13,7 +13,7 @@ import saq.database
 
 from saq.analysis import Analysis, Observable
 from saq.constants import *
-from saq.database import get_db_connection, use_db
+from saq.database import get_db_connection, use_db, ALERT
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 
@@ -81,15 +81,15 @@ class ACEAlertDatabaseAnalyzer(AnalysisModule):
         c.execute("SELECT id FROM alerts WHERE uuid = %s", (self.root.uuid,))
         row = c.fetchone()
         if row:
-            return True
+            alert = saq.database.Alert()
+            alert.storage_dir = self.root.storage_dir
+            alert.load()
+            alert.sync()
+            return False
 
         # otherwise insert the alert
-        logging.info("inserting {} in analysis mode {} into database".format(self.root, self.root.analysis_mode))
-        alert = saq.database.Alert()
-        alert.storage_dir = self.root.storage_dir
-        alert.load()
-        alert.sync()
-        return True
+        ALERT(self)
+        return False
 
 class ACEAlertsAnalysis(Analysis):
     """What other alerts have we seen this in?"""

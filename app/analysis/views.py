@@ -124,8 +124,7 @@ def get_current_alert():
     try:
         return db.session.query(GUIAlert).filter(GUIAlert.uuid == alert_uuid).one()
     except Exception as e:
-        logging.warn("Couldn't get alert: {}".format(e))
-        pass
+        logging.error(f"couldn't get alert {alert_uuid}: {e}")
 
     return None
 
@@ -639,40 +638,40 @@ def add_tag():
         flash("you must specify one or more tags to add")
         return redirection
 
-    # you have to be able to lock all of the alerts before you can continue
-    locked_alerts = []
+    failed_count = 0
 
-    try:
-        for uuid in uuids:
-            logging.debug("attempting to lock alert {} for tagging".format(uuid))
-            alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
+    for uuid in uuids:
+        logging.debug("attempting to lock alert {} for tagging".format(uuid))
+        alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
+        if alert is None:
+            continue
 
+        try:
             alert.lock_uuid = acquire_lock(alert.uuid)
-            if not alert.is_locked:
-                flash("unable to modify alert: alert is currently being analyzed")
-                return redirection
+            if alert.lock_uuid is None:
+                failed_count += 1
+                continue
 
-            locked_alerts.append(alert)
-
-        for alert in locked_alerts:
-
-            if not alert.load():
-                raise RuntimeError("alert.load() returned false")
-
+            alert.load()
             for tag in tags:
                 alert.add_tag(tag)
 
             alert.sync()
 
-        db.session.commit()
-        if redirect_to == "analysis.manage":
-            session['checked'] = uuids
-        return redirection
+        except Exception as e:
+            logging.error(f"unable to add tag to {alert}: {e}")
+            failed_count += 1
 
-    finally:
-        for alert in locked_alerts:
+        finally:
             release_lock(alert.uuid, alert.lock_uuid)
 
+    if failed_count:
+        flash("unable to modify alert: alert is currently being analyzed")
+
+    if redirect_to == "analysis.manage":
+        session['checked'] = uuids
+
+    return redirection
 
 @analysis.route('/add_observable', methods=['POST'])
 @login_required
@@ -3552,13 +3551,13 @@ def upload_file():
         alert.save()
 
         alert.lock_uuid = acquire_lock(alert.uuid)
-        if not alert.is_locked:
+        if alert.lock_uuid is None:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
     else:
         alert = get_current_alert()
         alert.lock_uuid = acquire_lock(alert.uuid)
-        if not alert.is_locked:
+        if alert.lock_uuid is None:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
 
@@ -3606,7 +3605,7 @@ def observable_action():
     logging.debug("alert {} observable {} action {}".format(alert, observable_uuid, action_id))
 
     lock_uuid = acquire_lock(alert.uuid)
-    if not alert.is_locked:
+    if lock_uuid is None:
         return "Unable to lock alert.", 500
     try:
         if not alert.load():
@@ -3661,7 +3660,7 @@ def mark_suspect():
     observable_uuid = request.form.get("observable_uuid")
 
     lock_uuid = acquire_lock(alert.uuid)
-    if not alert.is_locked:
+    if lock_uuid is None:
         flash("unable to lock alert")
         return "", 400
     try:

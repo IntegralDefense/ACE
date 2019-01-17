@@ -1418,9 +1418,9 @@ class EmailAnalyzer(AnalysisModule):
         path = None
         for header, value in email_details[KEY_HEADERS]:
             if header.lower().startswith('received'):
-                if not first_received:
-                    first_received = value
-                last_received = value
+                if not last_received:
+                    last_received = value
+                first_received = value
 
         # START ATTACHMENT PARSING
 
