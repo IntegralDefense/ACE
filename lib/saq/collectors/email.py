@@ -141,7 +141,7 @@ class EmailCollector(Collector):
                             os.rmdir(target_dir)
                         except Exception as e:
                             logging.error("unable to delete {}: {}".format(target_dir, e))
-                            self.invalid_subdirs.add(target_dir)
+                            #self.invalid_subdirs.add(target_dir)
 
         if len(self.stream_list) == 0:
             return None
