@@ -1418,9 +1418,9 @@ class EmailAnalyzer(AnalysisModule):
         path = None
         for header, value in email_details[KEY_HEADERS]:
             if header.lower().startswith('received'):
-                if not first_received:
-                    first_received = value
-                last_received = value
+                if not last_received:
+                    last_received = value
+                first_received = value
 
         # START ATTACHMENT PARSING
 
@@ -1560,8 +1560,8 @@ class EmailAnalyzer(AnalysisModule):
         # generate data suitable for logging
         log_entry = {
             'date': saq.LOCAL_TIMEZONE.localize(datetime.datetime.now()).strftime('%Y-%m-%d %H:%M:%S.%f %z'),
-            'first_received': first_received,
-            'last_received': last_received,
+            'first_received_line': first_received,
+            'last_received_line': last_received,
             'env_mail_from': email_details[KEY_ENV_MAIL_FROM] if KEY_ENV_MAIL_FROM in email_details else None,
             'env_rcpt_to': email_details[KEY_ENV_RCPT_TO] if KEY_ENV_RCPT_TO in email_details else [],
             'mail_from': email_details[KEY_FROM] if KEY_FROM in email_details else None,
