@@ -164,6 +164,9 @@ then
     sudo -H -E installer/install_apache_gui.sh || fail "unable to configure apache for ace";
 fi
 
+# build the documentation
+( cd docs && make html )
+
 #echo "Do you want to run the unit tests? This is not a required step."
 #select yn in Yes No; do
     #case ${yn} in
