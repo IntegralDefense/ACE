@@ -125,7 +125,7 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
                 if not callable(sql_or_func):
                     i = 0
                     for _sql, _params in zip(sql_or_func, params):
-                        logging.warning("DEADLOCK STATEMENT #{} SQL {} PARAMS {}".format(i, _sql, ','.join(_params)))
+                        logging.warning("DEADLOCK STATEMENT #{} SQL {} PARAMS {}".format(i, _sql, ','.join([str(_) for _ in _params])))
                         i += 1
 
                     # TODO log innodb lock status
