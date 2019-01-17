@@ -411,6 +411,10 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         logging.warning(" ****************************************************************** ")
         logging.warning(" ****************************************************************** ")
 
+    # warn if timezone is not UTC
+    if time.strftime("%z") != "+0000":
+        logging.warning("Timezone is not UTC. All ACE systems in a cluster should be in UTC.")
+
     # we can globally disable semaphores with this flag
     SEMAPHORES_ENABLED = CONFIG.getboolean('global', 'enable_semaphores')
 
