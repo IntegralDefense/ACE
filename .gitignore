@@ -129,3 +129,8 @@ ssl/
 etc/crawlphish.unittest.blacklist
 etc/crawlphish.unittest.regex
 etc/crawlphish.unittest.whitelist
+
+# config files
+etc/api_logging.ini
+etc/blacklist.yar
+etc/remote_assignments.yar
