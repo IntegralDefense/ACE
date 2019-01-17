@@ -374,7 +374,7 @@ class TestCase(ACEModuleTestCase):
             fields = fp.readline().strip()
 
         self.assertEquals(fields, 'date,attachment_count,attachment_hashes,attachment_names,attachment_sizes,attachment_types,bcc,'
-                                  'cc,env_mail_from,env_rcpt_to,extracted_urls,first_received,headers,last_received,mail_from,'
+                                  'cc,env_mail_from,env_rcpt_to,extracted_urls,first_received_line,headers,last_received_line,mail_from,'
                                   'mail_to,message_id,originating_ip,path,reply_to,size,subject,user_agent,archive_path,x_mailer')
 
     def test_update_brocess(self):
@@ -484,7 +484,7 @@ class TestCase(ACEModuleTestCase):
         with open(elk_files[0], 'r') as fp:
             log_entry = json.load(fp)
 
-        for field in [ 'date', 'first_received', 'last_received', 'env_mail_from', 'env_rcpt_to', 'mail_from', 'mail_to', 'reply_to',
+        for field in [ 'date', 'first_received_line', 'last_received_line', 'env_mail_from', 'env_rcpt_to', 'mail_from', 'mail_to', 'reply_to',
                        'cc', 'bcc', 'message_id', 'subject', 'path', 'size', 'user_agent', 'x_mailer', 'originating_ip', 'headers', 'attachment_count',
                        'attachment_sizes', 'attachment_types', 'attachment_names', 'attachment_hashes', 'thread_topic', 'thread_index', 'refereneces', 'x_sender' ]:
 
