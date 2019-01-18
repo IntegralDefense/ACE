@@ -10,8 +10,6 @@ import tempfile
 
 from subprocess import Popen, PIPE, DEVNULL
 
-import saq
-
 from saq.analysis import Analysis, Observable
 from saq.constants import *
 from saq.modules import ExternalProcessAnalysisModule, AnalysisModule
@@ -46,11 +44,11 @@ class PcapConversationExtraction(ExternalProcessAnalysisModule):
 
     @property
     def executable_path(self):
-        return self.config['executable_path']
+        return os.path.join(saq.SAQ_HOME, self.config['executable_path'])
 
     @property
     def config_path(self):
-        return self.config['config_path']
+        return os.path.join(saq.SAQ_HOME, self.config['config_path'])
 
     @property
     def max_pcap_count(self):
