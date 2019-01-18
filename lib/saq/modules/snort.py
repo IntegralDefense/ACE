@@ -5,6 +5,8 @@ import os.path
 
 from subprocess import Popen, PIPE
 
+import saq
+
 from saq.analysis import Analysis, Observable
 from saq.modules import SplunkAnalysisModule, AnalysisModule
 from saq.constants import *
@@ -111,7 +113,7 @@ class SnortSignatureAnalyzer_v1(AnalysisModule):
 
     @property
     def rules_dir(self):
-        return self.config['rules_dir']
+        return os.path.join(saq.SAQ_HOME, self.config['rules_dir'])
 
     @property
     def generated_analysis_type(self):
