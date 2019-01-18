@@ -53,6 +53,10 @@
     var remediate_emails_url = '{{ url_for('analysis.remediate_emails') }}';
 </script>
 
+<!-- Google Analytics for Public ACE -->
+{% if config.GOOGLE_ANALYTICS %}
+    <script src="{{ url_for('static', filename='js/gtag.js') }}"></script>
+{% endif %}
 <!-- core css -->
 <!-- this needs to come last so we can do our CSS overrides -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/saq.css') }}" type="text/css">
@@ -101,6 +105,7 @@
                 {% else %}
                 <li><a href="{{ url_for('auth.login') }}">Sign In</a></li>
                 {% endif %}
+                <li><a href="/ace/docs" target="_blank">Help</a></li>
             </ul>
 	</div>
     </div>
