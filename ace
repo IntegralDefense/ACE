@@ -768,6 +768,12 @@ def start_gui(args):
     app = create_app()
     # add the "do" template command
     app.jinja_env.add_extension('jinja2.ext.do')
+
+    if args.print_uri_paths:
+        for rule in app.url_map.iter_rules():
+            print(rule)
+        sys.exit(0)
+
     app.run(saq.CONFIG.get('gui', 'listen_address'), debug=True, port=saq.CONFIG.getint('gui', 'listen_port'), 
         ssl_context=(saq.CONFIG.get('gui', 'ssl_cert'), saq.CONFIG.get('gui', 'ssl_key')),
         use_reloader=True)
@@ -777,6 +783,8 @@ start_gui_parser = subparsers.add_parser('start-gui',
     help="Start the SAQ GUI.")
 start_gui_parser.add_argument('args', nargs=argparse.REMAINDER,
     help="Parameters to pass to the GUI command shell.")
+start_gui_parser.add_argument('--print-uri-paths', default=False, action='store_true',
+    help="Print all of the availble URL paths and exit, without starting the GUI.")
 start_gui_parser.set_defaults(func=start_gui)
 
 # ============================================================================
@@ -797,8 +805,10 @@ def start_api(args):
         app.config['APPLICATION_ROOT']: app,
     })
 
-    #for rule in app.url_map.iter_rules():
-        #print(rule)
+    if args.print_uri_paths:
+        for rule in app.url_map.iter_rules():
+            print(rule)
+        sys.exit(0)
 
     run_simple(saq.CONFIG.get('api', 'listen_address'), saq.CONFIG.getint('api', 'listen_port'), application,
                ssl_context=(saq.CONFIG.get('api', 'ssl_cert'), saq.CONFIG.get('api', 'ssl_key')),
@@ -809,6 +819,8 @@ start_api_parser = subparsers.add_parser('start-api',
     help="Start the ACE API server in DEBUG mode.")
 start_api_parser.add_argument('args', nargs=argparse.REMAINDER,
     help="Parameters to pass to the API command shell.")
+start_api_parser.add_argument('--print-uri-paths', default=False, action='store_true',
+    help="Print all of the availble URL paths and exit, without starting the API.")
 start_api_parser.set_defaults(func=start_api)
 
 
@@ -1574,7 +1586,7 @@ def delete_alerts(args):
             logging.error("unable to delete alert {0}: {1}".format(uuid, str(e)))
 
     for uuid in args.uuids:
-        storage_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['data_dir'], uuid[0:3], uuid)
+        storage_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['data_dir'], saq.CONFIG['global']['node'], uuid[0:3], uuid)
         if not os.path.exists(storage_dir):
             logging.warning("storage directory {0} does not exist".format(storage_dir))
             continue
@@ -1742,7 +1754,8 @@ def reload_alerts(args):
     session = DatabaseSession()
     for uuid in args.uuids:
         alert = session.query(Alert).filter(Alert.uuid == uuid).one()
-        alert.request_correlation()
+        #alert.request_correlation()
+        alert.schedule()
 
 reload_alert_parser = subparsers.add_parser('reload-alerts',
     help="Force analysis (again) on one or more existing alert(s).")
@@ -2495,23 +2508,29 @@ crits_activity_sync_parsers.add_argument('-d','--number-days-to-sync',dest='numd
     help="Number of days in the past to sync activity to CRITS, default is previous day")
 crits_activity_sync_parsers.set_defaults(func=crits_activity_sync)
 
+
 def cleanup_alerts(args):
     """Performs system maintenance.  This is meant to be called from a cron job."""
     import saq
     from saq.constants import DISPOSITION_FALSE_POSITIVE, DISPOSITION_IGNORE
     from saq.database import Alert, DatabaseSession
 
+    ignore_days = saq.CONFIG['global'].getint('ignore_days')
+    fp_days = saq.CONFIG['global'].getint('fp_days')
+    if args.days_old:
+        ignore_days = fp_days = int(args.days_old)
+
     # delete alerts dispositioned as IGNORE and older than N days
     session = DatabaseSession()
     alerts = session.query(Alert).filter(
         Alert.location == saq.CONFIG['global']['node'],
         Alert.disposition == DISPOSITION_IGNORE,
-        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=saq.CONFIG['global'].getint('ignore_days'))).all()
+        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=ignore_days)).all()
 
     session.commit()
 
     if args.dry_run:
-        logging.info("{} alerts would be deleted".format(len(alerts)))
+        logging.info("{} ignored alerts would be deleted".format(len(alerts)))
     else:
         for alert in alerts:
             # delete the files backing the alert
@@ -2535,10 +2554,10 @@ def cleanup_alerts(args):
         Alert.location == saq.CONFIG['global']['node'],
         Alert.archived == False,
         Alert.disposition == DISPOSITION_FALSE_POSITIVE,
-        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=saq.CONFIG['global'].getint('fp_days'))).all()
+        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=fp_days)).all()
     
     if args.dry_run:
-        logging.info("{} alerts would be archived".format(len(alerts)))
+        logging.info("{} fp alerts would be archived".format(len(alerts)))
     else:
         for alert in alerts:
             logging.info("resetting false positive {}".format(alert))
@@ -2563,6 +2582,10 @@ cleanup_alerts_parsers = subparsers.add_parser('cleanup-alerts',
     help="Removes alerts dispositioned as ignore or false positive and older than some amount of time.")
 cleanup_alerts_parsers.add_argument('--dry-run', required=False, dest='dry_run', default=False, action='store_true',
     help="Just report how many would be deleted and archived.")
+cleanup_alerts_parsers.add_argument('-d', '--days-old', required=False, dest='days_old', default=None, action='store',
+    help='specify how many days old an alert should be for it to be deleted')
+#cleanup_alerts_parsers.add_argument('--force-delete', required=False, dest='force_delete', default=None, action='store_true',
+    #help='force delete fp alerts instead of archiving them')
 cleanup_alerts_parsers.set_defaults(func=cleanup_alerts)
 
 def cleanup_email_archive(args):
@@ -2583,7 +2606,19 @@ def cleanup_cloudphish(args):
     with get_db_connection() as db:
         c = db.cursor()
 
-        c.execute("""
+        if args.sha256_url:
+            c.execute("""
+SELECT 
+    LOWER(HEX(cloudphish_analysis_results.sha256_url)),
+    LOWER(HEX(cloudphish_analysis_results.sha256_content))
+FROM 
+    cloudphish_analysis_results  
+WHERE
+    cloudphish_analysis_results.sha256_url = UNHEX(%s)
+""", ( args.sha256_url, ))
+
+        else:
+            c.execute("""
 SELECT 
     LOWER(HEX(cloudphish_analysis_results.sha256_url)),
     LOWER(HEX(cloudphish_analysis_results.sha256_content))
@@ -2597,6 +2632,11 @@ WHERE
 
         results = c.fetchall()
         db.commit()
+
+        if args.dry_run:
+            for sha256_url, sha256_content in results:
+                print("Would delete - sha256_url:{} sha256_content:{}".format(sha256_url, sha256_content))
+            sys.exit(0)
 
         logging.info(f"clearing {len(results)} cloudphish urls")
         for sha256_url, sha256_content in results:
@@ -2622,6 +2662,10 @@ WHERE
 
 cleanup_cloudphish_parser = subparsers.add_parser('cleanup-cloudphish',
     help="Cleans out old urls and content cached by cloudphish requests.")
+cleanup_cloudphish_parser.add_argument('--sha256-url', required=False, dest='sha256_url',
+    default=False, action='store', help="the sha256 of the url that you want to cleanup for")
+cleanup_cloudphish_parser.add_argument('--dry-run', required=False, dest='dry_run',
+    default=False, action='store_true', help="Just return the results that would be purged")
 cleanup_cloudphish_parser.add_argument('--cleanup-days', type=int, default=7,
     help="Select URLs that have not been requested in X days (defaults to 7 days.)")
 cleanup_cloudphish_parser.set_defaults(func=cleanup_cloudphish)
