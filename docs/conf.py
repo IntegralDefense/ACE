@@ -14,9 +14,10 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('.'))
 
 ACE_BASE_DIR = os.path.dirname(os.path.abspath('.'))
+sys.path.insert(0 , ACE_BASE_DIR)
+sys.path.insert(0 , os.path.join(ACE_BASE_DIR, 'lib'))
 
 # -- Project information -----------------------------------------------------
 
