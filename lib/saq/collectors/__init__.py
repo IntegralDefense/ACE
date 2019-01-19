@@ -513,7 +513,7 @@ class Collector(object):
                 logging.debug("got workload type id {} for {}".format(self.workload_type_id, self.workload_type))
 
         except Exception as e:
-            logging.critial("unable to get workload type_id from database: {}".format(self.workload_type))
+            logging.critical("unable to get workload type_id from database: {}".format(self.workload_type))
             raise e
 
         # set this to True to gracefully shut down the collector
