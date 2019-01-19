@@ -878,7 +878,10 @@ class LiveBrowserAnalyzer(AnalysisModule):
 
     @property
     def get_screenshot_path(self):
-        return os.path.join(saq.SAQ_HOME, self.config['get_screenshot_path'])
+        path = self.config['get_screenshot_path']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def remote_server(self):
