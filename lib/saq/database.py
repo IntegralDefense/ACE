@@ -15,6 +15,7 @@ import saq.constants
 from saq.analysis import RootAnalysis
 from saq.error import report_exception
 from saq.performance import track_execution_time
+from saq.util import abs_path
 
 import businesstime
 import pymysql
@@ -283,25 +284,25 @@ def _get_db_connection(name='ace'):
         kwargs['ssl'] = {}
 
         if 'ssl_ca' in _section:
-            if not os.path.exists(_section['ssl_ca']):
-                logging.error("ssl_ca file {} does not exist (specified in {})".format(
-                              _section['ssl_ca'], config_section))
+            path = abs_path(_section['ssl_ca'])
+            if not os.path.exists(path):
+                logging.error("ssl_ca file {} does not exist (specified in {})".format(path, config_section))
             else:
-                kwargs['ssl']['ca'] = _section['ssl_ca']
+                kwargs['ssl']['ca'] = path
 
         if 'ssl_key' in _section:
-            if not os.path.exists(_section['ssl_key']):
-                logging.error("ssl_key file {} does not exist (specified in {})".format(
-                              _section['ssl_key'], config_section))
+            path = abs_path(_section['ssl_key'])
+            if not os.path.exists(path):
+                logging.error("ssl_key file {} does not exist (specified in {})".format(path, config_section))
             else:
-                kwargs['ssl']['key'] = _section['ssl_key']
+                kwargs['ssl']['key'] = path
 
         if 'ssl_cert' in _section:
-            if not os.path.exists(_section['ssl_cert']):
-                logging.error("ssl_cert file {} does not exist (specified in {})".format(
-                              _section['ssl_cert'], config_section))
+            path = _section['ssl_cert']
+            if not os.path.exists(path):
+                logging.error("ssl_cert file {} does not exist (specified in {})".format(path, config_section))
             else:
-                kwargs['ssl']['cert'] = _section['ssl_cert']
+                kwargs['ssl']['cert'] = path
 
     logging.debug("opening database connection {}".format(name))
     return pymysql.connect(**kwargs)

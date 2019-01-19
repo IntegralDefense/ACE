@@ -2,6 +2,7 @@
 # configuration settings for the GUI
 
 import saq
+from saq.util import abs_path
 
 class Config(object):
     SECRET_KEY = saq.CONFIG['gui']['secret_key']
@@ -37,11 +38,11 @@ class Config(object):
         if 'ssl_ca' in saq.CONFIG['database_ace'] \
         or 'ssl_cert' in saq.CONFIG['database_ace'] \
         or 'ssl_key' in saq.CONFIG['database_ace']:
-            ssl_options = { 'ca': saq.CONFIG['database_ace']['ssl_ca'] }
+            ssl_options = { 'ca': abs_path(saq.CONFIG['database_ace']['ssl_ca']) }
             if 'ssl_cert' in saq.CONFIG['database_ace']:
-                ssl_options['cert'] = saq.CONFIG['database_ace']['ssl_cert']
+                ssl_options['cert'] = abs_path(saq.CONFIG['database_ace']['ssl_cert'])
             if 'ssl_key' in saq.CONFIG['database_ace']:
-                ssl_options['key'] = saq.CONFIG['database_ace']['ssl_key']
+                ssl_options['key'] = abs_path(saq.CONFIG['database_ace']['ssl_key'])
 
             self.SQLALCHEMY_DATABASE_OPTIONS['connect_args'] = {}
             self.SQLALCHEMY_DATABASE_OPTIONS['connect_args']['ssl'] = ssl_options
