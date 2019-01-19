@@ -1,4 +1,4 @@
-# vim: sw=4:ts=4:et
+# vi: sw=4:ts=4:et
 
 import logging
 import os
@@ -44,11 +44,17 @@ class PcapConversationExtraction(ExternalProcessAnalysisModule):
 
     @property
     def executable_path(self):
-        return os.path.join(saq.SAQ_HOME, self.config['executable_path'])
+        path = self.config['executable_path']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def config_path(self):
-        return os.path.join(saq.SAQ_HOME, self.config['config_path'])
+        path = self.config['config_path']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def max_pcap_count(self):

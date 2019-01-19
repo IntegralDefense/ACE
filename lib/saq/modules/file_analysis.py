@@ -2003,7 +2003,10 @@ class PDFAnalyzer(AnalysisModule):
 
     @property
     def pdfparser_path(self):
-        return os.path.join(saq.SAQ_HOME, self.config['pdfparser_path'])
+        path = self.config['pdfparser_path']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def generated_analysis_type(self):
@@ -3168,7 +3171,10 @@ class MicrosoftScriptEncodingAnalyzer(AnalysisModule):
 
     @property
     def decryption_program(self):
-        return os.path.join(saq.SAQ_HOME, self.config['decryption_program'])
+        path = self.config['decryption_program']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def generated_analysis_type(self):
