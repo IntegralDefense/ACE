@@ -113,7 +113,10 @@ class SnortSignatureAnalyzer_v1(AnalysisModule):
 
     @property
     def rules_dir(self):
-        return os.path.join(saq.SAQ_HOME, self.config['rules_dir'])
+        path = self.config['rules_dir']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def generated_analysis_type(self):
