@@ -142,8 +142,10 @@ class PcapConversationExtraction(ExternalProcessAnalysisModule):
 
         src, dst = parse_ipv4_conversation(conversation)
 
+        event_time = event_time.strftime('%Y-%m-%d %H:%M:%S %z')
+
         bpf = '(host {} and host {})'.format(src, dst)
-        logging.info("extracting pcap using BPF {} @ {} to {}".format(bpf, event_time, output_dir))
+        logging.info("extracting pcap using BPF {} @ {} duration {} to {}".format(bpf, event_time, self.relative_duration, output_dir))
 
         # also collect stdout and stderr for troubleshooting
         # collect the pcap

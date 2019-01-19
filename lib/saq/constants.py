@@ -1,131 +1,5 @@
 # vim: sw=4:ts=4:et
 
-__all__ = [ 
-    'INSTANCE_TYPE_PRODUCTION',
-    'INSTANCE_TYPE_QA',
-    'INSTANCE_TYPE_DEV',
-    'F_UUID',
-    'F_ID',
-    'F_TOOL',
-    'F_TOOL_INSTANCE',
-    'F_TYPE',
-    'F_DESCRIPTION',
-    'F_EVENT_TIME',
-    'F_DETAILS',
-    'F_CIDR',
-    'F_IPV4',
-    'F_IPV4_CONVERSATION',
-    'F_FQDN',
-    'F_HTTP_REQUEST',
-    'F_HOSTNAME',
-    'F_ASSET',
-    'F_USER',
-    'F_URL',
-    'F_PCAP',
-    'F_FILE',
-    'F_SUSPECT_FILE', # DEPRECATED
-    'F_FILE_PATH',
-    'F_FILE_NAME',
-    'F_FILE_LOCATION',
-    'F_EMAIL_ADDRESS',
-    'F_EMAIL_CONVERSATION',
-    'F_YARA',
-    'F_YARA_RULE',
-    'F_INDICATOR',
-    'F_MD5',
-    'F_SHA1',
-    'F_SHA256',
-    'F_SNORT_SIGNATURE',
-    'F_MESSAGE_ID',
-    'F_DISPOSITION',
-    'F_PROCESS_GUID',
-    'F_TEST',
-    'event_time_format',
-    'OBSERVABLE_DESCRIPTIONS',
-    'OBSERVABLE_NODE_COLORS',
-    'VALID_OBSERVABLE_TYPES',
-    'VALID_ALERT_DISPOSITIONS',
-    'IGNORE_ALERT_DISPOSITIONS',
-    'BENIGN_ALERT_DISPOSITIONS',
-    'MAL_ALERT_DISPOSITIONS',
-    'parse_ipv4_conversation',
-    'create_ipv4_conversation',
-    'parse_email_conversation',
-    'create_email_conversation',
-    'parse_file_location',
-    'create_file_location',
-    'DISPOSITION_FALSE_POSITIVE',
-    'DISPOSITION_IGNORE',
-    'DISPOSITION_UNKNOWN',
-    'DISPOSITION_REVIEWED',
-    'DISPOSITION_GRAYWARE',
-    'DISPOSITION_POLICY_VIOLATION',
-    'DISPOSITION_RECONNAISSANCE',
-    'DISPOSITION_WEAPONIZATION',
-    'DISPOSITION_DELIVERY',
-    'DISPOSITION_EXPLOITATION',
-    'DISPOSITION_INSTALLATION',
-    'DISPOSITION_COMMAND_AND_CONTROL',
-    'DISPOSITION_EXFIL',
-    'DISPOSITION_DAMAGE',
-    'DISPOSITION_CSS_MAPPING',
-    'DIRECTIVE_ARCHIVE',
-    'DIRECTIVE_COLLECT_FILE',
-    'DIRECTIVE_CRAWL',
-    'DIRECTIVE_FORCE_DOWNLOAD',
-    'DIRECTIVE_EXTRACT_URLS',
-    'DIRECTIVE_SANDBOX',
-    'DIRECTIVE_ORIGINAL_EMAIL',
-    'DIRECTIVE_NO_SCAN',
-    'DIRECTIVE_DELAY',
-    'DIRECTIVE_EXCLUDE_ALL',
-    'VALID_DIRECTIVES',
-    'is_valid_directive',
-    'TAG_LEVEL_FALSE_POSITIVE',
-    'TAG_LEVEL_INFO',
-    'TAG_LEVEL_WARNING',
-    'TAG_LEVEL_ALERT',
-    'TAG_LEVEL_CRITICAL',
-    'TAG_LEVEL_HIDDEN',
-    'EVENT_TAG_ADDED',
-    'EVENT_OBSERVABLE_ADDED',
-    'EVENT_DETAILS_UPDATED',
-    'EVENT_DIRECTIVE_ADDED',
-    'EVENT_ANALYSIS_ADDED',
-    'EVENT_DETECTION_ADDED',
-    'EVENT_RELATIONSHIP_ADDED',
-    'EVENT_ANALYSIS_MARKED_COMPLETED',
-    'EVENT_GLOBAL_TAG_ADDED',
-    'EVENT_GLOBAL_OBSERVABLE_ADDED',
-    'EVENT_GLOBAL_ANALYSIS_ADDED',
-    'VALID_EVENTS',
-    'ACTION_TAG_OBSERVABLE',
-    'ACTION_UPLOAD_TO_CRITS',
-    'ACTION_FILE_DOWNLOAD',
-    'ACTION_FILE_DOWNLOAD_AS_ZIP',
-    'ACTION_FILE_VIEW_AS_HEX',
-    'ACTION_FILE_VIEW_AS_TEXT',
-    'ACTION_FILE_UPLOAD_VT',
-    'ACTION_FILE_UPLOAD_VX',
-    'ACTION_FILE_VIEW_VT',
-    'ACTION_FILE_VIEW_VX',
-    'ACTION_COLLECT_FILE',
-    'ACTION_CLEAR_CLOUDPHISH_ALERT',
-    'ACTION_REMEDIATE_EMAIL',
-    'METRIC_THREAD_COUNT',
-    'R_DOWNLOADED_FROM',
-    'R_EXTRACTED_FROM',
-    'R_REDIRECTED_FROM',
-    'VALID_RELATIONSHIP_TYPES',
-    'TARGET_EMAIL_RECEIVED',
-    'TARGET_EMAIL_XMAILER',
-    'TARGET_EMAIL_BODY',
-    'TARGET_EMAIL_MESSAGE_ID',
-    'TARGET_EMAIL_RCPT_TO',
-    'TARGET_VX_IPDOMAINSTREAMS',
-    'VALID_TARGETS',
-]
-
 # 
 # instance types
 #
@@ -305,7 +179,14 @@ def create_file_location(hostname, full_path):
     return '{}@{}'.format(hostname, full_path)
 
 # the expected format of the event_time of an alert
+event_time_format_tz = '%Y-%m-%d %H:%M:%S %z'
+# the old time format before we started storing timezones
 event_time_format = '%Y-%m-%d %H:%M:%S'
+# the "ISO 8601" format that ACE uses to store datetime objects in JSON with a timezone
+# NOTE this is the preferred format
+event_time_format_json_tz = '%Y-%m-%dT%H:%M:%S.%f%z'
+# the "ISO 8601" format that ACE uses to store datetime objects in JSON without a timezone
+event_time_format_json = '%Y-%m-%dT%H:%M:%S.%f'
 
 # alert dispositions
 DISPOSITION_FALSE_POSITIVE = 'FALSE_POSITIVE'
@@ -383,7 +264,6 @@ MAL_ALERT_DISPOSITIONS = [
     DISPOSITION_DAMAGE
 ]
 
-
 # --- DIRECTIVES
 # archive the file
 DIRECTIVE_ARCHIVE = 'archive'
@@ -399,6 +279,8 @@ DIRECTIVE_EXTRACT_URLS = 'extract_urls'
 DIRECTIVE_SANDBOX = 'sandbox'
 # treat this file as the original email file
 DIRECTIVE_ORIGINAL_EMAIL = 'original_email'
+# treat this file as the original smtp stream
+DIRECTIVE_ORIGINAL_SMTP = 'original_smtp'
 # do not scan this file with yara
 DIRECTIVE_NO_SCAN = 'no_scan'
 # instructs various analysis modules that supprt this directive
@@ -406,16 +288,22 @@ DIRECTIVE_NO_SCAN = 'no_scan'
 DIRECTIVE_DELAY = 'delay'
 # instructs ACE to NOT analyze this observable at all
 DIRECTIVE_EXCLUDE_ALL = 'exclude_all'
+# indicates this observable was whitelisted, causing the entire analysis to also become whitelisted
+DIRECTIVE_WHITELISTED = 'whitelisted'
 
 VALID_DIRECTIVES = [
+    DIRECTIVE_ARCHIVE,
     DIRECTIVE_COLLECT_FILE,
     DIRECTIVE_CRAWL,
-    DIRECTIVE_EXTRACT_URLS,
-    DIRECTIVE_ORIGINAL_EMAIL,
-    DIRECTIVE_SANDBOX,
     DIRECTIVE_FORCE_DOWNLOAD,
+    DIRECTIVE_EXTRACT_URLS,
+    DIRECTIVE_SANDBOX,
+    DIRECTIVE_ORIGINAL_EMAIL,
+    DIRECTIVE_ORIGINAL_SMTP,
+    DIRECTIVE_NO_SCAN,
     DIRECTIVE_DELAY,
     DIRECTIVE_EXCLUDE_ALL,
+    DIRECTIVE_WHITELISTED,
 ]
 
 def is_valid_directive(directive):
@@ -516,3 +404,21 @@ VALID_TARGETS = [
 # constants defined for keys to dicts (typically in json files)
 KEY_DESCRIPTION = 'description'
 KEY_DETAILS = 'details'
+
+# analysis modes (more can be added)
+ANALYSIS_MODE_CORRELATION = 'correlation'
+ANALYSIS_MODE_CLI = 'cli'
+ANALYSIS_MODE_ANALYSIS = 'analysis'
+ANALYSIS_MODE_EMAIL = 'email'
+ANALYSIS_MODE_HTTP = 'http'
+ANALYSIS_MODE_FILE = 'file'
+ANALYSIS_MODE_CLOUDPHISH = 'cloudphish'
+ANALYSIS_MODE_BINARY = 'binary'
+
+ANALYSIS_TYPE_GENERIC = 'generic'
+ANALYSIS_TYPE_MAILBOX = 'mailbox'
+ANALYSIS_TYPE_BRO_SMTP = 'bro - smtp'
+ANALYSIS_TYPE_BRO_HTTP = 'bro - http'
+ANALYSIS_TYPE_CLOUDPHISH = 'cloudphish'
+ANALYSIS_TYPE_MANUAL = 'manual'
+ANALYSIS_TYPE_FAQUEUE = 'faqueue'

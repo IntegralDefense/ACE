@@ -15,7 +15,7 @@ from saq.analysis import Analysis, Observable, recurse_down, TaggableObject
 from saq.database import Alert
 from saq.constants import *
 from saq.error import report_exception
-from saq.modules import AnalysisModule, TagAnalysisModule, PostAnalysisModule
+from saq.modules import AnalysisModule, TagAnalysisModule
 from saq.util import is_subdomain
 
 class TagAnalysis(Analysis):
@@ -178,68 +178,6 @@ class IPv4TagAnalysis(TagAnalysis):
 class UserTagAnalysis(TagAnalysis):
     pass
 
-class EmailNotificationAnalysis(TagAnalysis):
-    pass
-
-class EmailNotification(AnalysisModule):
-    """Alerts with specific tags will cause emails to be generated."""
-    @property
-    def generated_analysis_type(self):
-        return EmailNotificationAnalysis
-
-    @property
-    def valid_analysis_target_type(self):
-        return None
-
-    @property
-    def valid_observable_types(self):
-        return None
-
-    def execute_analysis(self, alert):
-        if not isinstance(alert, Alert):
-            return
-
-        for option in saq.CONFIG.options(self.config_section):
-            if option.startswith('tag_distro_'):
-                tag_list, email_list = saq.CONFIG[self.config_section][option].split(':')
-                tags = tag_list.split(',')
-                emails = email_list.split(',')
-
-                # does this alert have these tags?
-                expected_tags = tags[:]
-                for tag in self.root.tags:
-                    try:
-                        expected_tags.remove(tag.name)
-                    except:
-                        pass
-
-                if len(expected_tags) == 0:
-
-                    # have we already sent out an email for this tag combination?
-                    email_submission_marker = os.path.join(alert.storage_dir, 'email_submission_{0}'.format(option))
-                    if os.path.exists(email_submission_marker):
-                        continue
-
-                    try:
-                        # send out the email
-                        logging.info("sending email notification for {0}".format(alert))
-                        email_message = "From: {0}\r\nTo: {1}\r\nSubject: {2}\r\n\r\n{3}".format(
-                            saq.CONFIG[self.config_section]['smtp_mail_from'],
-                            email_list,
-                            "{0}: {1}".format(saq.CONFIG[self.config_section]['smtp_subject_prefix'], alert.description),
-                            alert.to_email_message)
-                
-                        server = smtplib.SMTP(saq.CONFIG[self.config_section]['smtp_server'])
-                        server.sendmail(saq.CONFIG[self.config_section]['smtp_mail_from'], emails, email_message)
-                        server.quit()
-
-                        # we create this file as a marker to indicate we've already sent an alert for this 
-                        with open(email_submission_marker, 'w'):
-                            pass
-
-                    except Exception as e:
-                        logging.error("unable to send email for {0}: {1}".format(alert, str(e)))
-
 class CorrelatedTagDefinition(object):
     def __init__(self, text, tags):
         self.text = text
@@ -293,11 +231,7 @@ class CorrelatedTagDefinition(object):
 
         return len(result) > 0
 
-class CorrelatedTagAnalysis(Analysis):
-    def initialize_details(self):
-        self.details = None
-
-class CorrelatedTagAnalyzer(PostAnalysisModule):
+class CorrelatedTagAnalyzer(AnalysisModule):
     """Does this combination of tagging exist on objects with a common ancestry?"""
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -316,45 +250,32 @@ class CorrelatedTagAnalyzer(PostAnalysisModule):
                                          [x.strip() for x in self.config[config_rule].split(',')]))
                 logging.info("loaded definition for {}".format(config_rule))
 
-    @property
-    def generated_analysis_type(self):
-        return CorrelatedTagAnalysis
-
-    @property
-    def valid_analysis_target_type(self):
-        return None # any
-
-    @property
-    def valid_observable_types(self):
-        return None # any
-
-    def execute_analysis(self, target):
-        pass
-
-    def execute_final_analysis(self, target):
-
-        for _def in self.definitions:
-            _def.reset()
-
-        # does this target have a tag we're looking for?
-        if not _def.match(target):
-            return
-
-        for _def in self.definitions:
-            _def.reset()
-        
-        for obj in self.root.all:
+    def execute_post_analysis(self):
+        for target in root.all:
             for _def in self.definitions:
-                _def.match(obj)
+                _def.reset()
 
-        for _def in self.definitions:
-            if _def.matches():
-                already_detected = False
-                message = "Correlated Tag Match: {}".format(_def.text)
-                for detection_point in target.detections:
-                    if detection_point.description == message:
-                        already_detected = True
-                        break
+            # does this target have a tag we're looking for?
+            if not _def.match(target):
+                return False
 
-                if not already_detected:
-                    target.add_detection_point("Correlated Tag Match: {}".format(_def.text))
+            for _def in self.definitions:
+                _def.reset()
+            
+            for obj in self.root.all:
+                for _def in self.definitions:
+                    _def.match(obj)
+
+            for _def in self.definitions:
+                if _def.matches():
+                    already_detected = False
+                    message = "Correlated Tag Match: {}".format(_def.text)
+                    for detection_point in target.detections:
+                        if detection_point.description == message:
+                            already_detected = True
+                            break
+
+                    if not already_detected:
+                        target.add_detection_point("Correlated Tag Match: {}".format(_def.text))
+
+            return True

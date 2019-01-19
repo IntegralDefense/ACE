@@ -1,5 +1,5 @@
-const bro_smtp_dir = "/opt/ace/var/bro/smtp";
-const bro_http_dir = "/opt/ace/var/bro/http";
+const bro_smtp_dir = "/opt/ace/data/var/bro/smtp";
+const bro_http_dir = "/opt/ace/data/var/bro/http";
 
 type Idx: record {
     network: subnet;

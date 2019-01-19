@@ -12,7 +12,11 @@
         {% if yara_result['meta'] | count > 0 %}
         <tr>
             <td>meta</td>
-            <td>{{yara_result['meta']}}</td>
+	    {% if ace_config['gui'].getboolean('hide_intel') %}
+	        <td>Hidden from public view.</td>
+	    {% else %}
+                <td>{{yara_result['meta']}}</td>
+	    {% endif %}
         </tr>
         {% endif %}
         {% if yara_result['tags'] | count > 0 %}
@@ -35,19 +39,23 @@
                     <div class="panel-body">
                         <ul class="list-group">
                         {# context was added later, older alerts do not have it #}
-                        {% if 'context' in yara_result %}
-                            {% for s in yara_result['context'] %}
-                                {% if s | count > 0 %}
-                                    <li class="list-group-item">position <b>{{s[0]}}</b> string $<b>{{s[1]}}</b> value <b>{{s[2]}}</b><pre>{{s[3]}}</pre></li>
-                                {% endif %}
-                            {% endfor %}
-                        {% else %}
-                            {% for s in yara_result['strings'] %}
-                                {% if s | count > 0 %}
-                                    <li class="list-group-item">position <b>{{s[0]}}</b> string $<b>{{s[1]}}</b> value <b>{{s[2]}}</b></li>
-                                {% endif %}
-                            {% endfor %}
-                        {% endif %}
+			{% if ace_config['gui'].getboolean('hide_intel') %}
+			    Hidden from public view.
+			{% else %}
+				{% if 'context' in yara_result %}
+				    {% for s in yara_result['context'] %}
+					{% if s | count > 0 %}
+					    <li class="list-group-item">position <b>{{s[0]}}</b> string $<b>{{s[1]}}</b> value <b>{{s[2]}}</b><pre>{{s[3]}}</pre></li>
+					{% endif %}
+				    {% endfor %}
+				{% else %}
+				    {% for s in yara_result['strings'] %}
+					{% if s | count > 0 %}
+					    <li class="list-group-item">position <b>{{s[0]}}</b> string $<b>{{s[1]}}</b> value <b>{{s[2]}}</b></li>
+					{% endif %}
+				    {% endfor %}
+				{% endif %}
+			{% endif %}
                         </ul>
                     </div>
                 </div>

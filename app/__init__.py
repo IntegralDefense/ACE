@@ -41,12 +41,11 @@ login_manager = LoginManager()
 login_manager.session_protection = 'strong'
 login_manager.login_view = 'auth.login'
 
-# we need to subclass this thing so that we can disable connection pooling
-# connection pooling is broken for MySQL (see lib/saq/database.py)
 class CustomSQLAlchemy(SQLAlchemy):
     def apply_driver_hacks(self, app, info, options):
+        # add SSL (if configured)
+        options.update(config[saq.CONFIG['global']['instance_type']].SQLALCHEMY_DATABASE_OPTIONS)
         SQLAlchemy.apply_driver_hacks(self, app, info, options)
-        options['pool_recycle'] = 60 # return these after a minute
 
 db = CustomSQLAlchemy()
 
@@ -69,8 +68,8 @@ def create_app():
     from .analysis import analysis as analysis_blueprint
     app.register_blueprint(analysis_blueprint)
     
-    from .cloudphish import cloudphish as cloudphish_blueprint
-    app.register_blueprint(cloudphish_blueprint)
+    #from .cloudphish import cloudphish as cloudphish_blueprint
+    #app.register_blueprint(cloudphish_blueprint)
 
     from .vt_hash_cache import vt_hash_cache_bp as vt_hash_cache_blueprint
     app.register_blueprint(vt_hash_cache_blueprint)

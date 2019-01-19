@@ -35,29 +35,59 @@ then
     rm logs/unittest.log
 fi
 
+# clear data directory
+data_dir="$(ace config -v global.data_dir)"
+if [ -d "$data_dir" ]
+then
+    echo "clearing $data_dir..."
+    rm -rf "$data_dir"
+    mkdir "$data_dir"
+fi
+
 # if we passed no parameters then we run all the tests
 if [ "$#" -eq "0" ]
 then
     PYTHONPATH=lib python3 -W ignore -m unittest -f -v \
+        saq.collectors.test \
+        saq.collectors.test_http \
+        saq.collectors.test_email \
+        saq.collectors.test_smtp \
+        saq.test_observables \
+        saq.test_crawlphish \
+        saq.test_crypto \
         saq.test_analysis \
         saq.test_database \
-        saq.test_lock \
-        saq.test_anp \
-        saq.engine.test_engine \
-        saq.engine.test_email \
-        saq.engine.test_ace \
+        saq.test_util \
+        saq.test_locks \
+        saq.engine.test \
+        saq.modules.test_alerts \
         saq.modules.test_asset \
         saq.modules.test_url \
         saq.modules.test_file_analysis \
         saq.modules.test_email \
-        saq.engine.test_cloudphish \
-        saq.test_detection \
+        saq.modules.test_http \
+        saq.modules.test_hal9000 \
+        saq.modules.test_crits \
+        api.analysis.test \
+        api.engine.test \
+        api.cloudphish.test \
+        test_ace_api \
+
+        #saq.collectors.test_cb_binaries \
 
         # TODO reintroduce these next two somehow
+        #saq.engine.test_cloudphish \
+        #saq.test_detection \
 
         #saq.test_pds \
         #saq.modules.test_pds \
         #saq.modules.test_vx \
+
+        # no longer a thing
+        #saq.engine.test_email \
+        #saq.engine.test_ace \
+        #saq.test_lock \
+
 
     exit 0
 fi
@@ -76,13 +106,18 @@ PYTHONPATH=lib python3 -W ignore -m unittest -f -v $1
 
 if [ -f logs/unittest.log ]
 then
-    grep MARKER logs/unittest.log
+    GREP_COLORS='mt=01;103' grep --color=always \\[WARNING\\] logs/unittest.log
+    GREP_COLORS='mt=01;31' grep --color=always \\[ERROR\\] logs/unittest.log
+    GREP_COLORS='mt=01;32' grep --color=always MARKER logs/unittest.log
 fi
 
-if [ $( ls error_reports | wc -l ) -gt "0" ]
+if [ -d $data_dir/error_reports ]
 then
-    echo
-    echo "*** ERRORS REPORTED ** "
-    echo
-    cat error_reports/* 2> /dev/null
+    if [ $( ls $data_dir/error_reports | wc -l ) -gt "0" ]
+    then
+        echo
+        echo "*** ERRORS REPORTED ** "
+        echo
+        cat $data_dir/error_reports/* 2> /dev/null
+    fi
 fi

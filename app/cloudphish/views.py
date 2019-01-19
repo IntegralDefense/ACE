@@ -57,7 +57,7 @@ def submit():
     if not url:
         return "Invalid request.", 400
 
-    # XXX this is a hack but urls should be all ASCII anyways
+    # urls should be ASCII 
     # so technically this changes the sha256 hash we get out of it but that's OK
     # because if it's not ASCII it's not a valid anyways
     url = url.encode('ascii', errors='ignore').decode('ascii')

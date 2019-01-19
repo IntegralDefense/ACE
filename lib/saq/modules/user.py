@@ -196,7 +196,7 @@ class UserAnalyzer(LDAPAnalysisModule):
 
         analysis = self.create_analysis(user)
 
-        if ldap_result is None:
+        if ldap_result is None and tivoli_ldap_result is not None:
             analysis.details = { 'ldap': tivoli_ldap_result, 'manager_ldap': manager_result }
             # 'mail' and 'cn' return lists, take first entry or add_observable will error
             for key in [ 'mail', 'cn' ]:
@@ -208,7 +208,7 @@ class UserAnalyzer(LDAPAnalysisModule):
             analysis.details = { 'ldap': ldap_result, 'manager_ldap': manager_result }
 
         # did we get an email address?
-        if 'mail' in analysis.details['ldap'] and analysis.details['ldap']['mail']:
+        if analysis.details and 'ldap' in analysis.details and analysis.details['ldap'] is not None and 'mail' in analysis.details['ldap'] and analysis.details['ldap']['mail'] is not None:
             analysis.add_observable(F_EMAIL_ADDRESS, analysis.details['ldap']['mail'])
 
         return True

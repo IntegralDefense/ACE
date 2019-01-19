@@ -5,15 +5,28 @@ import sqlite3
 import logging
 import os.path
 import re
-from ipaddress import IPv4Network
+from ipaddress import IPv4Network, IPv4Address
 from urllib.parse import urlparse, ParseResult, urlunparse
 
 import saq
 from saq.brocess import query_brocess_by_fqdn, add_httplog
 from saq.error import report_exception
-from saq.util import is_ipv4, is_subdomain, iterate_fqdn_parts
+from saq.util import is_ipv4, is_subdomain, iterate_fqdn_parts, add_netmask
 
 analysis_module = 'analysis_module_crawlphish'
+
+__all__ = [
+    'REASON_ERROR',
+    'REASON_UNKNOWN',
+    'REASON_WHITELISTED',
+    'REASON_BLACKLISTED',
+    'REASON_CRITS',
+    'REASON_COMMON_NETWORK',
+    'REASON_DIRECT_IPV4',
+    'REASON_OK',
+    'process_url',
+    'CrawlphishURLFilter',
+]
 
 REASON_ERROR =          'ERROR'
 REASON_UNKNOWN =        'UNKNOWN'
@@ -114,7 +127,7 @@ class CrawlphishURLFilter(object):
                         continue
 
                     if is_ipv4(line):
-                        whitelisted_cidr.append(IPv4Network(line))
+                        whitelisted_cidr.append(IPv4Network(add_netmask(line)))
                     else:
                         whitelisted_fqdn.append(line)
 
@@ -131,7 +144,7 @@ class CrawlphishURLFilter(object):
     def is_whitelisted(self, value):
         if is_ipv4(value):
             for cidr in self.whitelisted_cidr:
-                if value in cidr:
+                if IPv4Address(value) in cidr:
                     logging.debug("{} matches whitelisted cidr {}".format(value, cidr))
                     return True
 
@@ -163,7 +176,7 @@ class CrawlphishURLFilter(object):
                         continue
 
                     if is_ipv4(line):
-                        blacklisted_cidr.append(IPv4Network(line))
+                        blacklisted_cidr.append(IPv4Network(add_netmask(line)))
                     else:
                         blacklisted_fqdn.append(line)
 
@@ -211,7 +224,7 @@ class CrawlphishURLFilter(object):
         if is_ipv4(value):
             for cidr in self.blacklisted_cidr:
                 try:
-                    if value in cidr:
+                    if IPv4Address(value) in cidr:
                         logging.debug("{} matches blacklisted cidr {}".format(value, cidr))
                         return True
                 except Exception as e:
@@ -245,7 +258,7 @@ class CrawlphishURLFilter(object):
         """Is this URL in crits?  value is the result of calling process_url on a URL."""
         assert isinstance(value, ParseResult)
 
-        cache_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['crits']['cache_db_path'])
+        cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path'])
         with sqlite3.connect('file:{}?mode=ro'.format(cache_path), uri=True) as db:
             db_cursor = db.cursor()
             row = None
@@ -357,6 +370,11 @@ class CrawlphishURLFilter(object):
                       result.parsed_url.query,
                       result.parsed_url.fragment))
 
+        if self.is_blacklisted(result.parsed_url.hostname):
+            result.reason = REASON_BLACKLISTED
+            result.filtered = True
+            return result
+
         # if the URL is just to an IP address then we crawl that no matter what
         if is_ipv4(result.parsed_url.hostname):
             result.reason = REASON_DIRECT_IPV4
@@ -373,11 +391,6 @@ class CrawlphishURLFilter(object):
                 result.reason = REASON_WHITELISTED
                 result.filtered = False
                 return result
-
-        if self.is_blacklisted(result.parsed_url.hostname):
-            result.reason = REASON_BLACKLISTED
-            result.filtered = True
-            return result
             
         if self.is_in_crits(result.parsed_url):
             result.reason = REASON_CRITS

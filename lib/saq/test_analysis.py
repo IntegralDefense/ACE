@@ -41,6 +41,7 @@ class JSONSeralizerTestCase(ACEBasicTestCase):
 class RootAnalysisTestCase(ACEBasicTestCase):
     def test_analysis_000_create(self):
         root = create_root_analysis()
+        root.initialize_storage()
         # make sure the defaults are what we expect them to be
         self.assertIsInstance(root.action_counters, dict)
         self.assertIsNone(root.details)
@@ -52,15 +53,19 @@ class RootAnalysisTestCase(ACEBasicTestCase):
 
     def test_analysis_001_save(self):
         root = create_root_analysis()
+        root.initialize_storage()
         root.save()
 
     def test_analysis_002_load(self):
         root = create_root_analysis()
+        root.initialize_storage()
+        root.save()
         root.load()
 
     @track_io
     def test_analysis_003_io_count(self):
         root = create_root_analysis()
+        root.initialize_storage()
         root.save()
         # we should have one write at this point
         self.assertEquals(_get_io_write_count(), 1)

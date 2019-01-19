@@ -133,9 +133,7 @@ def encrypt_chunk(chunk, password=None):
     if len(chunk) % 16 != 0:
         chunk += b' ' * (16 - len(chunk) % 16)
 
-    logging.debug("MARKER: (encrypt_chunk) original_size = {} padded_size = {}".format(original_size, len(chunk)))
     result = struct.pack('<Q', original_size) + iv + encryptor.encrypt(chunk)
-    logging.debug("MARKER: (encrypt_chunk) total encrypted data block = {}".format(len(result)))
     return result
 
 def decrypt(source_path, target_path=None, password=None):
@@ -176,7 +174,6 @@ def decrypt_chunk(chunk, password=None):
     assert isinstance(password, bytes)
     assert len(password) == 32
 
-    logging.debug("MARKER: (decrypt_chunk) total chunk size = {}".format(len(chunk)))
 
     _buffer = io.BytesIO(chunk)
     original_size = struct.unpack('<Q', _buffer.read(struct.calcsize('Q')))[0]
@@ -187,6 +184,5 @@ def decrypt_chunk(chunk, password=None):
     #iv = chunk[struct.calcsize('Q'):struct.calcsize('Q') + 16]
     #chunk = chunk[struct.calcsize('Q') + 16:]
     decryptor = AES.new(password, AES.MODE_CBC, iv)
-    logging.debug("MARKER: (decrypt_chunk) original_size = {} padded_size = {}".format(original_size, len(chunk)))
     result = decryptor.decrypt(chunk)
     return result[:original_size]

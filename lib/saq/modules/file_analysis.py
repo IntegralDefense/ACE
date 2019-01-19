@@ -704,6 +704,7 @@ class ArchiveAnalyzer(AnalysisModule):
             # avoid the numerious XML documents in excel files
             params = ['unzip', local_file_path, '-x', 'xl/activeX/*', 
                                                 '-x', 'xl/activeX/_rels/*', 
+                                                '-x', 'xl/ctrlProps/*.xml',
                       '-d', extracted_path]
         elif is_ace_file:
             # for some reason, unace doesn't let you use a full path
@@ -742,8 +743,8 @@ class ArchiveAnalyzer(AnalysisModule):
                 if is_office_document:
                     file_observable.redirection = _file
 
-                # 5/21/2018 - XPS files are including links to malicious sites
-                if _file.ext == 'xps':
+                # https://github.com/IntegralDefense/ACE/issues/12 - also fixed for xps
+                if file_observable.ext in [ 'xps', 'rels' ]:
                     file_observable.add_directive(DIRECTIVE_EXTRACT_URLS)
 
                 # a single file inside of a zip file is always suspect
@@ -971,7 +972,7 @@ class OLEVBA_Analyzer_v1_1(AnalysisModule):
         try:
 
             # we create a temporary directory to hold the output data
-            output_dir = tempfile.mkdtemp(suffix='.ole', dir=os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir']))
+            output_dir = tempfile.mkdtemp(suffix='.ole', dir=saq.TEMP_DIR)
             # keep track of these so we can remove them later
             self.output_dirs.append(output_dir)
             
@@ -1030,7 +1031,7 @@ class OLEVBA_Analyzer_v1_1(AnalysisModule):
             # remove me later... XXX
             import uuid
             _uuid = str(uuid.uuid4())
-            _path = os.path.join(saq.SAQ_HOME, 'review', 'misc', _uuid)
+            _path = os.path.join(saq.DATA_DIR, 'review', 'misc', _uuid)
             with open(_path, 'w') as fp:
                 fp.write(json_data)
 
@@ -2243,7 +2244,7 @@ class YaraScanner_v3_4(AnalysisModule):
         #self.blacklisted_rules = []
 
         # this is where we place files that fail scanning
-        self.scan_failure_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['yara']['scan_failure_dir'])
+        self.scan_failure_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['yara']['scan_failure_dir'])
         if not os.path.exists(self.scan_failure_dir):
             try:
                 os.makedirs(self.scan_failure_dir)
@@ -2428,17 +2429,17 @@ class YaraScanner_v3_4(AnalysisModule):
             logging.error("error scanning file {}: {}".format(local_file_path, e))
             
             # we copy the files we cannot scan to a directory where we can debug it later
-            if self.scan_failure_dir is not None:
-                try:
-                    dest_path = os.path.join(self.scan_failure_dir, os.path.basename(local_file_path))
-                    while os.path.exists(dest_path):
-                        dest_path = '{}_{}'.format(dest_path, datetime.datetime.now().strftime('%Y%m%d%H%M%S-%f'))
-
-                    shutil.copy(local_file_path, dest_path)
-                    logging.debug("copied {} to {}".format(local_file_path, dest_path))
-                except Exception as e:
-                    logging.error("unable to copy {} to {}: {}".format(local_file_path, self.scan_failure_dir, e))
-                    report_exception()
+            #if self.scan_failure_dir is not None:
+                #try:
+                    #dest_path = os.path.join(self.scan_failure_dir, os.path.basename(local_file_path))
+                    #while os.path.exists(dest_path):
+                        #dest_path = '{}_{}'.format(dest_path, datetime.datetime.now().strftime('%Y%m%d%H%M%S-%f'))
+#
+                    #shutil.copy(local_file_path, dest_path)
+                    #logging.debug("copied {} to {}".format(local_file_path, dest_path))
+                #except Exception as e:
+                    #logging.error("unable to copy {} to {}: {}".format(local_file_path, self.scan_failure_dir, e))
+                    #report_exception()
             
             return False
 
@@ -3337,14 +3338,12 @@ class URLExtractionAnalyzer(AnalysisModule):
         for url in extracted_urls:
             url_observable = analysis.add_observable(F_URL, url)
             if url_observable:
-                # we don't want to crawl the internet
-                #if not _file.has_relationship(R_DOWNLOADED_FROM):
-                    #url_observable.add_directive(DIRECTIVE_CRAWL)
                 analysis.details.append(url_observable.value)
                 logging.debug("extracted url {} from {}".format(url_observable.value, _file.value))
 
-                # XXX hack
-                if self.engine.name == 'cloudphish':
+                # don't download from links that came from files downloaded from the internet
+                if _file.has_relationship(R_DOWNLOADED_FROM):
+                    logging.info("excluding analysis for url {} by cloudphish for downloaded file".format(url))
                     url_observable.exclude_analysis(CloudphishAnalyzer)
 
         return True
@@ -3823,7 +3822,7 @@ class PCodeAnalyzer(AnalysisModule):
                 p.wait(timeout=30)
 
         if p.returncode != 0:
-            logging.warning("pcodedmp returned error code {} for {}".format(p.returncode, _file.value))
+            logging.debug("pcodedmp returned error code {} for {}".format(p.returncode, _file.value))
 
         if os.path.getsize(stderr_path):
             logging.debug("pcodedmp recorded errors for {}".format(_file.value))
@@ -3868,10 +3867,11 @@ class OfficeFileArchiver(AnalysisModule):
     @property
     def office_archive_dir(self):
         """Relative path to the directory that contains archived office documents."""
-        return self.config['office_archive_dir']
+        return os.path.join(saq.DATA_DIR, self.config['office_archive_dir'])
 
     def verify_environment(self):
-        self.verify_path_exists(self.office_archive_dir)
+        self.verify_config_exists('office_archive_dir')
+        self.create_required_directory(self.office_archive_dir)
 
     def execute_analysis(self, _file):
         local_file_path = get_local_file_path(self.root, _file)
@@ -3884,8 +3884,7 @@ class OfficeFileArchiver(AnalysisModule):
             return False
 
         t = datetime.datetime.now()
-        subdir = os.path.join(saq.SAQ_HOME, self.office_archive_dir, 
-                              t.strftime('%Y'), t.strftime('%m'), t.strftime('%d'))
+        subdir = os.path.join(self.office_archive_dir, t.strftime('%Y'), t.strftime('%m'), t.strftime('%d'))
         
         # is this different than the last time we checked?
         if subdir != self.existing_subdir:
@@ -3904,3 +3903,4 @@ class OfficeFileArchiver(AnalysisModule):
 
         analysis = self.create_analysis(_file)
         analysis.details = target_path
+        return True

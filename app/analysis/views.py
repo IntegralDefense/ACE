@@ -12,6 +12,7 @@ import re
 import shutil
 import smtplib
 import socket
+import tempfile
 import traceback
 import uuid
 import zipfile
@@ -41,14 +42,19 @@ from saq.constants import *
 from saq.crits import update_status
 from saq.analysis import Tag
 from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Event, EventMapping, \
-                         ObservableMapping, Observable, Tag, TagMapping, EngineWorkload, Malware, \
+                         ObservableMapping, Observable, Tag, TagMapping, Malware, \
                          MalwareMapping, Company, CompanyMapping, Campaign, Alert, \
-                         ProfilePointAlertMapping, ProfilePoint, ProfilePointTagMapping
+                         Workload, DelayedAnalysis, \
+                         acquire_lock, release_lock, \
+                         ProfilePointAlertMapping, ProfilePoint, ProfilePointTagMapping, \
+                         get_available_nodes, use_db
 from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
 from saq.gui import GUIAlert
 from saq.performance import record_execution_time
 from saq.network_client import submit_alerts
+
+import ace_api
 
 from app import db
 from app.analysis import *
@@ -60,6 +66,8 @@ from sqlalchemy import and_, or_, func, distinct
 from sqlalchemy.orm import joinedload, aliased
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.sql import text, func
+
+import pytz
 
 # used to determine where to redirect to after doing something
 REDIRECT_MAP = {
@@ -115,8 +123,8 @@ def get_current_alert():
 
     try:
         return db.session.query(GUIAlert).filter(GUIAlert.uuid == alert_uuid).one()
-    except:
-        pass
+    except Exception as e:
+        logging.error(f"couldn't get alert {alert_uuid}: {e}")
 
     return None
 
@@ -221,7 +229,7 @@ def download_json():
     edges.extend(tag_edges)
 
     response = make_response(json.dumps({'nodes': nodes, 'edges': edges}))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
 
 @analysis.route('/redirect_to', methods=['GET', "POST"])
@@ -456,7 +464,7 @@ def download_file():
         return response
     elif mode == 'zip':
         try:
-            dest_file = '{}.zip'.format(os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], str(uuid.uuid4())))
+            dest_file = '{}.zip'.format(os.path.join(saq.TEMP_DIR, str(uuid.uuid4())))
             logging.debug("creating encrypted zip file {} for {}".format(dest_file, full_path))
             p = Popen(['zip', '-e', '--junk-paths', '-P', 'infected', dest_file, full_path])
             p.wait()
@@ -630,38 +638,40 @@ def add_tag():
         flash("you must specify one or more tags to add")
         return redirection
 
-    # you have to be able to lock all of the alerts before you can continue
-    locked_alerts = []
+    failed_count = 0
 
-    try:
-        for uuid in uuids:
-            logging.debug("attempting to lock alert {} for tagging".format(uuid))
-            alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
+    for uuid in uuids:
+        logging.debug("attempting to lock alert {} for tagging".format(uuid))
+        alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
+        if alert is None:
+            continue
 
-            if not alert.lock():
-                flash("unable to modify alert: alert is currently being analyzed")
-                return redirection
+        try:
+            alert.lock_uuid = acquire_lock(alert.uuid)
+            if alert.lock_uuid is None:
+                failed_count += 1
+                continue
 
-            locked_alerts.append(alert)
-
-        for alert in locked_alerts:
-
-            if not alert.load():
-                raise RuntimeError("alert.load() returned false")
-
+            alert.load()
             for tag in tags:
                 alert.add_tag(tag)
 
             alert.sync()
 
-        db.session.commit()
-        if redirect_to == "analysis.manage":
-            session['checked'] = uuids
-        return redirection
+        except Exception as e:
+            logging.error(f"unable to add tag to {alert}: {e}")
+            failed_count += 1
 
-    finally:
-        for alert in locked_alerts:
-            alert.unlock()
+        finally:
+            release_lock(alert.uuid, alert.lock_uuid)
+
+    if failed_count:
+        flash("unable to modify alert: alert is currently being analyzed")
+
+    if redirect_to == "analysis.manage":
+        session['checked'] = uuids
+
+    return redirection
 
 @analysis.route('/add_observable', methods=['POST'])
 @login_required
@@ -702,29 +712,38 @@ def add_observable():
         flash("internal error")
         return redirection
 
-    if not alert.lock():
-        flash("unable to modify alert: alert is currently being analyzed")
+    lock_uuid = acquire_lock(alert.uuid)
+    if not lock_uuid:
+        flash("unable to modify alert: alert is currently locked")
         return redirection
 
     try:
-        if not alert.load():
-            raise RuntimeError("alert.load() returned false")
-    except Exception as e:
-        logging.error("unable to load alert {0} from filesystem: {1}".format(uuid, str(e)))
-        flash("internal error")
+        try:
+            if not alert.load():
+                raise RuntimeError("alert.load() returned false")
+        except Exception as e:
+            logging.error("unable to load alert {0} from filesystem: {1}".format(uuid, str(e)))
+            flash("internal error")
+            return redirection
+
+        alert.add_observable(o_type, o_value, None if o_time == '' else o_time)
+
+        try:
+            alert.sync()
+        except Exception as e:
+            logging.error("unable to sync alert: {0}".format(str(e)))
+            flash("internal error")
+            return redirection
+
+        flash("added observable")
         return redirection
 
-    alert.add_observable(o_type, o_value, None if o_time == '' else o_time)
-
-    try:
-        alert.sync()
-    except Exception as e:
-        logging.error("unable to sync alert: {0}".format(str(e)))
-        flash("internal error")
-        return redirection
-
-    flash("added observable")
-    return redirection
+    finally:
+        try:
+            release_lock(alert.uuid, lock_uuid)
+        except Exception as e:
+            logging.error("unable to release lock {}: {}".format(alert.uuid, LOCK_UUID))
+        
 
 @analysis.route('/add_comment', methods=['POST'])
 @login_required
@@ -935,104 +954,119 @@ def unremediate():
 
 @analysis.route('/new_alert', methods=['POST'])
 @login_required
-def new_alert():
+@use_db
+def new_alert(db, c):
+                     
     # get submitted data
     insert_date = request.form.get('new_alert_insert_date', None)
     # reformat date
-    insert_date = datetime.datetime.strptime(insert_date, '%m-%d-%Y %H:%M:%S').strftime(event_time_format)
-    description = request.form.get('new_alert_description', None)
+    event_time = datetime.datetime.strptime(insert_date, '%m-%d-%Y %H:%M:%S')
+    # set the timezone
+    try:
+        timezone_str = request.form.get('timezone')
+        timezone = pytz.timezone(timezone_str)
+        event_time = timezone.localize(event_time)
+    except Exception as e:
+        error_message = f"unable to set timezone to {timezone_str}: {e}"
+        logging.error(error_message)
+        flask(error_message)
+        return redirect(url_for('analysis.manage'))
 
     comment = ''
 
-    # create alert from data
-    alert = Alert()
-    alert.company_id = saq.CONFIG['gui'].getint('default_company_id')
-    target_company = request.form.get('target_company', None)
-    if target_company is not None:
-        if int(target_company) != -1: # if it is not the default...
-            alert.company_id = int(target_company)
-    alert.uuid = str(uuid.uuid4())
-    alert.tool = "gui"
-    alert.tool_instance = socket.gethostname()
-    alert.alert_type = "manual"
-    alert.description = description
-    alert.event_time = insert_date
-    alert.details = {'user': current_user.username, 'comment': comment}
-    alert.storage_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], alert.uuid)
+    tool = "gui"
+    tool_instance = saq.CONFIG['global']['instance_name']
+    alert_type = "manual"
+    description = request.form.get('new_alert_description', 'Manual Alert')
+    event_time = event_time
+    details = {'user': current_user.username, 'comment': comment}
 
-    # create alert directory structure
-    dest_path = os.path.join(SAQ_HOME, alert.storage_dir)
-    if not os.path.isdir(dest_path):
-        try:
-            os.makedirs(dest_path)
-        except Exception as e:
-            logging.error("unable to create directory {0}: {1}".format(dest_path, str(e)))
-            report_exception()
-            return
-    alert.save()
-
-    # add observables to alert
-    for key in request.form.keys():
-        if key.startswith("observables_types_"):
-            index = key[18:]
-            otype = request.form.get("observables_types_{}".format(index))
-            otime = request.form.get("observables_times_{}".format(index))
-            if otime == "":
-                otime = None
-            else:
-                otime = datetime.datetime.strptime(otime, '%m-%d-%Y %H:%M:%S').strftime(event_time_format)
-            if otype == 'file':
-                upload_file = request.files["observables_values_{}".format(index)]
-                save_path = os.path.join(SAQ_HOME, alert.storage_dir, os.path.basename(upload_file.filename))
-
-                try:
-                    upload_file.save(save_path)
-                except Exception as e:
-                    flash("unable to save {}: {}".format(save_path, str(e)))
-                    report_exception()
-                    return redirect(url_for('analysis.manage'))
-
-                alert.add_observable(F_FILE, os.path.relpath(save_path, start=os.path.join(SAQ_HOME, alert.storage_dir)), o_time=otime)
-            else:
-                ovalue = request.form.get("observables_values_{}".format(index))
-                alert.add_observable(otype, ovalue, o_time=otime)
-
-    alert.save()
-
-    target_company = None
-    with get_db_connection() as db:
-        c = db.cursor()
-        c.execute("SELECT `name` FROM company WHERE `id` = %s", (alert.company_id,))
-        result = c.fetchone()
-        if not result:
-            flash("unknown company_id {}".format(alert.company_id))
-            return redirect(url_for('analysis.manage'))
-
-        target_company = result[0]
-
-    # what host we select here depends on what company we are targeting the analysis for
-    target_section = 'network_client_ace_{}'.format(target_company)
-    if target_section not in saq.CONFIG:
-        flash("company {} does not have a network_client_ace section in the configuratiuon".format(target_company))
-        return redirect(url_for('analysis.manage'))
-    
-    remote_host = saq.CONFIG[target_section]['remote_host']
-    remote_port = saq.CONFIG[target_section].getint('remote_port')
-    ssl_hostname = saq.CONFIG[target_section]['ssl_hostname']
-    ssl_cert = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_cert'])
-    ssl_key = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ssl_key'])
-    ca_path = os.path.join(saq.SAQ_HOME, saq.CONFIG[target_section]['ca_path'])
+    observables = []
+    tags = []
+    files = []
+    temp_file_paths = []
 
     try:
-        submit_alerts(remote_host, remote_port, ssl_cert, ssl_hostname, ssl_key, ca_path, os.path.join(SAQ_HOME, alert.storage_dir))
-    except Exception as e:
-        logging.error("unable to submit alert: {}".format(e))
-        flash("unable to submit alert: {}".format(e))
-        report_exception()
+        for key in request.form.keys():
+            if key.startswith("observables_types_"):
+                index = key[18:]
+                o_type = request.form.get(f'observables_types_{index}')
+                o_value = request.form.get(f'observables_values_{index}')
+                o_time = request.form.get(f'observables_times_{index}')
 
-    shutil.rmtree(os.path.join(SAQ_HOME, alert.storage_dir))
+                observable = {
+                    'type': o_type,
+                    'value': o_value,
+                }
 
-    return redirect(url_for('analysis.manage'))
+                if o_time:
+                    otime = datetime.datetime.strptime(otime, '%m-%d-%Y %H:%M:%S')
+                    observable['time'] = timezone.localize(o_time)
+
+                if o_type == F_FILE:
+                    upload_file = request.files.get(f'observables_values_{index}', None)
+                    if upload_file:
+                        fp, save_path = tempfile.mkstemp(suffix='.upload', dir=os.path.join(saq.TEMP_DIR))
+                        os.close(fp)
+
+                        temp_file_paths.append(save_path)
+
+                        try:
+                            upload_file.save(save_path)
+                        except Exception as e:
+                            flash(f"unable to save {save_path}: {e}")
+                            report_exception()
+                            return redirect(url_for('analysis.manage'))
+
+                        files.append((upload_file.filename, open(save_path, 'rb')))
+
+                    observable['value'] = upload_file.filename
+
+                observables.append(observable)
+
+        # get the location for this node id
+        c.execute("SELECT location FROM nodes WHERE id = %s", (int(request.form.get('target_node_id'))))
+        node_location = c.fetchone()
+        node_location = node_location[0] # meh ...
+            
+        try:
+            result = ace_api.submit(
+                remote_host = node_location,
+                ssl_verification = saq.CONFIG['SSL']['ca_chain_path'],
+                description = description,
+                analysis_mode = ANALYSIS_MODE_CORRELATION,
+                tool = tool,
+                tool_instance = tool_instance,
+                type = ANALYSIS_TYPE_MANUAL,
+                event_time = event_time,
+                details = details,
+                observables = observables,
+                tags = tags,
+                files = files)
+
+            if 'result' in result and 'uuid' in result['result']:
+                uuid = result['result']['uuid']
+                return redirect(url_for('analysis.index', direct=uuid))
+
+        except Exception as e:
+            logging.error(f"unable to submit alert: {e}")
+            flash(f"unable to submit alert: {e}")
+            #report_exception()
+
+        return redirect(url_for('analysis.manage'))
+
+    finally:
+        for file_path in temp_file_paths:
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                logging.error(f"unable to remove {file_path}: {e}")
+
+        for file_name, fp in files:
+            try:
+                fp.close()
+            except:
+                logging.error(f"unable to close file descriptor for {file_name}")
 
 @analysis.route('/new_malware_option', methods=['POST', 'GET'])
 @login_required
@@ -1205,10 +1239,25 @@ def set_dispositions(alert_uuids, disposition, user_comment=None):
                           INSERT INTO comments ( user_id, uuid, comment ) 
                           VALUES ( %s, %s, %s )""", ( current_user.id, uuid, user_comment))
 
-        # and insert these alerts back into the workstream
-        c.execute("""
-                  INSERT INTO workload ( alert_id ) 
-                  SELECT id FROM alerts WHERE uuid IN ( {} )""".format(uuid_where_clause))
+        # now we need to insert each of these alert back into the workload
+        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
+        sql = f"""
+INSERT IGNORE INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
+SELECT 
+    alerts.uuid, 
+    nodes.id,
+    %s, 
+    NOW(),
+    alerts.company_id, 
+    NULL, 
+    alerts.storage_dir 
+FROM 
+    alerts JOIN nodes ON alerts.location = nodes.name
+WHERE 
+    uuid IN ( {uuid_placeholders} )"""
+        params = [ ANALYSIS_MODE_CORRELATION ]
+        params.extend(alert_uuids)
+        c.execute(sql, tuple(params))
         db.commit()
 
 @analysis.route('/set_disposition', methods=['POST'])
@@ -1763,7 +1812,7 @@ def manage():
     display_disposition = True
 
     # build the SQL query based on the filter settings
-    query = db.session.query(GUIAlert)
+    query = db.session.query(GUIAlert).with_labels()
 
     if filters[FILTER_CB_OPEN].value:
         # query = query.join(UserWorkload, GUIAlert.id == UserWorkload.alert_id).filter(UserWorkload.user_id == current_user.id)
@@ -2008,9 +2057,10 @@ def manage():
                 #TagMapping.tag_id.in_([t.id for t in tags])).subquery()))
         filter_english.extend(tag_filters_english)
 
-    query = query.options(joinedload('workload_item'))
+    query = query.options(joinedload('workload'))
     query = query.options(joinedload('delayed_analysis'))
-    query = query.options(joinedload('observable_mappings'))
+    query = query.options(joinedload('lock'))
+    #query = query.options(joinedload('observable_mappings'))
     query = query.options(joinedload('event_mapping'))
 
     count_query = query.statement.with_only_columns([func.count(distinct(saq.database.Alert.id))]).order_by(None)
@@ -2189,6 +2239,7 @@ def manage():
     return render_template(
         'analysis/manage.html',
         alerts=alerts,
+        ace_config=saq.CONFIG,
         checked=checked,
         comments=comments,
         alert_tags=alert_tags,
@@ -2611,6 +2662,10 @@ def generate_intel_tables():
 @login_required
 def metrics():
 
+    if not saq.CONFIG['gui'].getboolean('display_metrics'):
+        # redirect to index
+        return redirect(url_for('analysis.index'))
+
     # object representations of the filters to define types and value verification routines
     # this later gets augmented with the dynamic filters
     filters = {
@@ -2810,6 +2865,11 @@ def metrics():
 @analysis.route('/events', methods=['GET', 'POST'])
 @login_required
 def events():
+
+    if not saq.CONFIG['gui'].getboolean('display_events'):
+        # redirect to index
+        return redirect(url_for('analysis.index'))
+
     filters = {
         'filter_event_open': SearchFilter('filter_event_open', FILTER_TYPE_CHECKBOX, True),
         'event_daterange': SearchFilter('event_daterange', FILTER_TYPE_TEXT, ''),
@@ -2939,7 +2999,16 @@ def events():
     if session['event_sort_by'] == 'disposition':
         events = sorted(events, key=lambda event: event.disposition_rank, reverse=session['event_sort_dir'])
 
-    return render_template('analysis/events.html', events=events, filter_state=filter_state, malware=malware, companies=companies, campaigns=campaigns, sort_by=session['event_sort_by'], sort_dir=session['event_sort_dir'])
+    event_tags = {} 
+    # we don't show "special" or "hidden" tags in the display
+    special_tag_names = [tag for tag in saq.CONFIG['tags'].keys() if saq.CONFIG['tags'][tag] in ['special', 'hidden' ]]
+    for event in events:
+        event_tags[event.id] = []
+        for tag in event.sorted_tags:
+            if tag.name not in special_tag_names:
+                event_tags[event.id].append(tag)
+
+    return render_template('analysis/events.html', events=events, event_tags=event_tags, filter_state=filter_state, malware=malware, companies=companies, campaigns=campaigns, sort_by=session['event_sort_by'], sort_dir=session['event_sort_dir'])
 
 @analysis.route('/event_alerts', methods=['GET'])
 @login_required
@@ -2948,7 +3017,16 @@ def event_alerts():
     events = db.session.query(Event).filter(Event.id == event_id).all()
     event = events[0]
     event_mappings = db.session.query(EventMapping).filter(EventMapping.event_id == event_id).all()
-    return render_template('analysis/event_alerts.html', event_mappings=event_mappings, event=event)
+
+    alert_tags = {}
+    special_tag_names = [tag for tag in saq.CONFIG['tags'].keys() if saq.CONFIG['tags'][tag] in ['special', 'hidden' ]]
+    for event_mapping in event_mappings:
+        alert_tags[event_mapping.alert.uuid] = []
+        for tag in event_mapping.alert.sorted_tags:
+            if tag.name not in special_tag_names:
+                alert_tags[event_mapping.alert.uuid].append(tag)
+
+    return render_template('analysis/event_alerts.html', alert_tags=alert_tags, event_mappings=event_mappings, event=event)
 
 @analysis.route('/remove_alerts', methods=['POST'])
 @login_required
@@ -3379,7 +3457,7 @@ def index():
                            alert_tags=alert_tags,
                            observable=observable,
                            analysis=analysis,
-                           config=saq.CONFIG,
+                           ace_config=saq.CONFIG,
                            User=User,
                            db=db,
                            current_time=datetime.datetime.now(),
@@ -3401,16 +3479,34 @@ def index():
 
 @analysis.route('/file', methods=['GET'])
 @login_required
-def file():
+@use_db
+def file(db, c):
+    # get the list of available nodes (for all companies)
+    sql = """
+SELECT
+    nodes.id,
+    nodes.name, 
+    nodes.location,
+    company.id,
+    company.name
+FROM
+    nodes LEFT JOIN node_modes ON nodes.id = node_modes.node_id
+    JOIN company ON nodes.company_id = company.id
+WHERE
+    nodes.is_local = 0
+    AND ( nodes.any_mode OR node_modes.analysis_mode = %s )
+ORDER BY
+    company.name,
+    nodes.location
+"""
+    c.execute(sql, (ANALYSIS_MODE_CORRELATION,))
+    available_nodes = c.fetchall()
     date = datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S")
-    target_companies = [] # of tuple(id, name)
-    with get_db_connection() as db:
-        c = db.cursor()
-        c.execute("SELECT `id`, `name` FROM company WHERE `name` != 'legacy' ORDER BY name")
-        for row in c:
-            target_companies.append(row)
-
-    return render_template('analysis/analyze_file.html', observable_types=VALID_OBSERVABLE_TYPES, date=date, target_companies=target_companies)
+    return render_template('analysis/analyze_file.html', 
+                           observable_types=VALID_OBSERVABLE_TYPES,     
+                           date=date, 
+                           available_nodes=available_nodes,
+                           timezones=pytz.common_timezones)
 
 @analysis.route('/upload_file', methods=['POST'])
 @login_required
@@ -3426,7 +3522,7 @@ def upload_file():
     if not alert_uuid:
         alert = Alert()
         alert.tool = 'Manual File Upload - '+file_name
-        alert.tool_instance = socket.gethostname()
+        alert.tool_instance = saq.CONFIG['global']['instance_name']
         alert.alert_type = 'manual_upload'
         alert.description = 'Manual File upload {0}'.format(file_name)
         alert.event_time = datetime.datetime.now()
@@ -3454,12 +3550,14 @@ def upload_file():
         # we need to do this here so that the proper subdirectories get created
         alert.save()
 
-        if not alert.lock():
+        alert.lock_uuid = acquire_lock(alert.uuid)
+        if alert.lock_uuid is None:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
     else:
         alert = get_current_alert()
-        if not alert.lock():
+        alert.lock_uuid = acquire_lock(alert.uuid)
+        if alert.lock_uuid is None:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
 
@@ -3474,11 +3572,13 @@ def upload_file():
     except Exception as e:
         flash("unable to save {} to {}: {}".format(file_name, dest_path, str(e)))
         report_exception()
+        release_lock(alert.uuid, alert.lock_uuid)
         return redirect(url_for('analysis.file'))
 
     alert.add_observable(F_FILE, os.path.relpath(dest_path, start=os.path.join(SAQ_HOME, alert.storage_dir)))
     alert.sync()
-
+    
+    release_lock(alert.uuid, alert.lock_uuid)
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
 @analysis.route('/analyze_alert', methods=['POST'])
@@ -3487,9 +3587,9 @@ def analyze_alert():
     alert = get_current_alert()
 
     try:
-        alert.request_correlation()
+        alert.schedule()
     except:
-        flash("Unable to sync alert")
+        flash("unable to schedule alert for analysis")
 
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
@@ -3504,7 +3604,8 @@ def observable_action():
 
     logging.debug("alert {} observable {} action {}".format(alert, observable_uuid, action_id))
 
-    if not alert.lock():
+    lock_uuid = acquire_lock(alert.uuid)
+    if lock_uuid is None:
         return "Unable to lock alert.", 500
     try:
         if not alert.load():
@@ -3548,7 +3649,7 @@ def observable_action():
         traceback.print_exc()
         return "Unable to load alert: {}".format(str(e)), 500
     finally:
-        alert.unlock()
+        release_lock(alert.uuid, lock_uuid)
 
     return "Action completed. ", 200
 
@@ -3557,7 +3658,9 @@ def observable_action():
 def mark_suspect():
     alert = get_current_alert()
     observable_uuid = request.form.get("observable_uuid")
-    if not alert.lock():
+
+    lock_uuid = acquire_lock(alert.uuid)
+    if lock_uuid is None:
         flash("unable to lock alert")
         return "", 400
     try:
@@ -3572,7 +3675,7 @@ def mark_suspect():
         traceback.print_exc()
         return "", 400
     finally:
-        alert.unlock()
+        release_lock(alert.uuid, lock_uuid)
 
     return url_for("analysis.index", direct=alert.uuid), 200
 
@@ -3664,7 +3767,7 @@ def query_message_ids():
             result[source][archive_id] = result[source][archive_id].json
 
     response = make_response(json.dumps(result))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
 
 class EmailRemediationTarget(object):
@@ -3787,5 +3890,5 @@ def remediate_emails():
         targets[key] = targets[key].json
     
     response = make_response(json.dumps(targets))
-    response.mime_type = 'application/json'
+    response.mimetype = 'application/json'
     return response
