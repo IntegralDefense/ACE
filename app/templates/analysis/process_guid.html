@@ -6,8 +6,12 @@
     </div>
 </div>
 
+
 <div id="accordion" role="tablist" aria-multiselectable="true">
 
+  {% if 'parent' not in analysis.details %}
+      An error was encountered that prevented analysis details from being completed.
+  {% else %}
   <div class="card">
     <div class="card-header" role="tab" id="headingAncestry">
       <h5 class="mb-0">
@@ -248,7 +252,7 @@
       </div>
     </div>
   </div>
-
+  {% endif %}
 </div>
 
 

@@ -212,7 +212,6 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_detection', (ANALYSIS_MODE_CLOUDPHISH, ANALYSIS_MODE_ANALYSIS))
-        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CORRELATION)
 
         engine.start()
 
@@ -360,7 +359,6 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_cloudphish_delayed_test', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CORRELATION)
 
         engine.start()
 

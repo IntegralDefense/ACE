@@ -149,7 +149,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # force this analysis to become an alert
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
+        #engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -240,8 +240,8 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # now attempt to download the alert itself
         result = self.client.get(url_for('engine.download', uuid=_uuid))
         # we should get back a tar file
-        tar_path = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['tmp_dir'], 'download.tar')
-        output_dir = os.path.join(saq.CONFIG['global']['tmp_dir'], 'download')
+        tar_path = os.path.join(saq.TEMP_DIR, 'download.tar')
+        output_dir = os.path.join(saq.TEMP_DIR, 'download')
 
         try:
             with open(tar_path, 'wb') as fp:
@@ -322,7 +322,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # force this analysis to become an alert
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
+        #engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()

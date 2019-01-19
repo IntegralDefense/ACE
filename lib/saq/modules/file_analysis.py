@@ -3867,10 +3867,11 @@ class OfficeFileArchiver(AnalysisModule):
     @property
     def office_archive_dir(self):
         """Relative path to the directory that contains archived office documents."""
-        return self.config['office_archive_dir']
+        return os.path.join(saq.DATA_DIR, self.config['office_archive_dir'])
 
     def verify_environment(self):
-        self.verify_path_exists(self.office_archive_dir)
+        self.verify_config_exists('office_archive_dir')
+        self.create_required_directory(self.office_archive_dir)
 
     def execute_analysis(self, _file):
         local_file_path = get_local_file_path(self.root, _file)
@@ -3883,8 +3884,7 @@ class OfficeFileArchiver(AnalysisModule):
             return False
 
         t = datetime.datetime.now()
-        subdir = os.path.join(saq.SAQ_HOME, self.office_archive_dir, 
-                              t.strftime('%Y'), t.strftime('%m'), t.strftime('%d'))
+        subdir = os.path.join(self.office_archive_dir, t.strftime('%Y'), t.strftime('%m'), t.strftime('%d'))
         
         # is this different than the last time we checked?
         if subdir != self.existing_subdir:
@@ -3903,3 +3903,4 @@ class OfficeFileArchiver(AnalysisModule):
 
         analysis = self.create_analysis(_file)
         analysis.details = target_path
+        return True

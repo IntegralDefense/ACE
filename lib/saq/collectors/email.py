@@ -136,8 +136,8 @@ class EmailCollector(Collector):
                 if email_count == 0:
                     # does the current directory name not equal the current YYYYMMDDHH?
                     if subdir_name != datetime.datetime.now().strftime(self.subdir_format):
-                        logging.info("deleting empty email directory {}".format(target_dir))
                         try:
+                            logging.info("deleting empty email directory {}".format(target_dir))
                             os.rmdir(target_dir)
                         except Exception as e:
                             logging.error("unable to delete {}: {}".format(target_dir, e))

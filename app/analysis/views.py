@@ -123,8 +123,8 @@ def get_current_alert():
 
     try:
         return db.session.query(GUIAlert).filter(GUIAlert.uuid == alert_uuid).one()
-    except:
-        pass
+    except Exception as e:
+        logging.error(f"couldn't get alert {alert_uuid}: {e}")
 
     return None
 
@@ -638,38 +638,40 @@ def add_tag():
         flash("you must specify one or more tags to add")
         return redirection
 
-    # you have to be able to lock all of the alerts before you can continue
-    locked_alerts = []
+    failed_count = 0
 
-    try:
-        for uuid in uuids:
-            logging.debug("attempting to lock alert {} for tagging".format(uuid))
-            alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
+    for uuid in uuids:
+        logging.debug("attempting to lock alert {} for tagging".format(uuid))
+        alert = db.session.query(GUIAlert).filter(GUIAlert.uuid == uuid).one()
+        if alert is None:
+            continue
 
-            if not alert.lock():
-                flash("unable to modify alert: alert is currently being analyzed")
-                return redirection
+        try:
+            alert.lock_uuid = acquire_lock(alert.uuid)
+            if alert.lock_uuid is None:
+                failed_count += 1
+                continue
 
-            locked_alerts.append(alert)
-
-        for alert in locked_alerts:
-
-            if not alert.load():
-                raise RuntimeError("alert.load() returned false")
-
+            alert.load()
             for tag in tags:
                 alert.add_tag(tag)
 
             alert.sync()
 
-        db.session.commit()
-        if redirect_to == "analysis.manage":
-            session['checked'] = uuids
-        return redirection
+        except Exception as e:
+            logging.error(f"unable to add tag to {alert}: {e}")
+            failed_count += 1
 
-    finally:
-        for alert in locked_alerts:
-            alert.unlock()
+        finally:
+            release_lock(alert.uuid, alert.lock_uuid)
+
+    if failed_count:
+        flash("unable to modify alert: alert is currently being analyzed")
+
+    if redirect_to == "analysis.manage":
+        session['checked'] = uuids
+
+    return redirection
 
 @analysis.route('/add_observable', methods=['POST'])
 @login_required
@@ -973,7 +975,7 @@ def new_alert(db, c):
     comment = ''
 
     tool = "gui"
-    tool_instance = socket.gethostname()
+    tool_instance = saq.CONFIG['global']['instance_name']
     alert_type = "manual"
     description = request.form.get('new_alert_description', 'Manual Alert')
     event_time = event_time
@@ -1237,10 +1239,25 @@ def set_dispositions(alert_uuids, disposition, user_comment=None):
                           INSERT INTO comments ( user_id, uuid, comment ) 
                           VALUES ( %s, %s, %s )""", ( current_user.id, uuid, user_comment))
 
-        # and insert these alerts back into the workstream
-        #c.execute("""
-                  #INSERT INTO workload ( alert_id ) 
-                  #SELECT id FROM alerts WHERE uuid IN ( {} )""".format(uuid_where_clause))
+        # now we need to insert each of these alert back into the workload
+        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
+        sql = f"""
+INSERT IGNORE INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
+SELECT 
+    alerts.uuid, 
+    nodes.id,
+    %s, 
+    NOW(),
+    alerts.company_id, 
+    NULL, 
+    alerts.storage_dir 
+FROM 
+    alerts JOIN nodes ON alerts.location = nodes.name
+WHERE 
+    uuid IN ( {uuid_placeholders} )"""
+        params = [ ANALYSIS_MODE_CORRELATION ]
+        params.extend(alert_uuids)
+        c.execute(sql, tuple(params))
         db.commit()
 
 @analysis.route('/set_disposition', methods=['POST'])
@@ -2222,6 +2239,7 @@ def manage():
     return render_template(
         'analysis/manage.html',
         alerts=alerts,
+        ace_config=saq.CONFIG,
         checked=checked,
         comments=comments,
         alert_tags=alert_tags,
@@ -2644,6 +2662,10 @@ def generate_intel_tables():
 @login_required
 def metrics():
 
+    if not saq.CONFIG['gui'].getboolean('display_metrics'):
+        # redirect to index
+        return redirect(url_for('analysis.index'))
+
     # object representations of the filters to define types and value verification routines
     # this later gets augmented with the dynamic filters
     filters = {
@@ -2843,6 +2865,11 @@ def metrics():
 @analysis.route('/events', methods=['GET', 'POST'])
 @login_required
 def events():
+
+    if not saq.CONFIG['gui'].getboolean('display_events'):
+        # redirect to index
+        return redirect(url_for('analysis.index'))
+
     filters = {
         'filter_event_open': SearchFilter('filter_event_open', FILTER_TYPE_CHECKBOX, True),
         'event_daterange': SearchFilter('event_daterange', FILTER_TYPE_TEXT, ''),
@@ -3430,7 +3457,7 @@ def index():
                            alert_tags=alert_tags,
                            observable=observable,
                            analysis=analysis,
-                           config=saq.CONFIG,
+                           ace_config=saq.CONFIG,
                            User=User,
                            db=db,
                            current_time=datetime.datetime.now(),
@@ -3495,7 +3522,7 @@ def upload_file():
     if not alert_uuid:
         alert = Alert()
         alert.tool = 'Manual File Upload - '+file_name
-        alert.tool_instance = socket.gethostname()
+        alert.tool_instance = saq.CONFIG['global']['instance_name']
         alert.alert_type = 'manual_upload'
         alert.description = 'Manual File upload {0}'.format(file_name)
         alert.event_time = datetime.datetime.now()
@@ -3523,12 +3550,14 @@ def upload_file():
         # we need to do this here so that the proper subdirectories get created
         alert.save()
 
-        if not alert.lock():
+        alert.lock_uuid = acquire_lock(alert.uuid)
+        if alert.lock_uuid is None:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
     else:
         alert = get_current_alert()
-        if not alert.lock():
+        alert.lock_uuid = acquire_lock(alert.uuid)
+        if alert.lock_uuid is None:
             flash("unable to lock alert {}".format(alert))
             return redirect(url_for('analysis.index'))
 
@@ -3543,11 +3572,13 @@ def upload_file():
     except Exception as e:
         flash("unable to save {} to {}: {}".format(file_name, dest_path, str(e)))
         report_exception()
+        release_lock(alert.uuid, alert.lock_uuid)
         return redirect(url_for('analysis.file'))
 
     alert.add_observable(F_FILE, os.path.relpath(dest_path, start=os.path.join(SAQ_HOME, alert.storage_dir)))
     alert.sync()
-
+    
+    release_lock(alert.uuid, alert.lock_uuid)
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
 @analysis.route('/analyze_alert', methods=['POST'])
@@ -3573,7 +3604,8 @@ def observable_action():
 
     logging.debug("alert {} observable {} action {}".format(alert, observable_uuid, action_id))
 
-    if not alert.lock():
+    lock_uuid = acquire_lock(alert.uuid)
+    if lock_uuid is None:
         return "Unable to lock alert.", 500
     try:
         if not alert.load():
@@ -3617,7 +3649,7 @@ def observable_action():
         traceback.print_exc()
         return "Unable to load alert: {}".format(str(e)), 500
     finally:
-        alert.unlock()
+        release_lock(alert.uuid, lock_uuid)
 
     return "Action completed. ", 200
 
@@ -3626,7 +3658,9 @@ def observable_action():
 def mark_suspect():
     alert = get_current_alert()
     observable_uuid = request.form.get("observable_uuid")
-    if not alert.lock():
+
+    lock_uuid = acquire_lock(alert.uuid)
+    if lock_uuid is None:
         flash("unable to lock alert")
         return "", 400
     try:
@@ -3641,7 +3675,7 @@ def mark_suspect():
         traceback.print_exc()
         return "", 400
     finally:
-        alert.unlock()
+        release_lock(alert.uuid, lock_uuid)
 
     return url_for("analysis.index", direct=alert.uuid), 200
 

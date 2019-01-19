@@ -13,7 +13,7 @@ import saq.database
 
 from saq.analysis import Analysis, Observable
 from saq.constants import *
-from saq.database import get_db_connection, use_db
+from saq.database import get_db_connection, use_db, ALERT
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 
@@ -52,12 +52,14 @@ class ACEDetectionAnalyzer(AnalysisModule):
         # do not alert on a root that has been whitelisted
         if not saq.FORCED_ALERTS and self.root.whitelisted:
             logging.debug("{} has been whitelisted".format(self.root))
-            return
+            return True
 
         if saq.FORCED_ALERTS or self.root.has_detections():
             logging.info("{} has {} detection points - changing mode to {}".format(
                          self.root, len(self.root.all_detection_points), self.target_mode))
             self.root.analysis_mode = self.target_mode
+
+        return True
 
 class ACEAlertDatabaseAnalyzer(AnalysisModule):
     def __init__(self, *args, **kwargs):
@@ -73,21 +75,21 @@ class ACEAlertDatabaseAnalyzer(AnalysisModule):
     def execute_post_analysis(self, db, c):
         # are we in the right analysis mode?
         if self.root.analysis_mode != self.target_mode:
-            return
+            return False
 
         # is this alert already in the database?
         c.execute("SELECT id FROM alerts WHERE uuid = %s", (self.root.uuid,))
         row = c.fetchone()
         if row:
-            return 
+            alert = saq.database.Alert()
+            alert.storage_dir = self.root.storage_dir
+            alert.load()
+            alert.sync()
+            return False
 
         # otherwise insert the alert
-        logging.info("inserting {} in analysis mode {} into database".format(self.root, self.root.analysis_mode))
-        alert = saq.database.Alert()
-        alert.storage_dir = self.root.storage_dir
-        alert.load()
-        alert.sync()
-        return True
+        ALERT(self)
+        return False
 
 class ACEAlertsAnalysis(Analysis):
     """What other alerts have we seen this in?"""
