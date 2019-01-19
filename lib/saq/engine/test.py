@@ -357,7 +357,7 @@ class TestCase(ACEEngineTestCase):
         engine.wait()
 
         # there should be 13 analysis modules loaded
-        self.assertEquals(log_count('loading module '), 16)
+        self.assertEquals(log_count('loading module '), 17)
 
     def test_locally_enabled_modules(self):
         
@@ -932,6 +932,7 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(test_observable.get_analysis(WaitAnalysis_C))
 
     def test_post_analysis_after_false_return(self):
+        # the execute_post_analysis function should be called regardless of what happened during analysis
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
         root.initialize_storage()
         test_observable = root.add_observable(F_TEST, 'test')
@@ -2049,7 +2050,7 @@ class TestCase(ACEEngineTestCase):
         root.save()
         root.schedule()
 
-        saq.CONFIG['analysis_module_high_priority']['priority'] = '0'
+        saq.CONFIG['analysis_module_high_priority']['priority'] = '-1'
         saq.CONFIG['analysis_module_low_priority']['priority'] = '1'
         
         engine = TestEngine(pool_size_limit=1)
@@ -2075,3 +2076,43 @@ class TestCase(ACEEngineTestCase):
         
         self.assertLess(hp_log_entry.created, lp_log_entry.created)
         self.assertLess(lp_log_entry.created, np_log_entry.created)
+
+    def test_post_analysis_multi_mode(self):
+        
+        root = create_root_analysis(analysis_mode='test_groups')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        t1 = root.add_observable(F_TEST, 'test')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1, local_analysis_modes=['test_groups', 'test_single', 'test_empty'])
+        engine.enable_module('analysis_module_post_analysis_multi_mode', ['test_groups', 'test_single', 'test_empty'])
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # at the end of analysi sin test_groups mode post_analysis will execute and change the mode to test_single
+        # it will happen again and change the mode to test_empty but will return True indicating post analysis has completed
+        # so we should see the "execute_post_analysis called" message twice but not three times
+
+        self.assertEquals(log_count('execute_post_analysis called'), 2)
+        self.assertEquals(log_count('executing post analysis routines for'), 3)
+
+    def test_post_analysis_delayed_analysis(self):
+
+        root = create_root_analysis()
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        t1 = root.add_observable(F_TEST, 'test_delayed')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_test_post_analysis')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        self.assertEquals(log_count('execute_post_analysis called'), 1)
+        self.assertEquals(log_count('executing post analysis routines for'), 1)

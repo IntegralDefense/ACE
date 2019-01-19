@@ -95,6 +95,8 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
                 results.append(sql_or_func(db, cursor, *params))
             else:
                 for (_sql, _params) in zip(sql_or_func, params):
+                    if saq.CONFIG['global'].getboolean('log_sql'):
+                        logging.debug(f"executing with retry (attempt #{count}) sql {_sql} with paramters {_params}")
                     cursor.execute(_sql, _params)
                     results.append(cursor.rowcount)
 
@@ -123,7 +125,7 @@ def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=
                 if not callable(sql_or_func):
                     i = 0
                     for _sql, _params in zip(sql_or_func, params):
-                        logging.warning("DEADLOCK STATEMENT #{} SQL {} PARAMS {}".format(i, _sql, ','.join(_params)))
+                        logging.warning("DEADLOCK STATEMENT #{} SQL {} PARAMS {}".format(i, _sql, ','.join([str(_) for _ in _params])))
                         i += 1
 
                     # TODO log innodb lock status
@@ -1942,3 +1944,10 @@ ORDER BY
     params.extend(target_analysis_modes)
     c.execute(sql, tuple(params))
     return c.fetchall()
+
+def ALERT(root: RootAnalysis) -> Alert:
+    """Converts the given RootAnalysis object to an Alert by inserting it into the database. Returns the (detached) Alert object."""
+    alert = Alert(storage_dir=root.storage_dir)
+    alert.load()
+    alert.sync()
+    return alert

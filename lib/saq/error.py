@@ -38,6 +38,8 @@ def report_exception():
             if saq.engine.CURRENT_ENGINE:
                 fp.write("CURRENT ENGINE: {}\n".format(saq.engine.CURRENT_ENGINE))
                 fp.write("CURRENT ANALYSIS TARGET: {}\n".format(saq.engine.CURRENT_ENGINE.root))
+                if saq.engine.CURRENT_ENGINE.root:
+                    fp.write("CURRENT ANALYSIS MODE: {}\n".format(saq.engine.CURRENT_ENGINE.root.analysis_mode))
 
             fp.write("EXCEPTION\n")
             fp.write(str(reported_exception))

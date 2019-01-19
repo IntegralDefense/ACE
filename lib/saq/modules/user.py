@@ -208,7 +208,7 @@ class UserAnalyzer(LDAPAnalysisModule):
             analysis.details = { 'ldap': ldap_result, 'manager_ldap': manager_result }
 
         # did we get an email address?
-        if analysis.details and 'mail' in analysis.details['ldap'] and analysis.details['ldap']['mail']:
+        if analysis.details and 'ldap' in analysis.details and analysis.details['ldap'] is not None and 'mail' in analysis.details['ldap'] and analysis.details['ldap']['mail'] is not None:
             analysis.add_observable(F_EMAIL_ADDRESS, analysis.details['ldap']['mail'])
 
         return True

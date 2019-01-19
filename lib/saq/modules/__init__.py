@@ -99,7 +99,8 @@ class AnalysisModule(object):
 
         # the priority of the analysis module
         # lower priority scores go first
-        self.priority = self.config.getint('priority', fallback=2**32)
+        # higher priority scores go last
+        self.priority = self.config.getint('priority', fallback=10)
 
     def start_threaded_execution(self):
         if not self.is_threaded:
@@ -279,6 +280,12 @@ class AnalysisModule(object):
     @state.setter
     def state(self, value):
         self.root.state[self.name] = value
+
+    def initialize_state(self, value={}):
+        """Sets the state for this module to the given value (defaults to empty dict.)
+           If the state is already set this function does nothing."""
+        if self.name not in self.root.state:
+            self.root.state[self.name] = value
 
     def wait_for_analysis(self, observable, analysis_type):
         """Waits for the given Analysis (by type) be available for the given Observable."""
@@ -632,8 +639,10 @@ class AnalysisModule(object):
         pass
 
     def execute_post_analysis(self):
-        """This is called once after all analysis work has been performed and no outstanding work is left."""
-        pass
+        """This is called after all analysis work has been performed and no outstanding work is left.
+           If the function returns False then the function can possibly get called again if the analysis mode changes.
+           If the function returns True then the function will not get called again."""
+        return True
 
     def execute_threaded(self):
         """This is called on a thread if the module is configured as threaded."""

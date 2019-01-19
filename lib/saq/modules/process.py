@@ -279,6 +279,8 @@ class ProcessGUIDAnalysis(Analysis):
         return "analysis/process_guid.html"
 
     def generate_summary(self):
+        if 'process_name' not in self.details:
+            return "CarbonBlack Process Analysis: ERROR occured, details missing."
         process_name = self.details['process_name']
         hostname = self.details['hostname']
         username = self.details['username']
@@ -305,6 +307,13 @@ class ProcessGUIDAnalyzer(AnalysisModule):
         return F_PROCESS_GUID
 
     def execute_analysis(self, observable):
+        try:
+            return self.execute_analysis_wrapper(observable)
+        except ApiError as e:
+            logging.error(f"carbon black API error when analyzing {observable}: {e}")
+            return False
+
+    def execute_analysis_wrapper(self, observable):
 
         # we only analyze observables that came with the alert and ones with detection points
         #if not observable in self.root.observables and not observable.is_suspect:
