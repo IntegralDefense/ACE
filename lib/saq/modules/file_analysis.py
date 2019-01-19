@@ -3262,7 +3262,15 @@ class URLExtractionAnalyzer(AnalysisModule):
         # -- calling a domain the domain+tld
         _groupings = {}
         for url in extracted_urls:
-            res = get_tld(url, as_object=True)
+            try:
+                res = get_tld(url, as_object=True)
+            except Exception as e:
+                logging.info("Failed to get TLD on url:{} - {}".format(url, e))
+                if 'no_tld' not in _groupings:
+                    _groupings['no_tld'] = []
+                _groupings['no_tld'].append(url)
+                continue
+
             domain = str(res.domain) + '.' + str(res)
             if domain not in _groupings:
                 _groupings[domain] = []
