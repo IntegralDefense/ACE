@@ -54,6 +54,14 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_5(test)
         elif test.value == 'test_6':
             return self.execute_analysis_6(test)
+        elif test.value == 'test_7':
+            return self.execute_analysis_7(test)
+        elif test.value == 'test_8':
+            return self.execute_analysis_8(test)
+        elif test.value == 'test_worker_death':
+            return self.execute_analysis_worker_death(test)
+        elif test.value.startswith('test_action_counter'):
+            return self.execute_analysis_test_action_counter(test)
         else:
             return False
 
@@ -81,6 +89,29 @@ class BasicTestAnalyzer(AnalysisModule):
         # exclude by type
         new_observable.exclude_analysis(BasicTestAnalyzer)
         return True
+
+    def execute_analysis_7(self, test):
+        analysis = self.create_analysis(test)
+        analysis.add_detection_point('test detection')
+        return True
+
+    def execute_analysis_8(self, test):
+        analysis = self.create_analysis(test)
+        analysis.add_detection_point('test detection')
+        self.root.whitelisted = True
+        return True
+    
+    def execute_analysis_test_action_counter(self, test):
+        if self.root.get_action_counter('test') >= 2:
+            return False
+
+        self.root.increment_action_counter('test')
+        analysis = self.create_analysis(test)
+        return True
+
+    def execute_analysis_worker_death(self, test):
+        logging.info("execute_worker_death")
+        os._exit(1)
 
 class MergeTestAnalysis(TestAnalysis):
     def initialize_details(self):
@@ -258,10 +289,11 @@ class FinalAnalysisTestAnalyzer(AnalysisModule):
         return F_TEST
 
     def execute_analysis(self, test):
-        pass
+        return True
 
     def execute_final_analysis(self, test):
         analysis = self.create_analysis(test)
+        return True
 
 class PostAnalysisTestResult(TestAnalysis):
     def initialize_details(self):
@@ -276,11 +308,54 @@ class PostAnalysisTest(AnalysisModule):
     def valid_observable_types(self):
         return F_TEST
 
-    def execute_analysis(self, *args, **kwargs):
+    def execute_analysis(self, test):
+        if test.value == 'test_delayed':
+            return self.execute_analysis_delayed(test)
+        else:
+            return self.execute_analysis_default(test)
+
+    def execute_analysis_delayed(self, test):
+        analysis = test.get_analysis(PostAnalysisTestResult)
+        if analysis is None:
+            analysis = self.create_analysis(test)
+            self.delay_analysis(test, analysis, seconds=3)
+
+        return True
+
+    def execute_analysis_default(self, *args, **kwargs):
         return False
 
     def execute_post_analysis(self):
         logging.info("execute_post_analysis called")
+        return False
+
+class PostAnalysisMultiModeTestResult(TestAnalysis):
+    def initialize_details(self):
+        pass
+
+class PostAnalysisMultiModeTest(AnalysisModule):
+    @property
+    def generated_analysis_type(self):
+        return PostAnalysisMultiModeTestResult
+
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    def execute_analysis(self, test):
+        return False
+
+    def execute_post_analysis(self):
+        logging.info("execute_post_analysis called")
+        if self.root.analysis_mode == 'test_groups':
+            self.root.analysis_mode = 'test_single'
+            return False
+
+        if self.root.analysis_mode == 'test_single':
+            self.root.analysis_mode = 'test_empty'
+            return True
+
+        return True
 
 class DelayedAnalysisTimeoutTestResult(TestAnalysis):
     def initialize_details(self):
@@ -339,8 +414,7 @@ class WaitAnalyzerModule_A(AnalysisModule):
             return self.execute_analysis_test_engine_032a(test)
         
     def execute_analysis_01(self, test):
-        # NOTE the execution order of modules happens to (currently) be the order they are defined 
-        # in the configuration file
+        # NOTE the execution order of modules is alphabetically by the config section name of the module
         analysis = self.wait_for_analysis(test, WaitAnalysis_B)
         if not analysis:
             return False
@@ -469,4 +543,103 @@ class WaitAnalyzerModule_C(AnalysisModule):
 
     def execute_analysis_test_engine_032a(self, test):
         self.create_analysis(test)
+        return True
+
+class ThreadedModuleTest(AnalysisModule):
+    def execute_threaded(self):
+        # this gets called on a side thread
+        logging.debug("threaded execution called")
+
+class BrokenThreadedModuleTest(AnalysisModule):
+    def execute_threaded(self):
+        # just hangs for too long
+        time.sleep(30)
+
+class ForcedDetectionTestAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class ForcedDetectionTestAnalyzer(AnalysisModule):
+    """Adds a detection point to every observable."""
+    @property
+    def valid_observable_types(self):
+        return None
+
+    @property
+    def generated_analysis_type(self):
+        return ForcedDetectionTestAnalysis
+        
+    def execute_analysis(self, observable):
+        analysis = self.create_analysis(observable)
+        observable.add_detection_point("test")
+        return True
+
+class CloudphishDelayedTestAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class CloudphishDelayedTestAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_URL
+
+    @property
+    def generated_analysis_type(self):
+        return CloudphishDelayedTestAnalysis
+
+    def execute_analysis(self, url):
+        analysis = self.create_analysis(url)
+        # cause a timeout in the cloudphish test
+        time.sleep(5)
+        return True
+
+class HighPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class HighPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return HighPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class LowPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class LowPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return LowPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class NoPriorityAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class NoPriorityAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return NoPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
         return True

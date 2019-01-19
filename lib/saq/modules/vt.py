@@ -56,7 +56,7 @@ class VTHashFileDownloader(AnalysisModule):
 
         self.api_key = saq.CONFIG['virus_total']['api_key']
         self.download_url = saq.CONFIG['virus_total']['download_url']
-        self.cache_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['virus_total']['cache_dir'])
+        self.cache_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['virus_total']['cache_dir'])
 
         if not os.path.isdir(self.cache_dir):
             try:

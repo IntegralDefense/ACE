@@ -22,6 +22,7 @@ apt-get -y install \
     p7zip-full \
     p7zip-rar \
     unzip \
+    zip \
     unrar \
     unace-nonfree \
     libxml2-dev libxslt1-dev \

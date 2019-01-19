@@ -248,7 +248,7 @@ class NetBIOSAnalyzer(AnalysisModule):
             args.insert(0, self.config['ssh_host'])
             args.insert(0, 'ssh')
 
-        with tempfile.TemporaryFile(dir=os.path.join(saq.SAQ_HOME, saq.CONFIG.get('global', 'tmp_dir'))) as fp:
+        with tempfile.TemporaryFile(dir=saq.TEMP_DIR) as fp:
             p = Popen(args, stdout=fp)
             p.wait()
 

@@ -30,7 +30,6 @@ class VxAnalysisModuleTestCase(ACEModuleTestCase):
             result = client.submit(SAMPLE_PATH, env_id)
             client.wait(result.sha256, env_id)
 
-    @clear_log
     def test_vx_000_hash_lookup(self):
         engine = AnalysisEngine()
         engine.enable_module('analysis_module_vxstream_hash_analyzer')
@@ -59,7 +58,6 @@ class VxAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertIsNotNone(analysis.vxstream_threat_level)
         self.assertIsNotNone(analysis.vxstream_threat_score)
 
-    @clear_log
     def test_vx_001_file_lookup(self):
         engine = AnalysisEngine()
         engine.enable_module('analysis_module_vxstream_file_analyzer')
@@ -100,7 +98,6 @@ class VxAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertIsNotNone(analysis.vxstream_threat_level)
         self.assertIsNotNone(analysis.vxstream_threat_score)
 
-    @clear_log
     def test_vx_002_invalid_file_upload(self):
         engine = AnalysisEngine()
         engine.enable_module('analysis_module_vxstream_file_analyzer')
@@ -138,7 +135,6 @@ class VxAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertIsNone(analysis.vxstream_threat_level)
         self.assertIsNone(analysis.vxstream_threat_score)
 
-    @clear_log
     def test_vx_003_file_with_hash_analysis(self):
         engine = AnalysisEngine()
         engine.enable_module('analysis_module_vxstream_hash_analyzer')

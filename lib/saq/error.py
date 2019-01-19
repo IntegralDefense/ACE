@@ -25,19 +25,21 @@ def report_exception():
         traceback.print_exc()
 
     try:
-        output_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['global']['error_reporting_dir'])
-        if not os.path.exists(output_dir):
-            try:
-                os.makedirs(output_dir)
-            except Exception as e:
-                logging.error("unable to create directory {0}: {1}".format(output_dir, str(e)))
-                return
+        output_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['global']['error_reporting_dir'])
+        #if not os.path.exists(output_dir):
+            #try:
+                #os.makedirs(output_dir)
+            #except Exception as e:
+                #logging.error("unable to create directory {}: {}".format(output_dir, str(e)))
+                #return
 
         error_report_path = os.path.join(output_dir, datetime.now().strftime('%Y-%m-%d:%H:%M:%S.%f'))
         with open(error_report_path, 'w') as fp:
             if saq.engine.CURRENT_ENGINE:
                 fp.write("CURRENT ENGINE: {}\n".format(saq.engine.CURRENT_ENGINE))
                 fp.write("CURRENT ANALYSIS TARGET: {}\n".format(saq.engine.CURRENT_ENGINE.root))
+                if saq.engine.CURRENT_ENGINE.root:
+                    fp.write("CURRENT ANALYSIS MODE: {}\n".format(saq.engine.CURRENT_ENGINE.root.analysis_mode))
 
             fp.write("EXCEPTION\n")
             fp.write(str(reported_exception))

@@ -1,5 +1,6 @@
 # vim: sw=4:ts=4:et
 
+import datetime
 import json
 import logging
 import os, os.path
@@ -8,27 +9,310 @@ import socket
 import unittest
 import uuid
 
+import pytz
+
 import saq, saq.test
+from saq.analysis import RootAnalysis
 from saq.constants import *
 from saq.database import get_db_connection
-from saq.engine.test_engine import AnalysisEngine, TerminatingMarker
 from saq.test import *
+from saq.util import storage_dir_from_uuid
 
-class EmailModuleTestCase(ACEModuleTestCase):
-    def test_email_000_splunk_logging(self):
+class TestCase(ACEModuleTestCase):
+    def test_mailbox(self):
+        import saq.modules.email
+        root = create_root_analysis(alert_type='mailbox')
+        root.initialize_storage()
+        root.details = { 'hello': 'world' }
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
+                    os.path.join(root.storage_dir, 'email.rfc822'))
+        file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        
+        # we should still have our old details
+        self.assertTrue('hello' in root.details)
+        # merged in with our email analysis
+        self.assertTrue('email' in root.details)
+        self.assertIsNotNone(root.details['email'])
+        self.assertTrue(root.description.startswith(saq.modules.email.MAILBOX_ALERT_PREFIX))
+
+    def test_no_mailbox(self):
+        # make sure that when we analyze emails in non-mailbox analysis that we don't treat it like it came from mailbox
+        root = create_root_analysis(alert_type='not-mailbox') # <-- different alert_type
+        root.initialize_storage()
+        root.details = { 'hello': 'world' }
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
+                    os.path.join(root.storage_dir, 'email.rfc822'))
+        file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        
+        # we should still have our old details
+        self.assertTrue('hello' in root.details)
+        # and we should NOT have the email details merged in since it's not a mailbox analysis
+        self.assertFalse('email' in root.details)
+
+    def test_mailbox_whitelisted(self):
+        # make sure that we do not process whitelisted emails
+        root = create_root_analysis(alert_type='mailbox')
+        root.initialize_storage()
+        root.details = { 'hello': 'world' }
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
+                    os.path.join(root.storage_dir, 'email.rfc822'))
+        file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
+        file_observable.mark_as_whitelisted()
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        
+        # we should still have our old details
+        self.assertTrue('hello' in root.details)
+        # and we should NOT have the email details merged in since it's not a mailbox analysis
+        self.assertFalse('email' in root.details)
+        # and we should be whitelisted at this point
+        self.assertTrue(root.whitelisted)
+
+    def test_mailbox_submission(self):
+        from flask import url_for
+        from saq.analysis import _JSONEncoder
+        from saq.modules.email import EmailAnalysis
+
+        t = saq.LOCAL_TIMEZONE.localize(datetime.datetime.now()).astimezone(pytz.UTC).strftime(event_time_format_json_tz)
+        with open(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 'rb') as fp:
+            result = self.client.post(url_for('analysis.submit'), data={
+                'analysis': json.dumps({
+                    'analysis_mode': 'email',
+                    'tool': 'unittest',
+                    'tool_instance': 'unittest_instance',
+                    'type': 'mailbox',
+                    'description': 'testing',
+                    'event_time': t,
+                    'details': { },
+                    'observables': [
+                        { 'type': F_FILE, 'value': 'rfc822.email', 'time': t, 'tags': [], 'directives': [ DIRECTIVE_ORIGINAL_EMAIL ], 'limited_analysis': [] },
+                    ],
+                    'tags': [ ],
+                }, cls=_JSONEncoder),
+                'file': (fp, 'rfc822.email'),
+            }, content_type='multipart/form-data')
+
+        result = result.get_json()
+        self.assertIsNotNone(result)
+
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        # make sure we don't clean up the anaysis so we can check it
+        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
+
+        engine = TestEngine(local_analysis_modes=['email'])
+        engine.enable_module('analysis_module_file_type', 'email')
+        engine.enable_module('analysis_module_email_analyzer', 'email')
+        engine.enable_module('analysis_module_mailbox_email_analyzer', 'email')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+        observable = root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_EMAIL))
+        self.assertIsNotNone(observable)
+        analysis = observable.get_analysis(EmailAnalysis)
+        self.assertIsNotNone(analysis)
+
+        # these should be the same
+        self.assertEquals(analysis.details, root.details)
+
+    def test_bro_smtp_stream_analysis(self):
+        import saq
+        import saq.modules.email
+
+        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
+        
+        root = create_root_analysis(alert_type=ANALYSIS_TYPE_BRO_SMTP, analysis_mode=ANALYSIS_MODE_EMAIL)
+        root.initialize_storage()
+        root.details = { }
+        shutil.copy(os.path.join('test_data', 'smtp_streams', 'CBmtfvapmTMqCEUw6'), 
+                    os.path.join(root.storage_dir, 'CBmtfvapmTMqCEUw6'))
+        file_observable = root.add_observable(F_FILE, 'CBmtfvapmTMqCEUw6')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_SMTP)
+        file_observable.add_directive(DIRECTIVE_NO_SCAN)
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(local_analysis_modes=[ANALYSIS_MODE_EMAIL])
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_bro_smtp_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        analysis = file_observable.get_analysis(saq.modules.email.BroSMTPStreamAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertEquals(len(analysis.get_observables_by_type(F_FILE)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_ADDRESS)), 2)
+        self.assertEquals(len(analysis.get_observables_by_type(F_IPV4)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_CONVERSATION)), 1)
+        self.assertTrue(saq.modules.email.KEY_CONNECTION_ID in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_IPV4 in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_PORT in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_MAIL_FROM in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_RCPT_TO in analysis.details)
+        email_file = analysis.find_observable(lambda o: o.type == F_FILE)
+        self.assertIsNotNone(email_file)
+        self.assertEquals(email_file.value, 'email.rfc822')
+        email_analysis = email_file.get_analysis(saq.modules.email.EmailAnalysis)
+        self.assertIsNotNone(email_analysis)
+
+    def test_bro_smtp_stream_analysis_no_end_command(self):
+        import saq
+        import saq.modules.email
+
+        # test the same thing as test_bro_smtp_stream_analysis except we remove the > . .
+
+        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
+        
+        root = create_root_analysis(alert_type=ANALYSIS_TYPE_BRO_SMTP, analysis_mode=ANALYSIS_MODE_EMAIL)
+        root.initialize_storage()
+        root.details = { }
+        shutil.copy(os.path.join('test_data', 'smtp_streams', 'CBmtfvapmTMqCEUw6.missing_end'), 
+                    os.path.join(root.storage_dir, 'CBmtfvapmTMqCEUw6'))
+        
+        file_observable = root.add_observable(F_FILE, 'CBmtfvapmTMqCEUw6')
+        file_observable.add_directive(DIRECTIVE_ORIGINAL_SMTP)
+        file_observable.add_directive(DIRECTIVE_NO_SCAN)
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(local_analysis_modes=[ANALYSIS_MODE_EMAIL])
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_bro_smtp_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        analysis = file_observable.get_analysis(saq.modules.email.BroSMTPStreamAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertEquals(len(analysis.get_observables_by_type(F_FILE)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_ADDRESS)), 2)
+        self.assertEquals(len(analysis.get_observables_by_type(F_IPV4)), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_EMAIL_CONVERSATION)), 1)
+        self.assertTrue(saq.modules.email.KEY_CONNECTION_ID in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_IPV4 in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_SOURCE_PORT in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_MAIL_FROM in analysis.details)
+        self.assertTrue(saq.modules.email.KEY_ENV_RCPT_TO in analysis.details)
+        email_file = analysis.find_observable(lambda o: o.type == F_FILE)
+        self.assertIsNotNone(email_file)
+        self.assertEquals(email_file.value, 'email.rfc822')
+        email_analysis = email_file.get_analysis(saq.modules.email.EmailAnalysis)
+        self.assertIsNotNone(email_analysis)
+
+    def test_bro_smtp_stream_submission(self):
+        from flask import url_for
+        from saq.analysis import _JSONEncoder
+        from saq.modules.email import EmailAnalysis, BroSMTPStreamAnalysis
+
+        t = saq.LOCAL_TIMEZONE.localize(datetime.datetime.now()).astimezone(pytz.UTC).strftime(event_time_format_json_tz)
+        with open(os.path.join('test_data', 'smtp_streams', 'CBmtfvapmTMqCEUw6'), 'rb') as fp:
+            result = self.client.post(url_for('analysis.submit'), data={
+                'analysis': json.dumps({
+                    'analysis_mode': ANALYSIS_MODE_EMAIL,
+                    'tool': 'unittest',
+                    'tool_instance': 'unittest_instance',
+                    'type': ANALYSIS_TYPE_BRO_SMTP,
+                    'description': 'BRO SMTP Scanner Detection - ',
+                    'event_time': t,
+                    'details': { },
+                    'observables': [
+                        { 'type': F_FILE, 'value': 'CBmtfvapmTMqCEUw6', 'time': t, 'tags': [], 'directives': [ DIRECTIVE_ORIGINAL_SMTP ], 'limited_analysis': [] },
+                    ],
+                    'tags': [ ],
+                }, cls=_JSONEncoder),
+                'file': (fp, 'CBmtfvapmTMqCEUw6'),
+            }, content_type='multipart/form-data')
+
+        result = result.get_json()
+        self.assertIsNotNone(result)
+
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        # make sure we don't clean up the anaysis so we can check it
+        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
+
+        engine = TestEngine(local_analysis_modes=[ANALYSIS_MODE_EMAIL])
+        engine.enable_module('analysis_module_file_type', 'email')
+        engine.enable_module('analysis_module_email_analyzer', 'email')
+        engine.enable_module('analysis_module_bro_smtp_analyzer', 'email')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+        observable = root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_SMTP))
+        self.assertIsNotNone(observable)
+        analysis = observable.get_analysis(BroSMTPStreamAnalysis)
+        self.assertIsNotNone(analysis)
+
+    def test_splunk_logging(self):
 
         # clear splunk logging directory
-        splunk_log_dir = os.path.join(saq.CONFIG['splunk_logging']['splunk_log_dir'], 'smtp')
+        splunk_log_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['splunk_logging']['splunk_log_dir'], 'smtp')
         if os.path.isdir(splunk_log_dir):
             shutil.rmtree(splunk_log_dir)
             os.mkdir(splunk_log_dir)
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
 
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
@@ -37,9 +321,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         # we should expect three files in this directory now
@@ -87,18 +377,11 @@ class EmailModuleTestCase(ACEModuleTestCase):
                                   'cc,env_mail_from,env_rcpt_to,extracted_urls,first_received,headers,last_received,mail_from,'
                                   'mail_to,message_id,originating_ip,path,reply_to,size,subject,user_agent,archive_path,x_mailer')
 
-    @protect_production
-    def test_email_000a_update_brocess(self):
+    def test_update_brocess(self):
 
         # make sure we update the brocess database when we can scan email
 
         self.reset_brocess()
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        self.start_engine(engine)
 
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
@@ -107,9 +390,14 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -135,12 +423,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         # and then we do it again and make sure the count increased
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'),
@@ -148,9 +430,14 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         with get_db_connection('brocess') as db:
@@ -160,21 +447,13 @@ class EmailModuleTestCase(ACEModuleTestCase):
             count = c.fetchone()
             self.assertEquals(count[0], 2)
 
-    @protect_production
-    def test_email_000b_elk_logging(self):
+    def test_elk_logging(self):
 
         # clear elk logging directory
         elk_log_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['elk_logging']['elk_log_dir'])
         if os.path.isdir(elk_log_dir):
             shutil.rmtree(elk_log_dir)
             os.mkdir(elk_log_dir)
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_logger')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
 
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
@@ -183,9 +462,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_logger', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         wait_for_log_count('creating json logging directory ', 1, 5)
@@ -205,8 +490,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
             self.assertTrue(field in log_entry)
 
-    @protect_production
-    def test_email_001_archive(self):
+    def test_archive_1(self):
 
         # clear email archive
         with get_db_connection('email_archive') as db:
@@ -223,14 +507,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
             except Exception as e:
                 self.fail("unable to clear archive dir {}: {}".format(archive_dir, e))
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
@@ -239,9 +515,16 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         # there should be a single entry in the archive
@@ -249,6 +532,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
             c = db.cursor()
             c.execute("SELECT archive_id FROM archive")
             row = c.fetchone()
+            self.assertIsNotNone(row)
             archive_id = row[0]
 
             # check the index and make sure all the expected values are there
@@ -270,8 +554,7 @@ class EmailModuleTestCase(ACEModuleTestCase):
                 value = row[0]
                 self.assertEquals(value, field_value)
 
-    @protect_production
-    def test_email_002_archive(self):
+    def test_archive_2(self):
 
         # clear email archive
         with get_db_connection('email_archive') as db:
@@ -288,15 +571,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
             except Exception as e:
                 self.fail("unable to clear archive dir {}: {}".format(archive_dir, e))
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        engine.enable_module('analysis_module_pdf_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'pdf_attachment.email.rfc822'), 
@@ -305,9 +579,17 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.enable_module('analysis_module_pdf_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         # there should be a single entry in the archive
@@ -336,17 +618,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
                 value = row[0]
                 self.assertEquals(value, field_value)
 
-    def test_email_003_email_pivot(self):
+    def test_email_pivot(self):
 
         # process the email first -- we'll find it when we pivot
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -356,16 +630,19 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         saq.load_configuration()
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_url_email_pivot_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='cloudphish')
         root.initialize_storage()
@@ -385,9 +662,12 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         url_observable = root.add_observable(F_URL, 'https://www.alienvault.com')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_url_email_pivot_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -408,17 +688,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertEquals(len(entry['remediation_history']), 0)
         self.assertFalse(entry['remediated'])
 
-    def test_email_004_email_pivot_excessive_emails(self):
+    def test_email_pivot_excessive_emails(self):
 
         # process the email first -- we'll find it when we pivot
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_file_hash_analyzer')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_email_archiver')
-        engine.enable_module('analysis_module_url_extraction')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -428,20 +700,24 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         saq.load_configuration()
+
         # force this to exceed the limit
         saq.CONFIG['analysis_module_url_email_pivot_analyzer']['result_limit'] = '0'
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_url_email_pivot_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='cloudphish')
+
         root.initialize_storage()
 
         # make up some details
@@ -459,9 +735,12 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
         url_observable = root.add_observable(F_URL, 'https://www.alienvault.com')
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_url_email_pivot_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -473,16 +752,11 @@ class EmailModuleTestCase(ACEModuleTestCase):
         # this should not have the details since it exceeded the limit
         self.assertIsNone(analysis.emails)
 
-    def test_email_005_message_id(self):
+    def test_message_id(self):
 
         # make sure we extract the correct message-id
         # this test email has an attachment that contains a message-id
         # we need to make sure we do not extract that one as the message-id observable
-
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -491,9 +765,13 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
 
         root.load()
@@ -508,14 +786,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         
         self.assertEquals(message_id.value, "<MW2PR16MB224997B938FB40AA00214DACA8590@MW2PR16MB2249.namprd16.prod.outlook.com>")
 
-    def test_email_006_basic_email_parsing(self):
+    def test_basic_email_parsing(self):
 
         # parse a basic email message
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -524,9 +797,13 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        root.schedule()
+        
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
         
         root.load()
@@ -560,14 +837,9 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertIsInstance(email_analysis.attachments, list)
         self.assertEquals(len(email_analysis.attachments), 0)
         
-    def test_email_007_o365_journal_email_parsing(self):
+    def test_o365_journal_email_parsing(self):
 
         # parse an office365 journaled message
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -576,11 +848,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
-        engine.wait()
+        root.schedule()
         
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
         root.load()
         from saq.modules.email import EmailAnalysis
         file_observable = root.get_observable(file_observable.id)
@@ -613,10 +889,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertEquals(len(email_analysis.attachments), 0)
 
     # tests the whitelisting capabilities
-    def test_email_008_whitelisting_000_mail_from(self):
+    def test_whitelisting_000_mail_from(self):
 
         import saq
-        whitelist_path = os.path.join('var', 'tmp', 'brotex.whitelist')
+        whitelist_path = os.path.join(saq.TEMP_DIR, 'brotex.whitelist')
         saq.CONFIG['analysis_module_email_analyzer']['whitelist_path'] = whitelist_path
 
         if os.path.exists(whitelist_path):
@@ -625,11 +901,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
         with open(whitelist_path, 'w') as fp:
             fp.write('smtp_from:ap@someothercompany.com')
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'o365_journaled.email.rfc822'), 
@@ -637,11 +908,15 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
-        
+
         root.load()
         from saq.modules.email import EmailAnalysis
         file_observable = root.get_observable(file_observable.id)
@@ -650,10 +925,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
         self.assertFalse(email_analysis)
 
     # tests the whitelisting capabilities
-    def test_email_008_whitelisting_001_mail_to(self):
+    def test_whitelisting_001_mail_to(self):
 
         import saq
-        whitelist_path = os.path.join('var', 'tmp', 'brotex.whitelist')
+        whitelist_path = os.path.join(saq.TEMP_DIR, 'brotex.whitelist')
         saq.CONFIG['analysis_module_email_analyzer']['whitelist_path'] = whitelist_path
 
         if os.path.exists(whitelist_path):
@@ -662,11 +937,6 @@ class EmailModuleTestCase(ACEModuleTestCase):
         with open(whitelist_path, 'w') as fp:
             fp.write('smtp_to:lulu.zingzing@company.com')
 
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        self.start_engine(engine)
-
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'o365_journaled.email.rfc822'), 
@@ -674,9 +944,13 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
+        root.schedule()
 
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
         engine.wait()
         
         root.load()
@@ -688,16 +962,10 @@ class EmailModuleTestCase(ACEModuleTestCase):
 
     # XXX move this to the site-specific test
     @unittest.skip
-    def test_email_009_live_browser_no_render(self):
+    def test_live_browser_no_render(self):
 
         # we usually render HTML attachments to emails
         # but not if it has a tag of "no_render" assigned by a yara rule
-        
-        engine = AnalysisEngine()
-        engine.enable_module('analysis_module_file_type')
-        engine.enable_module('analysis_module_email_analyzer')
-        engine.enable_module('analysis_module_yara_scanner_v3_4')
-        self.start_engine(engine)
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), alert_type='mailbox')
         root.initialize_storage()
@@ -706,11 +974,16 @@ class EmailModuleTestCase(ACEModuleTestCase):
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
         file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         root.save()
-
-        engine.queue_work_item(root.storage_dir)
-        engine.queue_work_item(TerminatingMarker())
-        engine.wait()
+        root.schedule()
         
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_yara_scanner_v3_4', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
         root.load()
         from saq.modules.email import EmailAnalysis
         file_observable = root.get_observable(file_observable.id)

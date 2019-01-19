@@ -282,7 +282,7 @@ class NetworkSemaphoreServer(object):
                 logging.debug("loaded semaphore {0} with capacity {1}".format(semaphore_name, count))
 
         # we keep some stats and metrics on semaphores in this directory
-        self.stats_dir = os.path.join(saq.SAQ_HOME, self.config['stats_dir'])
+        self.stats_dir = os.path.join(saq.DATA_DIR, self.config['stats_dir'])
         if not os.path.isdir(self.stats_dir):
             try:
                 os.makedirs(self.stats_dir)

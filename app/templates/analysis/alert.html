@@ -13,7 +13,7 @@
     {% endif %}
     <tr>
         <td class="col-md-2">Alert Time</td>
-        <td class="col-md-10">{{alert.event_time}}</td>
+        <td class="col-md-10">{{alert.jinja_event_time}}</td>
     </tr>
     <tr>
         <td class="col-md-2">Source</td>
@@ -31,9 +31,9 @@
     <tr>
         <td class="col-md-2">Alert Documentation</td>
         {% if alert.alert_type == 'carbonblack - watchlist' %}
-            <td class="col-md-10"><a target="_blank" href="{{config['mediawiki']['uri']}}{{config['mediawiki']['alert_suffix']}}{{alert.description | replace('Carbonblack Watchlist Alert - ', '')}}">{{alert.name}}</a></td>
+            <td class="col-md-10"><a target="_blank" href="{{ace_config['mediawiki']['uri']}}{{ace_config['mediawiki']['alert_suffix']}}{{alert.description | replace('Carbonblack Watchlist Alert - ', '')}}">{{alert.name}}</a></td>
         {% else %}
-            <td class="col-md-10"><a target="_blank" href="{{config['mediawiki']['uri']}}{{config['mediawiki']['alert_suffix']}}{{alert.name | replace(' ', '_')}}">{{alert.name}}</a></td>
+            <td class="col-md-10"><a target="_blank" href="{{ace_config['mediawiki']['uri']}}{{ace_config['mediawiki']['alert_suffix']}}{{alert.name | replace(' ', '_')}}">{{alert.name}}</a></td>
         {% endif %}
     </tr>
     {% endif %}
@@ -215,7 +215,7 @@
         <div id="collapse_pp_all" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="heading_pp_all">
             <div class="panel-body">
                 {% for profile_point in profile_points %}
-                <li><a target="_blank" href="{{config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
+                <li><a target="_blank" href="{{ace_config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
                 {% endfor %}
             </div>
         </div>
@@ -231,10 +231,10 @@
             <div class="panel-body">
                 <ul class="list-group">
                 {% for profile_point in pp_full[pp_tag]['yes'] %}
-                    <li class="list-group-item"><a target="_blank" href="{{config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
+                    <li class="list-group-item"><a target="_blank" href="{{ace_config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
                 {% endfor %}
                 {% for profile_point in pp_full[pp_tag]['no'] %}
-                    <li class="list-group-item"><font color="red"><a target="_blank" href="{{config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</font></li>
+                    <li class="list-group-item"><font color="red"><a target="_blank" href="{{ace_config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</font></li>
                 {% endfor %}
             </div>
         </div>

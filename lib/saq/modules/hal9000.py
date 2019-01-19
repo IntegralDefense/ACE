@@ -1,13 +1,11 @@
 # vim: sw=4:ts=4:et:cc=120
 import logging
-import pymysql
 
 from hashlib import md5
-from contextlib import closing
 
 import saq
 
-from saq.analysis import Analysis
+from saq.analysis import Analysis, Observable
 from saq.database import execute_with_retry, get_db_connection
 from saq.constants import *
 from saq.modules import AnalysisModule
@@ -36,6 +34,16 @@ from saq.modules import AnalysisModule
 
 KEY_TOTAL_COUNT = 'total_count'
 KEY_MAL_COUNT = 'mal_count'
+
+STATE_KEY_ID_TRACKING = 'id_tracking'
+STATE_KEY_PREVIOUS_DISPOSITION = 'previous_disposition'
+
+def _compute_hal9000_md5(observable: Observable) -> str:
+    """Given an Observable, return the hexdigest of the MD5 computation used for hal9000."""
+    md5_hasher = md5()
+    md5_hasher.update(observable.type.encode('utf-8', errors='ignore'))
+    md5_hasher.update(observable.value.encode('utf-8', errors='ignore'))
+    return md5_hasher.hexdigest()
 
 class HAL9000Analysis(Analysis):
     """How often do we see this Observable in alerts dispositioned as False Postive or True Positive?"""
@@ -98,27 +106,12 @@ class HAL9000Analyzer(AnalysisModule):
     def generated_analysis_type(self):
         return HAL9000Analysis
 
-    @property
-    def valid_observable_types(self):
-        return None
-
     def execute_analysis(self, observable):
         # create analysis object and add it to the observable
         analysis = self.create_analysis(observable)
 
-        # create hal9000 observable list for use in post analysis
-        if not hasattr(self.root, 'hal9000_observables'):
-            self.root.hal9000_observables = set() # of the md5 hashes of the observables
-
         # get the id of the observable
-        md5_hasher = md5()
-        md5_hasher.update(observable.type.encode('utf-8', errors='ignore'))
-        md5_hasher.update(observable.value.encode('utf-8', errors='ignore'))
-        id = md5_hasher.hexdigest()
-        logging.debug("id = {}".format(id))
-
-        # append id to hal9000 observables list so we can insert it during post processing
-        self.root.hal9000_observables.add(id)
+        id = _compute_hal9000_md5(observable)
 
         # connect to database
         with get_db_connection('hal9000') as db:
@@ -132,10 +125,10 @@ class HAL9000Analyzer(AnalysisModule):
                 """, (id))
             result = c.fetchone()
             db.commit()
+
             if result is not None:
                 analysis.mal_count = result[0]
                 analysis.total_count = result[1]
-
 
             logging.debug("Malicious Frequency Analysis {}/{} ({}%)".format(
                 analysis.mal_count,
@@ -156,123 +149,129 @@ class HAL9000Analyzer(AnalysisModule):
     
     def execute_post_analysis(self):
         import saq.database
-            
-        # if we are already an Alert AND we have a disposition...
-        if isinstance(self.root, saq.database.Alert) and self.root.id and self.root.disposition:
+        self.initialize_state({
+            STATE_KEY_ID_TRACKING: {}, # key = return value of _compute_hal9000_md5, value = { } (see below) 
+            STATE_KEY_PREVIOUS_DISPOSITION: None})
 
-            # keep track of the observables we've already updated in hal
-            _updated_observables = set() # of md5 hash hexdigest
+        # start tracking what we do with all the observables
+        for observable in self.root.all_observables:
+            hal9000_id = _compute_hal9000_md5(observable)
+            if hal9000_id not in self.state[STATE_KEY_ID_TRACKING]:
+                # we keep track of how we modified the total count and the malicious count for each observable
+                # (we record what we ADDED to the value so that we can undo it later if the disposition changes)
+                self.state[STATE_KEY_ID_TRACKING][hal9000_id] = { 'id': observable.id,  
+                                                                  KEY_TOTAL_COUNT: None, 
+                                                                  KEY_MAL_COUNT: None }
 
-            # did we already set a disposition for this alert before?
-            previous_disposition = None
-            if self.state and 'previous_disposition' in self.state:
-                previous_disposition = self.state['previous_disposition']
-                logging.debug("loaded previous disposition of {} for {}".format(previous_disposition, self))
-
-            new_disposition = self.root.disposition
-
-            # if the disposition didn't change then we don't care
-            if previous_disposition == new_disposition:
-                logging.debug("same disposition {} == {} - not updating".format(new_disposition, self.root.disposition))
-                return
-
+        if self.root.analysis_mode != ANALYSIS_MODE_CORRELATION:
+            # TODO check to see if this analysis mode has cleanup set to True
+            # really what we want to do is see if we can possibly end up in a different analysis mode
             with get_db_connection('hal9000') as db:
                 c = db.cursor()
 
-                update_count = 0
-
-                # update counts for all observables
-                for observable in self.root.all_observables:
-                    md5_hasher = md5()
-                    md5_hasher.update(observable.type.encode('utf-8', errors='ignore'))
-                    md5_hasher.update(observable.value.encode('utf-8', errors='ignore'))
-                    id = md5_hasher.hexdigest()
-
-                    # keep track of the ones we've already updated
-                    # we only update any single observable value ONCE for each alert
-                    if id in _updated_observables:
-                        continue
-
-                    _updated_observables.add(id)
-
-                    # we have three major groups of dispositions: IGNORE, MAL and BENIGN
-                    # if we've changed state from what we were previously then we want to "undo" what we did previously
-
-                    if previous_disposition is None or previous_disposition in IGNORE_ALERT_DISPOSITIONS:
-                        if new_disposition in MAL_ALERT_DISPOSITIONS:
-                            execute_with_retry(c, """
-                                INSERT INTO observables (id, mal_count)
-                                VALUES (UNHEX(%s), 1)
-                                ON DUPLICATE KEY
-                                UPDATE total_count = total_count + 1, mal_count = mal_count + 1
-                                """, (id,))
-                        elif new_disposition in BENIGN_ALERT_DISPOSITIONS:
-                            execute_with_retry(c, """
-                                INSERT INTO observables (id)
-                                VALUES (UNHEX(%s))
-                                ON DUPLICATE KEY
-                                UPDATE total_count = total_count + 1
-                                """, (id,))
-                    elif previous_disposition in BENIGN_ALERT_DISPOSITIONS:
-                        if new_disposition in MAL_ALERT_DISPOSITIONS:
-                            execute_with_retry(c, """
-                                UPDATE observables
-                                SET mal_count = mal_count + 1
-                                WHERE id = UNHEX(%s)
-                                """, (id,))
-                        elif new_disposition in IGNORE_ALERT_DISPOSITIONS:
-                            execute_with_retry(c, """
-                                UPDATE observables
-                                SET total_count = total_count - 1
-                                WHERE id = UNHEX(%s) AND total_count > 0
-                                """, (id,))
-                    elif previous_disposition in MAL_ALERT_DISPOSITIONS:
-                        if new_disposition in BENIGN_ALERT_DISPOSITIONS:
-                            execute_with_retry(c, """
-                                UPDATE observables
-                                SET mal_count = mal_count - 1 
-                                WHERE id = UNHEX(%s) AND mal_count > 0
-                                """, (id,))
-                        elif new_disposition in IGNORE_ALERT_DISPOSITIONS:
-                            execute_with_retry(c, """
-                                UPDATE observables
-                                SET total_count = total_count - 1, mal_count = mal_count - 1
-                                WHERE id = UNHEX(%s) AND total_count > 0 AND mal_count > 0
-                                """, (id,))
-
-                    update_count += 1
-
-                db.commit()
-
-            # remember what our disposition was
-            self.state = {}
-            self.state['previous_disposition'] = self.root.disposition
-
-            logging.debug("updated {} observables in hal9000".format(update_count))
-            return
-
-        # if we're not in the database AND we're not going to be an Alert...
-        elif not self.root.has_detections:
-            # sanity check
-            if not hasattr(self, 'hal9000_observables'):
-                logging.error("missing hal9000_observables property")
-                return
-
-            with get_db_connection('hal9000') as db:
-                c = db.cursor()
+                placeholder_clause = ','.join(['(UNHEX(%s))' for _ in self.state[STATE_KEY_ID_TRACKING].keys()])
+                parameters = tuple(self.state[STATE_KEY_ID_TRACKING].keys())
 
                 # record appearance of all hal9000 observables
-                for id in self.root.hal9000_observables:
-                    execute_with_retry(c, """
-                                       INSERT INTO observables (id)
-                                       VALUES (UNHEX(%s))
-                                       ON DUPLICATE KEY
-                                       UPDATE total_count = total_count + 1""", (id,))
+                execute_with_retry(db, c, f"""
+                                   INSERT INTO observables (id)
+                                   VALUES {placeholder_clause}
+                                   ON DUPLICATE KEY
+                                   UPDATE total_count = total_count + 1""", parameters, 
+                                   commit=True)
 
-                db.commit()
+            return True # all we do here
+            # we don't really need to record any more state here because 
+            # we expect this entire analysis to get deleted
 
-            return
+        # are we an alert with a disposition?
+        new_disposition = None
 
-        # otherwise we don't care
-        logging.debug("{} is not an alert or does not have a disposition".format(self)) 
-        return
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("SELECT disposition FROM alerts WHERE uuid = %s", (self.root.uuid,))
+            result = c.fetchone()   
+            db.commit()
+
+            if result:
+                new_disposition = result[0]
+
+        if new_disposition is None:
+            return False # no alert or no disposition -- check again later
+
+        # did we already set a disposition for this alert before?
+        previous_disposition = self.state[STATE_KEY_PREVIOUS_DISPOSITION]
+        logging.debug("loaded previous disposition of {} for {}".format(previous_disposition, self))
+
+        # if the disposition didn't change then we don't care
+        if previous_disposition == new_disposition:
+            logging.debug("same disposition {} == {} - not updating".format(previous_disposition, new_disposition))
+            return False # check again later
+
+        all_sql = [] # list of SQL commands to execute
+        all_parameters = [] # list of SQL parameter tuples for the SQL commands
+
+        # if we've changed state from what we were previously then we want to undo what we did previously
+        total_count_parameters = []
+        mal_count_parameters = []
+        for hal9000_id, value in self.state[STATE_KEY_ID_TRACKING].items():
+            if self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_TOTAL_COUNT] is not None:
+                total_count_parameters.append(hal9000_id)
+            if self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_MAL_COUNT] is not None:
+                mal_count_parameters.append(hal9000_id)
+
+        if total_count_parameters:
+            placeholder_clause = ','.join(['UNHEX(%s)' for _ in total_count_parameters])
+            all_sql.append(f"""
+                UPDATE observables SET total_count = IF(total_count > 0, total_count - 1, 0)
+                WHERE id IN ( {placeholder_clause} )""")
+            all_parameters.append(tuple(total_count_parameters))
+
+        if mal_count_parameters:
+            placeholder_clause = ','.join(['UNHEX(%s)' for _ in mal_count_parameters])
+            all_sql.append(f"""
+                UPDATE observables SET mal_count = IF(mal_count > 0, mal_count - 1, 0)
+                WHERE id IN ( {placeholder_clause} )""")
+            all_parameters.append(tuple(mal_count_parameters))
+
+        # we have three major groups of dispositions: IGNORE, MAL and BENIGN
+        placeholder_clause = ','.join(['(UNHEX(%s), 1)' for _ in self.state[STATE_KEY_ID_TRACKING].keys()])
+        parameters = tuple(self.state[STATE_KEY_ID_TRACKING].keys())
+
+        if new_disposition in MAL_ALERT_DISPOSITIONS:
+            placeholder_clause = ','.join(['(UNHEX(%s), 1)' for _ in self.state[STATE_KEY_ID_TRACKING].keys()])
+            all_sql.append(f"""
+                INSERT INTO observables (id, mal_count)
+                VALUES {placeholder_clause}
+                ON DUPLICATE KEY
+                UPDATE total_count = total_count + 1, mal_count = mal_count + 1 """)
+            all_parameters.append(parameters)
+
+        elif new_disposition in BENIGN_ALERT_DISPOSITIONS:
+            placeholder_clause = ','.join(['(UNHEX(%s))' for _ in self.state[STATE_KEY_ID_TRACKING].keys()])
+            all_sql.append(f"""
+                INSERT INTO observables (id)
+                VALUES {placeholder_clause}
+                ON DUPLICATE KEY
+                UPDATE total_count = total_count + 1 """)
+            all_parameters.append(parameters)
+
+        with get_db_connection('hal9000') as db:
+            c = db.cursor()
+            execute_with_retry(db, c, all_sql, all_parameters, commit=True)
+
+        # remember what we did so we can undo it later if we need to
+        for hal9000_id in self.state[STATE_KEY_ID_TRACKING].keys():
+            if new_disposition in MAL_ALERT_DISPOSITIONS:
+                self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_TOTAL_COUNT] = 1
+                self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_MAL_COUNT] = 1
+            elif new_disposition in BENIGN_ALERT_DISPOSITIONS:
+                self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_TOTAL_COUNT] = 1
+                self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_MAL_COUNT] = None
+            else:
+                self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_TOTAL_COUNT] = None
+                self.state[STATE_KEY_ID_TRACKING][hal9000_id][KEY_MAL_COUNT] = None
+
+        # remember what our disposition was
+        self.state[STATE_KEY_PREVIOUS_DISPOSITION] = new_disposition
+        return False # check again later

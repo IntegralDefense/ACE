@@ -15,9 +15,11 @@ import traceback
 from configparser import ConfigParser
 from getpass import getpass
 
+import ace_api
 from saq.constants import *
 from saq.network_semaphore import initialize_fallback_semaphores
 from saq.sla import SLA
+from saq.util import create_directory
 
 import pytz
 import requests
@@ -26,58 +28,8 @@ import tzlocal
 # disable the verbose logging in the requests module
 logging.getLogger("requests").setLevel(logging.WARNING)
 
-SAQ_HOME = None
-SAQ_NODE = None
-SAQ_RELATIVE_DIR = None
-CONFIG = None
-CONFIG_PATHS = []
-DEFAULT_ENCODING = None
-SEMAPHORES_ENABLED = False
-PROXIES = {}
-OTHER_PROXIES = {}
-TOR_PROXY = None
-# list of iptools.IpRange objects defined in [network_configuration]
-MANAGED_NETWORKS = None
-# set this to True to force all anlaysis to result in an alert being generated
-FORCED_ALERTS = False
-# this forces all execution on happen on the same process and thread
-SINGLE_THREADED = False
-# the gpg private key password for encrypting/decrypting archive files
-# this can be provided on the command line so that these files can also be analyzed
-ENCRYPTION_PASSWORD = None
 # local timezone
 LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
-
-# the global log level setting
-LOG_LEVEL = logging.INFO
-# global logging directory (relative to SAQ_HOME)
-LOG_DIRECTORY = 'logs'
-
-# directory containing statistical runtime info
-STATS_DIR = None 
-MODULE_STATS_DIR = None
-
-# are we running as a daemon in the background?
-DAEMON_MODE = False
-
-# path to the certifcate chain used by all SSL certs
-CA_CHAIN_PATH = None
-
-# what type of instance is this?
-INSTANCE_TYPE = INSTANCE_TYPE_PRODUCTION
-
-# SLA settings
-GLOBAL_SLA_SETTINGS = None
-OTHER_SLA_SETTINGS = []
-EXCLUDED_SLA_ALERT_TYPES = []
-
-# Yara Scanner Server base directory
-YSS_BASE_DIR = None
-YSS_SOCKET_DIR = None
-
-# set to True to cause tracebacks to be dumped to standard output
-# useful when debugging or testing
-DUMP_TRACEBACKS = False
 
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
@@ -185,30 +137,118 @@ def initialize_logging(logging_config_path):
         sys.stderr.write("unable to load logging configuration: {}".format(e))
         raise e
 
+def set_node(name):
+    """Sets the value for saq.SAQ_NODE. Typically this is auto-set using the local fqdn."""
+    from saq.database import initialize_node
+    global SAQ_NODE
+    global SAQ_NODE_ID
+    
+    if name != SAQ_NODE:
+        SAQ_NODE = name
+        SAQ_NODE_ID = None
+        initialize_node()
+
 def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=None, relative_dir=None):
 
-    from saq.database import initialize_database
+    from saq.database import initialize_database, initialize_node
 
-    global SAQ_HOME
-    global SAQ_NODE
-    global SAQ_RELATIVE_DIR
+    global API_PREFIX
+    global CA_CHAIN_PATH
+    global COMPANY_ID
+    global COMPANY_NAME
     global CONFIG
     global CONFIG_PATHS
-    global SINGLE_THREADED
-    global DEFAULT_ENCODING
-    global SEMAPHORES_ENABLED
-    global MANAGED_NETWORKS
-    global FORCED_ALERTS
-    global LOG_LEVEL
     global DAEMON_MODE
-    global CA_CHAIN_PATH
-    global INSTANCE_TYPE
-    global GLOBAL_SLA_SETTINGS
+    global DATA_DIR
+    global DEFAULT_ENCODING
+    global DUMP_TRACEBACKS
+    global ENCRYPTION_PASSWORD
     global EXCLUDED_SLA_ALERT_TYPES
-    global STATS_DIR
+    global EXECUTION_THREAD_LONG_TIMEOUT
+    global FORCED_ALERTS
+    global GLOBAL_SLA_SETTINGS
+    global INSTANCE_TYPE
+    global LOCK_TIMEOUT_SECONDS
+    global LOG_DIRECTORY
+    global LOG_LEVEL
+    global MANAGED_NETWORKS
     global MODULE_STATS_DIR
+    global OTHER_PROXIES
+    global OTHER_SLA_SETTINGS
+    global PROXIES
+    global SAQ_HOME
+    global SAQ_NODE
+    global SAQ_NODE_ID
+    global SAQ_RELATIVE_DIR
+    global SEMAPHORES_ENABLED
+    global STATS_DIR
+    global TEMP_DIR
+    global TOR_PROXY
     global YSS_BASE_DIR
     global YSS_SOCKET_DIR
+
+    SAQ_HOME = None
+    SAQ_NODE = None
+    SAQ_NODE_ID = None
+    API_PREFIX = None
+    SAQ_RELATIVE_DIR = None
+    CONFIG = None
+    CONFIG_PATHS = []
+    DATA_DIR = None
+    TEMP_DIR = None
+    DEFAULT_ENCODING = None
+    SEMAPHORES_ENABLED = False
+    PROXIES = {}
+    OTHER_PROXIES = {}
+    TOR_PROXY = None
+    # list of iptools.IpRange objects defined in [network_configuration]
+    MANAGED_NETWORKS = None
+    # set this to True to force all anlaysis to result in an alert being generated
+    FORCED_ALERTS = False
+    # the gpg private key password for encrypting/decrypting archive files
+    # this can be provided on the command line so that these files can also be analyzed
+    ENCRYPTION_PASSWORD = None
+
+    # the global log level setting
+    LOG_LEVEL = logging.INFO
+    # global logging directory (relative to DATA_DIR)
+    LOG_DIRECTORY = None
+
+    # directory containing statistical runtime info
+    STATS_DIR = None 
+    MODULE_STATS_DIR = None
+
+    # are we running as a daemon in the background?
+    DAEMON_MODE = False
+
+    # path to the certifcate chain used by all SSL certs
+    CA_CHAIN_PATH = None
+
+    # what type of instance is this?
+    INSTANCE_TYPE = INSTANCE_TYPE_PRODUCTION
+
+    # SLA settings
+    GLOBAL_SLA_SETTINGS = None
+    OTHER_SLA_SETTINGS = []
+    EXCLUDED_SLA_ALERT_TYPES = []
+
+    # Yara Scanner Server base directory
+    YSS_BASE_DIR = None
+    YSS_SOCKET_DIR = None
+
+    # set to True to cause tracebacks to be dumped to standard output
+    # useful when debugging or testing
+    DUMP_TRACEBACKS = False
+
+    # the amount of time (in seconds) that a lock in the locks table is valid
+    LOCK_TIMEOUT_SECONDS = None
+
+    # amount of time (in seconds) before a process blows up because a threaded module won't stop
+    EXECUTION_THREAD_LONG_TIMEOUT = None
+
+    # the company/custom this node belongs to
+    COMPANY_NAME = None
+    COMPANY_ID = None
 
     # go ahead and try to figure out what text encoding we're using
     DEFAULT_ENCODING = locale.getpreferredencoding()
@@ -216,10 +256,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     # do we want to force alerts?
     if args:
         FORCED_ALERTS = args.force_alerts
-
-    # do we want to run in single threaded mode?
-    if args:
-        SINGLE_THREADED = args.single_threaded
 
     # what is the root directory of the entire system?
     if saq_home is not None:
@@ -281,6 +317,15 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         sys.stderr.write("ERROR: unable to load configuration: {0}".format(str(e)))
         sys.exit(1)
 
+    DATA_DIR = os.path.join(SAQ_HOME, CONFIG['global']['data_dir'])
+    TEMP_DIR = os.path.join(DATA_DIR, CONFIG['global']['tmp_dir'])
+    COMPANY_NAME = CONFIG['global']['company_name']
+    COMPANY_ID = CONFIG['global'].getint('company_id')
+
+    minutes, seconds = map(int, CONFIG['global']['lock_timeout'].split(':'))
+    LOCK_TIMEOUT_SECONDS = (minutes * 60) + seconds
+    EXECUTION_THREAD_LONG_TIMEOUT = CONFIG['global'].getint('execution_thread_long_timeout')
+
     # user specified log level
     LOG_LEVEL = logging.INFO
     if args:
@@ -288,12 +333,12 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
             LOG_LEVEL = args.log_level
 
     # make sure the logs directory exists
-    logs_dir = os.path.join(SAQ_HOME, LOG_DIRECTORY)
-    if not os.path.exists(logs_dir):
+    LOG_DIRECTORY = os.path.join(DATA_DIR, 'logs')
+    if not os.path.exists(LOG_DIRECTORY):
         try:
-            os.mkdir(logs_dir)
+            os.mkdir(LOG_DIRECTORY)
         except Exception as e:
-            sys.stderr.write("unable to mkdir {}: {}\n".format(logs_dir, e))
+            sys.stderr.write("unable to mkdir {}: {}\n".format(LOG_DIRECTORY, e))
             sys.exit(1)
 
     # by default we log to the console
@@ -334,7 +379,18 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     # what node is this?
     try:
         SAQ_NODE = CONFIG['global']['node']
-        logging.debug("node {}".format(SAQ_NODE))
+        if SAQ_NODE == 'AUTO':
+            SAQ_NODE = socket.getfqdn()
+    except Exception as e:
+        sys.stderr.write("unable to get hostname: {}\n".format(e))
+        sys.exit(1)
+
+    # what prefix do other systems use to communicate to the API server for this node?
+    try:
+        API_PREFIX = CONFIG['api']['prefix']
+        if API_PREFIX == 'AUTO':
+            API_PREFIX = socket.getfqdn()
+        logging.debug("node {} has api prefix {}".format(SAQ_NODE, API_PREFIX))
     except Exception as e:
         sys.stderr.write("unable to get hostname: {}\n".format(e))
         sys.exit(1)
@@ -355,6 +411,10 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
         logging.warning(" ****************************************************************** ")
         logging.warning(" ****************************************************************** ")
 
+    # warn if timezone is not UTC
+    if time.strftime("%z") != "+0000":
+        logging.warning("Timezone is not UTC. All ACE systems in a cluster should be in UTC.")
+
     # we can globally disable semaphores with this flag
     SEMAPHORES_ENABLED = CONFIG.getboolean('global', 'enable_semaphores')
 
@@ -370,7 +430,9 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     # make sure we've got the ca chain for SSL certs
     CA_CHAIN_PATH = os.path.join(SAQ_HOME, CONFIG['SSL']['ca_chain_path'])
+    ace_api.set_default_ssl_ca_path(CA_CHAIN_PATH)
 
+    # XXX this should probably move to the yara scanning module
     # set the location we'll be running yss out of
     YSS_BASE_DIR = os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'])
     if not os.path.exists(YSS_BASE_DIR):
@@ -380,54 +442,45 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     # initialize the database connection
     initialize_database()
+    
+    # make sure our node is in the database (at this point it defaults to local if it's new)
+    #initialize_node()
 
     # initialize fallback semaphores
     initialize_fallback_semaphores()
 
+    # XXX get rid of this
     try:
         maliciousdir = CONFIG.get("global", "malicious")
     except:
         maliciousdir = "malicious"
 
-    STATS_DIR = os.path.join(SAQ_HOME, 'stats')
+    STATS_DIR = os.path.join(DATA_DIR, 'stats')
     MODULE_STATS_DIR = os.path.join(STATS_DIR, 'modules')
 
     # make sure some key directories exists
     for dir_path in [ 
-        os.path.join(SAQ_HOME, CONFIG['global']['data_dir'], CONFIG['global']['node']),
-        os.path.join(SAQ_HOME, 'var', 'locks'),
-        os.path.join(SAQ_HOME, 'var', 'incoming'),
-        os.path.join(SAQ_HOME, 'review', 'rfc822'),
-        os.path.join(SAQ_HOME, 'review', 'misc'),
+        # anaysis data
+        os.path.join(DATA_DIR, CONFIG['global']['node']),
+        #os.path.join(SAQ_HOME, 'var', 'locks'), # XXX remove
+        os.path.join(DATA_DIR, 'review', 'rfc822'),
+        os.path.join(DATA_DIR, 'review', 'misc'),
+        os.path.join(DATA_DIR, CONFIG['global']['error_reporting_dir']),
         STATS_DIR,
         MODULE_STATS_DIR,
-        os.path.join(SAQ_HOME, 'stats', 'brocess'),
-        os.path.join(SAQ_HOME, 'stats', 'metrics'),
-        os.path.join(SAQ_HOME, CONFIG['splunk_logging']['splunk_log_dir']),
-        os.path.join(SAQ_HOME, CONFIG['elk_logging']['elk_log_dir']),
-        os.path.join(SAQ_HOME, CONFIG['global']['tmp_dir']),
-        os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'], 'logs'),
-        os.path.join(SAQ_HOME, maliciousdir) ]:
+        os.path.join(STATS_DIR, 'brocess'), # get rid of this
+        os.path.join(STATS_DIR, 'metrics'),
+        os.path.join(DATA_DIR, CONFIG['splunk_logging']['splunk_log_dir']),
+        os.path.join(DATA_DIR, DATA_DIR, CONFIG['elk_logging']['elk_log_dir']),
+        os.path.join(TEMP_DIR),
+        os.path.join(SAQ_HOME, CONFIG['yara']['yss_base_dir'], 'logs'), ]: # XXX this should be in YSS
+        #os.path.join(SAQ_HOME, maliciousdir) ]: # XXX remove
         try:
             if not os.path.isdir(dir_path):
                 os.makedirs(dir_path)
         except Exception as e:
             logging.error("unable to create required directory {}: {}".format(dir_path, str(e)))
             sys.exit(1)
-
-    # make sure the collection directory for each enabled engine exists
-    for section in CONFIG.keys():
-        if section.startswith('engine_'):
-            engine_config = CONFIG[section]
-            if 'collection_dir' in engine_config:
-                collection_dir = os.path.join(SAQ_HOME, engine_config['collection_dir'])
-                if not os.path.isdir(collection_dir):
-                    logging.info("creating collection directory {} for {}".format(collection_dir, section))
-                    try:
-                        os.makedirs(collection_dir)
-                    except Exception as e:
-                        logging.error("unable to create directory {}: {}".format(collection_dir, e))
-                        sys.exit(1)
 
     # clear out any proxy environment variables if they exist
     for proxy_key in [ 'http_proxy', 'https_proxy', 'ftp_proxy' ]:
