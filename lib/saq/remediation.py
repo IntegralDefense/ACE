@@ -29,7 +29,7 @@ KEY_MESSAGE_ID = 'message_id'
 def _remediate_email_o365_EWS(emails):
     """Remediates the given emails specified by a list of tuples of (message-id, recipient email address)."""
     assert emails
-    assert all([len(e) == 2 and isinstance(e[0], str) and isinstance(e[1], str) for e in emails])
+    assert all([len(e) == 2 for e in emails])
 
     result = [] # tuple(message_id, recipient, result_code, result_text)
     
@@ -49,18 +49,16 @@ def _remediate_email_o365_EWS(emails):
     headers = { 'Content-Type': 'application/json' }
     
     for message_id, recipient in emails:
-
-        if recipient.startswith('<'):
-            recipient = recipient[1:]
-        if recipient.endswith('>'):
-            recipient = recipient[:-1]
-
-        data['recipient'] = recipient
-        data['message_id'] = message_id
-
-        json_data = json.dumps(data)
-
         try:
+            if recipient.startswith('<'):
+                recipient = recipient[1:]
+            if recipient.endswith('>'):
+                recipient = recipient[:-1]
+
+            data['recipient'] = recipient
+            data['message_id'] = message_id
+            json_data = json.dumps(data)
+
             logging.info("remediating message_id {} to {}".format(message_id, recipient))
             r = session.post(url, headers=headers, data=json_data, verify=False)
             logging.info("got result {} text {} for message_id {} to {}".format(r.status_code, r.text, message_id, recipient))
@@ -76,7 +74,7 @@ def _remediate_email_o365_EWS(emails):
 def _unremediate_email_o365_EWS(emails):
     """Remediates the given emails specified by a list of tuples of (message-id, recipient email address)."""
     assert emails
-    assert all([len(e) == 2 and isinstance(e[0], str) and isinstance(e[1], str) for e in emails])
+    assert all([len(e) == 2 for e in emails])
 
     result = [] # tuple(message_id, recipient, result_code, result_text)
     
@@ -96,17 +94,17 @@ def _unremediate_email_o365_EWS(emails):
     headers = { 'Content-Type': 'application/json' }
     
     for message_id, recipient in emails:
-        data['recipient'] = recipient
-        data['message_id'] = message_id
-
-        if recipient.startswith('<'):
-            recipient = recipient[1:]
-        if recipient.endswith('>'):
-            recipient = recipient[:-1]
-
-        json_data = json.dumps(data)
 
         try:
+            if recipient.startswith('<'):
+                recipient = recipient[1:]
+            if recipient.endswith('>'):
+                recipient = recipient[:-1]
+
+            data['recipient'] = recipient
+            data['message_id'] = message_id
+            json_data = json.dumps(data)
+
             logging.info("restoring message_id {} to {}".format(message_id, recipient))
             r = session.post(url, headers=headers, data=json_data, verify=False)
             logging.info("got result {} text {} for message_id {} to {}".format(r.status_code, r.text, message_id, recipient))
