@@ -3824,7 +3824,7 @@ def remediate_emails():
         with get_db_connection(db_name) as db:
             c = db.cursor()
             c.execute("""SELECT archive_id, field, value FROM archive_search 
-                         WHERE ( field = 'message_id' OR field = 'env_to' ) 
+                         WHERE ( field = 'message_id' OR field = 'env_to' OR field = 'body_to' ) 
                          AND archive_id IN ( {} )""".format(','.join(['%s' for _ in archive_ids[db_name]])), 
                          tuple(archive_ids[db_name]))
 
@@ -3838,6 +3838,10 @@ def remediate_emails():
 
                 if field == 'env_to':
                     targets[archive_id].recipient = value.decode(errors='ignore')
+
+                # use body_to field as recipient if there is no env_to field
+                if field == 'body_to' and targets[archive_id].recipient is None:
+                    targets[archive_id].recipient = value
 
     # targets acquired -- perform the remediation or restoration
     params = [ ] # of tuples of ( message-id, email_address )
