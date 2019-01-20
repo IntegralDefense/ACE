@@ -157,3 +157,10 @@ def validate_uuid(uuid):
 def local_time():
     """Returns datetime.datetime.now() in UTC time zone."""
     return saq.LOCAL_TIMEZONE.localize(datetime.datetime.now()).astimezone(pytz.UTC)
+
+def abs_path(path):
+    """Given a path, return SAQ_HOME/path if path is relative, or path if path is absolute."""
+    if os.path.isabs(path):
+        return path
+
+    return os.path.join(saq.SAQ_HOME, path)
