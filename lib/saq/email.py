@@ -112,6 +112,10 @@ def search_archive(source, message_ids, excluded_emails=[]):
             if field == 'env_to':
                 _buffer[archive_id].recipient = value
 
+            # use body_to field as recipient if there is no env_to field
+            if field == 'body_to' and _buffer[archive_id].recipient is None:
+                _buffer[archive_id].recipient = value
+
             if field == 'subject':
                 _buffer[archive_id].subject = value
 

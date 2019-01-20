@@ -24,6 +24,7 @@ from urllib.parse import urlparse, urljoin
 
 #from subprocess import Popen, PIPE, DEVNULL, TimeoutExpired
 
+from tld import get_tld
 from urlfinderlib import find_urls
 
 import saq
@@ -2002,7 +2003,10 @@ class PDFAnalyzer(AnalysisModule):
 
     @property
     def pdfparser_path(self):
-        return self.config['pdfparser_path']
+        path = self.config['pdfparser_path']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def generated_analysis_type(self):
@@ -3167,7 +3171,10 @@ class MicrosoftScriptEncodingAnalyzer(AnalysisModule):
 
     @property
     def decryption_program(self):
-        return self.config['decryption_program']
+        path = self.config['decryption_program']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def generated_analysis_type(self):
@@ -3224,13 +3231,14 @@ class MicrosoftScriptEncodingAnalyzer(AnalysisModule):
 
 class URLExtractionAnalysis(Analysis):
     def initialize_details(self):
-        self.details = []
+        self.details = {}
+        self.details['urls'] = []
 
     def generate_summary(self):
-        if self.details is None or not len(self.details):
+        if self.details['urls'] is None or not len(self.details['urls']):
             return None
 
-        return "URL Extraction Analysis ({} urls)".format(len(self.details))
+        return "URL Extraction Analysis ({} urls)".format(len(self.details['urls']))
 
 class URLExtractionAnalyzer(AnalysisModule):
     @property
@@ -3249,6 +3257,51 @@ class URLExtractionAnalyzer(AnalysisModule):
     def max_file_size(self):
         """The max file size to extract URLs from (in bytes.)"""
         return self.config.getint("max_file_size") * 1024 * 1024
+
+    def order_urls_by_interest(self, extracted_urls):
+        """Sort the extracted urls into a list by their domain+TLD frequency and path extension.
+        Baically, we want the urls that are more likely to be malicious to come first.
+        """
+        image_extensions = ('.png', '.gif', '.jpeg', '.jpg', '.tiff', '.bmp')
+        image_urls = []
+        # A dict of domain (key) & URL value groups
+        # -- calling a domain the domain+tld
+        _groupings = {}
+        for url in extracted_urls:
+            try:
+                res = get_tld(url, as_object=True)
+            except Exception as e:
+                logging.info("Failed to get TLD on url:{} - {}".format(url, e))
+                if 'no_tld' not in _groupings:
+                    _groupings['no_tld'] = []
+                _groupings['no_tld'].append(url)
+                continue
+
+            domain = str(res.domain) + '.' + str(res)
+            if domain not in _groupings:
+                _groupings[domain] = []
+            _groupings[domain].append(url)
+
+            if res.parsed_url.path.endswith(image_extensions):
+                image_urls.append(url)
+            # I'm not sure we want to do this with query extensions, always
+            #if res.parsed_url.query.endswith(image_extensions):
+                #image_urls.append(url)
+
+        interesting_url_order = []
+        _ordered_domains = sorted(_groupings, key=lambda k: len(_groupings[k]))
+        for d in _ordered_domains:
+            d_urls = _groupings[d]
+            for url in d_urls:
+                if url in image_urls:
+                    continue
+                interesting_url_order.append(url)
+
+        interesting_url_order.extend(image_urls)
+        if len(interesting_url_order) != len(extracted_urls):
+            logging.error("URLs went missing during ordering. Resturning origional list.")
+            return extracted_urls
+        return interesting_url_order, _groupings
 
     def execute_analysis(self, _file):
         from saq.modules.cloudphish import CloudphishAnalyzer
@@ -3335,10 +3388,12 @@ class URLExtractionAnalyzer(AnalysisModule):
         # parse out any embedded urls inside thesed urls
         #extracted_urls.extend(_extract_embedded_urls(extracted_urls))
 
-        for url in extracted_urls:
+        # since cloudphish_request_limit, order urls by our interest in them
+        extracted_ordered_urls, analysis.details['urls_grouped_by_domain'] = self.order_urls_by_interest(extracted_urls)
+        for url in extracted_ordered_urls:
             url_observable = analysis.add_observable(F_URL, url)
             if url_observable:
-                analysis.details.append(url_observable.value)
+                analysis.details['urls'].append(url_observable.value)
                 logging.debug("extracted url {} from {}".format(url_observable.value, _file.value))
 
                 # don't download from links that came from files downloaded from the internet
