@@ -52,7 +52,7 @@ from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
 from saq.gui import GUIAlert
 from saq.performance import record_execution_time
-from saq.network_client import submit_alerts
+from saq.util import abs_path
 
 import ace_api
 
@@ -1032,7 +1032,7 @@ def new_alert(db, c):
         try:
             result = ace_api.submit(
                 remote_host = node_location,
-                ssl_verification = saq.CONFIG['SSL']['ca_chain_path'],
+                ssl_verification = abs_path(saq.CONFIG['SSL']['ca_chain_path']),
                 description = description,
                 analysis_mode = ANALYSIS_MODE_CORRELATION,
                 tool = tool,
