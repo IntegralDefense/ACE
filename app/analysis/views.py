@@ -26,6 +26,7 @@ from email.mime.text import MIMEText
 from email.utils import COMMASPACE, formatdate
 from operator import attrgetter
 from subprocess import Popen, PIPE, DEVNULL
+from urllib.parse import urlparse
 
 import businesstime
 import pandas as pd
@@ -3308,6 +3309,18 @@ def index():
         def __str__(self):
             return "TreeNode({}, {}, {})".format(self.obj, self.reference_node, self.visible)
 
+    def find_all_domains(analysis, domains={}):
+        assert isinstance(analysis, saq.analysis.Analysis)
+
+        for observable in analysis.observables:
+            if observable.type == F_URL:
+                domains[urlparse(observable.value).hostname] = True
+
+            for observable_analysis in [a for a in observable.all_analysis if a]:
+                find_all_domains(observable_analysis, domains)
+
+        return domains
+
     def _recurse(current_node, node_tracker=None):
         assert isinstance(current_node, TreeNode)
         assert isinstance(current_node.obj, saq.analysis.Analysis)
@@ -3452,6 +3465,11 @@ def index():
             email_remediations.extend(search_archive(source, message_ids,
                                       excluded_emails=saq.CONFIG['remediation']['excluded_emails'].split(',')).values())
 
+    # get list of domains that appear in the alert
+    domains = find_all_domains(analysis)
+    domain_list = list(domains)
+    domain_list.sort()
+
     return render_template('analysis/index.html',
                            alert=alert,
                            alert_tags=alert_tags,
@@ -3475,6 +3493,7 @@ def index():
                            pp_counts=get_profile_point_counts(),
                            pp_scores=pp_scores,
                            pp_full=pp_full,
+                           domains=domain_list,
                            email_remediations=email_remediations)
 
 @analysis.route('/file', methods=['GET'])
