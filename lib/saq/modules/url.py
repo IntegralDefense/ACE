@@ -535,6 +535,7 @@ class CrawlphishAnalyzer(AnalysisModule):
         self.verify_config_exists('user-agent')
         self.verify_config_exists('timeout')
         self.verify_config_exists('max_download_size')
+        self.verify_config_exists('max_file_name_length')
         self.verify_config_exists('cooldown_period')
         self.verify_config_exists('update_brocess')
         self.verify_config_exists('proxies')
@@ -576,6 +577,11 @@ class CrawlphishAnalyzer(AnalysisModule):
     def max_download_size(self):
         """Maximum download size (in MB)."""
         return self.config.getint('max_download_size') * 1024 * 1024
+
+    @property
+    def max_file_name_length(self):
+        """Maximum file name length (in bytes) to use for download file path."""
+        return self.config.getint('max_file_name_length')
 
     @property
     def update_brocess(self):
@@ -707,15 +713,6 @@ class CrawlphishAnalyzer(AnalysisModule):
             logging.info("unable to download {}: {}".format(formatted_url, proxy_result.error_reason))
             return True
 
-        # for each url we download we use a file name inside a directory with the following format
-        # parsed_url.hostname_N 
-        # where N is an integer starting at 0 and increments each time
-        # we store the next number to use in the state for this module
-        if not self.state:
-            self.state = {}
-            self.state['next_unknown'] = 0 # next integer to use for unknown.crawlphish files
-            self.state['host_counts'] = {} # key = parsed_url.hostname, value = next integer to use
-
         path_components = [x for x in parsed_url.path.split('/') if x.strip()]
 
         # need to figure out what to call it
@@ -737,27 +734,29 @@ class CrawlphishAnalyzer(AnalysisModule):
 
         # default if we can't figure it out
         if not file_name:
-            file_name = 'unknown_{}.crawlphish'.format(self.state['next_unknown'])
-            self.state['next_unknown'] += 1
+            file_name = 'unknown.crawlphish'
 
-        hostname = parsed_url.hostname
-        if not hostname:
-            hostname = 'unknown_host'
-
-        if hostname not in self.state['host_counts']:
-            self.state['host_counts'][hostname] = 0
-
-        dest_dir = os.path.join(self.root.storage_dir, 'crawlphish', 
-                                '{}_{}'.format(hostname, self.state['host_counts'][hostname]))
-        self.state['host_counts'][hostname] += 1
-
+        # make the crawlphish dir
+        dest_dir = os.path.join(self.root.storage_dir, 'crawlphish')
         try:
             if not os.path.isdir(dest_dir):
                 os.makedirs(dest_dir)
         except Exception as e:
             logging.error("unable to create directory {}: {}".format(dest_dir, e))
 
+        # truncate if too long
+        if len(file_name) > self.max_file_name_length:
+            file_name = file_name[len(file_name) - self.max_file_name_length:]
+
         file_path = os.path.join(dest_dir, file_name)
+
+        # prevent file path collision
+        if os.path.isfile(file_path):
+            duplicate_count = 1
+            file_path = os.path.join(dest_dir, "{}_{}".format(duplicate_count, file_name))
+            while os.path.isfile(file_path):
+                duplicate_count = duplicate_count + 1
+                file_path = os.path.join(dest_dir, "{}_{}".format(duplicate_count, file_name))
 
         # download the results up to the limit
         try:
