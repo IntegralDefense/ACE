@@ -11,6 +11,7 @@ import zipfile
 
 from subprocess import Popen, PIPE
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+from werkzeug.utils import secure_filename
 
 import saq
 
@@ -721,12 +722,15 @@ class CrawlphishAnalyzer(AnalysisModule):
         if 'content-disposition' in response.headers:
             file_name = response.headers['content-disposition']
             # we could potentially see there here: attachment; filename="blah..."
-            content_file_match = re.search('attachment; filename="?(?P<real_filename>[^"]+)"?',
+            content_file_match = re.search('attachment; filename*?="?(?P<real_filename>[^"]+)"?',
                                             response.headers['content-disposition'] )
             if content_file_match:
                 file_name = content_file_match.group('real_filename')
-                # replace any / or . with _
-                file_name = re.sub(r'_+', '_', re.sub(r'\.\.', '_', re.sub(r'/', '_', file_name)))
+
+                # handle rfc5987 which allows utf-8 encoding and url-encoding
+                if file_name.lower().startswith("utf-8''"):
+                    file_name = file_name[7:]
+                    file_name = urllib.unquote(file_name).decode('utf8')
 
         # otherwise we use the last element of the path
         if not file_name and parsed_url.path and not parsed_url.path.endswith('/'):
@@ -736,6 +740,13 @@ class CrawlphishAnalyzer(AnalysisModule):
         if not file_name:
             file_name = 'unknown.crawlphish'
 
+        # truncate if too long
+        if len(file_name) > self.max_file_name_length:
+            file_name = file_name[len(file_name) - self.max_file_name_length:]
+
+        # replace invalid filesystem characters
+        file_name = secure_filename(file_name)
+
         # make the crawlphish dir
         dest_dir = os.path.join(self.root.storage_dir, 'crawlphish')
         try:
@@ -743,11 +754,6 @@ class CrawlphishAnalyzer(AnalysisModule):
                 os.makedirs(dest_dir)
         except Exception as e:
             logging.error("unable to create directory {}: {}".format(dest_dir, e))
-
-        # truncate if too long
-        if len(file_name) > self.max_file_name_length:
-            file_name = file_name[len(file_name) - self.max_file_name_length:]
-
         file_path = os.path.join(dest_dir, file_name)
 
         # prevent file path collision
