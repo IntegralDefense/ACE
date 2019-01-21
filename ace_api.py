@@ -4,6 +4,8 @@
 #
 # python3 wrapper for ACE API calls
 
+import sys
+
 try:
     import requests
 except ImportError:
@@ -33,7 +35,6 @@ import os.path
 import pickle
 import shutil
 import socket
-import sys
 import tarfile
 import tempfile
 import traceback
@@ -449,6 +450,9 @@ def cloudphish_clear_alert(url=None, sha256=None, *args, **kwargs):
 #
 # supporting backwards comptability for the old ace_client_lib.client library
 #
+
+class AlertSubmitException(Exception):
+    pass
 
 class Alert(object):
     def __init__(self, *args, **kwargs):
