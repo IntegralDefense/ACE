@@ -133,7 +133,7 @@ def kill_daemon(daemon_name):
 
     import psutil
 
-    daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
+    daemon_pid_path = os.path.join(saq.DATA_DIR, 'var', 'daemon', daemon_name)
     if not os.path.exists(daemon_pid_path):
         logging.warning("daemon file {} does not exist (process not running?)".format(daemon_pid_path))
         sys.exit(1)
@@ -185,7 +185,7 @@ def kill_daemon(daemon_name):
 
 def daemonize(daemon_name):
     # are we already running?
-    daemon_dir = os.path.join(saq.SAQ_HOME, 'var', 'daemon')
+    daemon_dir = os.path.join(saq.DATA_DIR, 'var', 'daemon')
     if not os.path.exists(daemon_dir):
         try:
             os.makedirs(daemon_dir)
@@ -193,7 +193,7 @@ def daemonize(daemon_name):
             logging.error("unable to create {}: {}".format(daemon_dir, str(e)))
             sys.exit(1)
 
-    daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
+    daemon_pid_path = os.path.join(saq.DATA_DIR, 'var', 'daemon', daemon_name)
     if os.path.exists(daemon_pid_path):
         pid = None
         with open(daemon_pid_path, 'r') as fp:
