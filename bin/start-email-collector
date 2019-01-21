@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+source $(dirname "$0")/common.sh
+cd $SAQ_HOME
+
+decrypt=""
+if [ -e etc/FLAG_EXTRACT_ARCHIVES ]
+then
+    decrypt=" -p "
+fi
+
+python3 ace $decrypt --start --daemon -L etc/email_collection_logging.ini email-collector
