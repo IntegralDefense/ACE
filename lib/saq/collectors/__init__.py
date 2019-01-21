@@ -157,10 +157,11 @@ class RemoteNodeGroup(object):
     """Represents a collection of one or more RemoteNode objects that share the
        same group configuration property."""
 
-    def __init__(self, name, coverage, full_delivery, database, group_id, workload_type_id, batch_size=32):
+    def __init__(self, name, coverage, full_delivery, company_id, database, group_id, workload_type_id, batch_size=32):
         assert isinstance(name, str) and name
         assert isinstance(coverage, int) and coverage > 0 and coverage <= 100
         assert isinstance(full_delivery, bool)
+        assert isinstance(company_id, int)
         assert isinstance(database, str)
         assert isinstance(group_id, int)
         assert isinstance(workload_type_id, int)
@@ -175,6 +176,9 @@ class RemoteNodeGroup(object):
         # if set to False then at least one attempt is made to submit
         # setting to False is useful for QA and development type systems
         self.full_delivery = full_delivery
+
+        # the company this node group belongs to
+        self.company_id = company_id
 
         # the name of the database to query for node status
         self.database = database
@@ -306,7 +310,7 @@ ORDER BY
     WORKLOAD_COUNT ASC,
     nodes.last_update ASC
 """.format(','.join(['%s' for _ in available_modes]))
-            params = [ saq.COMPANY_ID, self.node_status_update_frequency * 2 ]
+            params = [ self.company_id, self.node_status_update_frequency * 2 ]
             params.extend(available_modes)
             node_c.execute(sql, tuple(params))
             node_status = node_c.fetchall()
@@ -483,8 +487,8 @@ WHERE
         return NO_WORK_SUBMITTED
 
     def __str__(self):
-        return "RemoteNodeGroup(name={}, coverage={}, full_delivery={}, database={})".format(
-                self.name, self.coverage, self.full_delivery, self.database)
+        return "RemoteNodeGroup(name={}, coverage={}, full_delivery={}, company_id={}, database={})".format(
+                self.name, self.coverage, self.full_delivery, self.company_id, self.database)
 
 class Collector(object):
     def __init__(self, workload_type, delete_files=False, test_mode=None, collection_frequency=1):
@@ -513,7 +517,7 @@ class Collector(object):
                 logging.debug("got workload type id {} for {}".format(self.workload_type_id, self.workload_type))
 
         except Exception as e:
-            logging.critial("unable to get workload type_id from database: {}".format(self.workload_type))
+            logging.critical("unable to get workload type_id from database: {}".format(self.workload_type))
             raise e
 
         # set this to True to gracefully shut down the collector
@@ -556,7 +560,7 @@ class Collector(object):
                     sys.exit(1)
 
     @use_db
-    def add_group(self, name, coverage, full_delivery, database, db, c):
+    def add_group(self, name, coverage, full_delivery, company_id, database, db, c):
         c.execute("SELECT id FROM work_distribution_groups WHERE name = %s", (name,))
         row = c.fetchone()
         if row is None:
@@ -566,7 +570,7 @@ class Collector(object):
         else:
             group_id = row[0]
 
-        remote_node_group = RemoteNodeGroup(name, coverage, full_delivery, database, group_id, self.workload_type_id)
+        remote_node_group = RemoteNodeGroup(name, coverage, full_delivery, company_id, database, group_id, self.workload_type_id)
         self.remote_node_groups.append(remote_node_group)
         logging.info("added {}".format(remote_node_group))
         return remote_node_group
@@ -580,11 +584,12 @@ class Collector(object):
             group_name = section[len('collection_group_'):]
             coverage = saq.CONFIG[section].getint('coverage')
             full_delivery = saq.CONFIG[section].getboolean('full_delivery')
+            company_id = saq.CONFIG[section].getint('company_id')
             database = saq.CONFIG[section]['database']
             
-            logging.info("loaded group {} coverage {} full_delivery {} database {}".format(
-                         group_name, coverage, full_delivery, database))
-            self.add_group(group_name, coverage, full_delivery, database)
+            logging.info("loaded group {} coverage {} full_delivery {} company_id {} database {}".format(
+                         group_name, coverage, full_delivery, company_id, database))
+            self.add_group(group_name, coverage, full_delivery, company_id, database)
 
     def start(self):
         # you need to add at least one group to send to

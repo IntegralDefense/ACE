@@ -871,9 +871,16 @@ class LiveBrowserAnalysis(Analysis):
 class LiveBrowserAnalyzer(AnalysisModule):
     """What does this look like in a web browser?"""
 
+    def verify_environment(self):
+        self.verify_config_exists('get_screenshot_path')
+        self.verify_path_exists(self.config['get_screenshot_path'])
+
     @property
     def get_screenshot_path(self):
-        return self.config['get_screenshot_path']
+        path = self.config['get_screenshot_path']
+        if os.path.isabs(path):
+            return path
+        return os.path.join(saq.SAQ_HOME, path)
 
     @property
     def remote_server(self):
