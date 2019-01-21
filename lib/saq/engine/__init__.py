@@ -1340,14 +1340,15 @@ class Engine(object):
 
         target_dir = storage_dir_from_uuid(uuid)
         if os.path.isdir(target_dir):
-            logging.warning("target_dir {} for transfer exists! deleting".format(target_dir))
+            logging.error("target_dir {} for transfer exists! bailing...".format(target_dir))
+            return False
 
-            try:
-                shutil.rmtree(target_dir)
-            except Exception as e:
-                logging.error("unable to delete {}: {}".format(target_dir, e))
-                report_exception()
-                return False
+            #try:
+                #shutil.rmtree(target_dir)
+            #except Exception as e:
+                #logging.error("unable to delete {}: {}".format(target_dir, e))
+                #report_exception()
+                #return False
 
         try:
             logging.debug("creating transfer target_dir {}".format(target_dir))
