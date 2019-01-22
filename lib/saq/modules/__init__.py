@@ -250,8 +250,9 @@ class AnalysisModule(object):
             logging.debug("creating required directory {}".format(dir))
             os.makedirs(dir)
         except Exception as e:
-            logging.error("unable to create required directory {} for {}: {}".format(dir, self, e))
-            raise e
+            if not os.path.isdir(dir):
+                logging.error("unable to create required directory {} for {}: {}".format(dir, self, e))
+                raise e
 
     @property
     def name(self):
