@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+source $(dirname "$0")/common.sh
+cd $SAQ_HOME
+
+python3 ace --start --daemon -L etc/smtp_collector_logging.ini bro-smtp-collector
