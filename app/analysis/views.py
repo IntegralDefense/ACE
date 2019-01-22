@@ -3601,7 +3601,8 @@ def analyze_alert():
     alert = get_current_alert()
 
     try:
-        alert.schedule()
+        #alert.schedule()
+        flash("this is unavailable atm -- to be fixed soon")
     except:
         flash("unable to schedule alert for analysis")
 
