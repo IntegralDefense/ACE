@@ -134,6 +134,7 @@ rule assignment: unittest {
         saq.CONFIG['collection_group_qa']['coverage'] = '100'
         saq.CONFIG['collection_group_qa']['full_delivery'] = 'no'
         saq.CONFIG['collection_group_qa']['database'] = 'ace_qa'
+        saq.CONFIG['collection_group_qa']['company_id'] = '1'
 
         collector = EmailCollector(assignment_yara_rule_path=assignment_yara_rule_path)
         collector.load_groups()
