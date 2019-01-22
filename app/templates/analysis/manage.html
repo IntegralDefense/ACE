@@ -69,7 +69,7 @@
                         <td>
                             <label><input type="checkbox" name="detail_{{alert.uuid}}" {% if alert.uuid in checked %}checked{% endif %}></input></label>
                         </td>
-                        <td style="white-space: nowrap;">{{alert.insert_date}}</td>
+                        <td style="white-space: nowrap;" title="{{alert.insert_date}}">{{alert.display_insert_date}}</td>
                         <td>
                             {% if alert.company %}<img src="{{url_for('static', filename='images/company_icons/{}.png'.format(alert.company.name))}}">{% endif %}
                             <a href="{{ url_for('analysis.index', direct=alert.uuid) }}">({{alert.detection_count}}) {{alert.description}}</a>

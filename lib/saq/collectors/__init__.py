@@ -418,7 +418,7 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
                 except Exception as e:
                     log_function = logging.warning
                     if not self.full_delivery:
-                        log_function = logging.debug
+                        log_function = logging.warning
                     else:
                         if not isinstance(e, urllib3.exceptions.MaxRetryError) \
                         and not isinstance(e, urllib3.exceptions.NewConnectionError) \

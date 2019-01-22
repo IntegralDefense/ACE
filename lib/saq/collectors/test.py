@@ -77,7 +77,7 @@ class CollectorTestCase(CollectorBaseTestCase):
     @use_db
     def test_add_group(self, db, c):
         collector = TestCollector()
-        collector.add_group('test', 100, True, 'ace')
+        collector.add_group('test', 100, True, saq.COMPANY_ID, 'ace')
         
         c.execute("SELECT id, name FROM work_distribution_groups")
         result = c.fetchall()
@@ -88,7 +88,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
         # when we do it a second time, we should get the name group ID since we used the same name
         collector = TestCollector()
-        collector.add_group('test', 100, True, 'ace')
+        collector.add_group('test', 100, True, saq.COMPANY_ID, 'ace')
         
         c.execute("SELECT id, name FROM work_distribution_groups")
         result = c.fetchall()
@@ -117,7 +117,7 @@ class CollectorTestCase(CollectorBaseTestCase):
     def test_startup(self):
         # make sure we can start one up, see it collect nothing, and then shut down gracefully
         collector = TestCollector()
-        collector.add_group('test', 100, True, 'ace')
+        collector.add_group('test', 100, True, saq.COMPANY_ID, 'ace')
         collector.start()
 
         wait_for_log_count('no work available for', 1, 5)
@@ -135,8 +135,8 @@ class CollectorTestCase(CollectorBaseTestCase):
                 return None
 
         collector = _custom_collector()
-        collector.add_group('test_group_1', 100, True, 'ace')
-        collector.add_group('test_group_2', 100, True, 'ace')
+        collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace')
+        collector.add_group('test_group_2', 100, True, saq.COMPANY_ID, 'ace')
         collector.start()
 
         wait_for_log_count('scheduled test_description mode analysis', 1, 5)
@@ -187,7 +187,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         self.start_api_server()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.start()
 
         # we should see 1 of these
@@ -231,9 +231,9 @@ class CollectorTestCase(CollectorBaseTestCase):
         self.start_api_server()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
-        tg2 = collector.add_group('test_group_2', 50, True, 'ace') # 50% coverage
-        tg3 = collector.add_group('test_group_3', 10, True, 'ace') # 10% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
+        tg2 = collector.add_group('test_group_2', 50, True, saq.COMPANY_ID, 'ace') # 50% coverage
+        tg3 = collector.add_group('test_group_3', 10, True, saq.COMPANY_ID, 'ace') # 10% coverage
         collector.start()
 
         # we should see 10 of these
@@ -294,7 +294,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         #self.start_api_server()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.start()
 
         # we should see 1 of these
@@ -342,7 +342,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         #self.start_api_server()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, False, 'ace') # 100% coverage, full_coverage = no
+        tg1 = collector.add_group('test_group_1', 100, False, saq.COMPANY_ID, 'ace') # 100% coverage, full_coverage = no
         collector.start()
 
         # we should see 1 of these
@@ -407,7 +407,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         self.start_api_server()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, False, 'ace') # 100% coverage, no full delivery
+        tg1 = collector.add_group('test_group_1', 100, False, saq.COMPANY_ID, 'ace') # 100% coverage, no full delivery
         collector.start()
 
         # trigger the "success" test
@@ -454,7 +454,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         self.start_api_server()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.start()
 
         wait_for_log_count('scheduled test_description mode analysis', 1, 5)
@@ -491,7 +491,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         engine.wait()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.start()
 
         # the API server is not running so these will fail
@@ -518,7 +518,7 @@ class CollectorTestCase(CollectorBaseTestCase):
 
         # and then start up the collector
         collector = _custom_collector_2()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.start()
 
         # with the API server running now we should see these go out
@@ -581,8 +581,8 @@ class CollectorTestCase(CollectorBaseTestCase):
         engine.wait()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
-        tg2 = collector.add_group('test_group_2', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
+        tg2 = collector.add_group('test_group_2', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.execute()
 
         # after this is executed we should have an assignment to test_group_1 but not test_group_2
@@ -617,8 +617,8 @@ class CollectorTestCase(CollectorBaseTestCase):
         engine.wait()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
-        tg2 = collector.add_group('test_group_2', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
+        tg2 = collector.add_group('test_group_2', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.execute()
 
         # after this is executed we should have assignments to both groups
@@ -655,8 +655,8 @@ class CollectorTestCase(CollectorBaseTestCase):
         engine.wait()
 
         collector = _custom_collector()
-        tg1 = collector.add_group('test_group_1', 100, True, 'ace') # 100% coverage
-        tg2 = collector.add_group('test_group_2', 100, True, 'ace') # 100% coverage
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
+        tg2 = collector.add_group('test_group_2', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage
         collector.execute()
 
         # after this is executed we should have an assignment to test_group_1 but not test_group_2
