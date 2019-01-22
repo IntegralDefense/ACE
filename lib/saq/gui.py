@@ -9,6 +9,8 @@ import saq
 from saq.constants import *
 from saq.database import Alert
 
+import pytz
+
 __all__ = [ 
     'GUIAlert',
     'ObservableActionSeparator',
@@ -28,8 +30,12 @@ __all__ = [
     
 
 class GUIAlert(Alert):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+
+    def _initialize(self, *args, **kwargs):
+        super()._initialize(*args, **kwargs)
+
+        # the timezone we use to display datetimes, defaults to UTC
+        self.display_timezone = pytz.utc
 
     """Extends the Alert class to add functionality specific to the GUI."""
     @property
@@ -57,6 +63,11 @@ class GUIAlert(Alert):
     @property
     def jinja_event_time(self):
         return self.event_time.strftime(event_time_format_tz)
+
+    @property
+    def display_insert_date(self):
+        """Returns the insert date in the timezone specified by display_timezone."""
+        return self.insert_date.astimezone(self.display_timezone).strftime(event_time_format_tz)
 
 class ObservableAction(object):
     """Represents an "action" that a user can take with an Observable in the GUI."""
