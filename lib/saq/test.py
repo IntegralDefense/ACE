@@ -648,10 +648,15 @@ class ACEBasicTestCase(TestCase):
             c.execute("DELETE FROM archive")
             db.commit()
 
-    def start_api_server(self):
+    def start_api_server(self, remote_host=None, ssl_verification=None, listen_address=None, listen_port=None, ssl_cert=None, ssl_key=None):
         """Starts the API server as a separate process."""
-        self.api_server_process = Process(target=self.execute_api_server)
+        self.api_server_process = Process(target=self.execute_api_server, args=(listen_address, listen_port, ssl_cert, ssl_key))
         self.api_server_process.start()
+
+        if remote_host is None:
+            remote_host = saq.API_PREFIX
+        if ssl_verification is None:
+            ssl_verification = saq.CONFIG['SSL']['ca_chain_path']
 
         import ace_api
 
@@ -659,7 +664,7 @@ class ACEBasicTestCase(TestCase):
         errors = []
         for x in range(5):
             try:
-                result = ace_api.ping(remote_host=saq.API_PREFIX, ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+                result = ace_api.ping(remote_host=remote_host, ssl_verification=ssl_verification)
                 break
             except Exception as e:
                 errors.append(str(e))
@@ -671,7 +676,7 @@ class ACEBasicTestCase(TestCase):
 
             self.fail("unable to start api server")
 
-    def execute_api_server(self):
+    def execute_api_server(self, listen_address=None, listen_port=None, ssl_cert=None, ssl_key=None):
 
         # https://gist.github.com/rduplain/1705072
         # this is a bit weird because I want the urls to be the same as they
@@ -689,11 +694,16 @@ class ACEBasicTestCase(TestCase):
             app.config['APPLICATION_ROOT']: app,
         })
 
-        logging.info("starting api server on {} port {}".format(saq.CONFIG.get('api', 'listen_address'), 
-                                                                saq.CONFIG.getint('api', 'listen_port')))
-        run_simple(saq.CONFIG.get('api', 'listen_address'), saq.CONFIG.getint('api', 'listen_port'), application,
-                   ssl_context=(saq.CONFIG.get('api', 'ssl_cert'), saq.CONFIG.get('api', 'ssl_key')),
-                   use_reloader=False)
+        if listen_address is None:
+            listen_address = saq.CONFIG.get('api', 'listen_address')
+        if listen_port is None:
+            listen_port = saq.CONFIG.getint('api', 'listen_port')
+        ssl_context = (
+            saq.CONFIG.get('api', 'ssl_cert') if ssl_cert is None else ssl_cert,
+            saq.CONFIG.get('api', 'ssl_key') if ssl_key is None else ssl_key )
+
+        logging.info(f"starting api server on {listen_address} port {listen_port}")
+        run_simple(listen_address, listen_port, application, ssl_context=ssl_context, use_reloader=False)
 
     def stop_api_server(self):
         """Stops the API server if it's running."""
