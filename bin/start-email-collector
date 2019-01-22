@@ -8,4 +8,4 @@ then
     decrypt=" -p "
 fi
 
-python3 ace $decrypt --start --daemon -L etc/brotex_logging.ini brotex
+python3 ace $decrypt --start --daemon -L etc/email_collection_logging.ini email-collector

@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-source $(dirname "$0")/common.sh
-cd $SAQ_HOME
-
-echo "stopping http scanning engine"
-python3 ace --stop http-scanner
