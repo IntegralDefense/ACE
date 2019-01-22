@@ -206,7 +206,7 @@ CREATE TABLE `delayed_analysis` (
   KEY `idx_node` (`node_id`),
   KEY `idx_node_delayed_until` (`node_id`,`delayed_until`),
   CONSTRAINT `fk_delayed_analysis_node_id` FOREIGN KEY (`node_id`) REFERENCES `nodes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+) ENGINE=InnoDBDEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -536,6 +536,7 @@ CREATE TABLE `users` (
   `password_hash` char(128) DEFAULT NULL,
   `email` varchar(64) NOT NULL,
   `omniscience` int(11) NOT NULL DEFAULT '0',
+  `timezone` varchar(512) DEFAULT NULL COMMENT 'The timezone this user is in. Dates and times will appear in this timezone in the GUI.',
   PRIMARY KEY (`id`),
   UNIQUE KEY `username` (`username`,`email`)
 ) ENGINE=InnoDBDEFAULT CHARSET=latin1;
@@ -612,4 +613,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-01-14 17:46:36
+-- Dump completed on 2019-01-22 14:24:21

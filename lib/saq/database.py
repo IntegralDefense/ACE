@@ -362,6 +362,7 @@ class User(UserMixin, Base):
     email = Column(String(64), unique=True, index=True)
     password_hash = Column(String(128))
     omniscience = Column(Integer, nullable=False, default=0)
+    timezone = Column(String(512))
 
     def __str__(self):
         return self.username
