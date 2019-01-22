@@ -133,7 +133,7 @@ def kill_daemon(daemon_name):
 
     import psutil
 
-    daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
+    daemon_pid_path = os.path.join(saq.DATA_DIR, 'var', 'daemon', daemon_name)
     if not os.path.exists(daemon_pid_path):
         logging.warning("daemon file {} does not exist (process not running?)".format(daemon_pid_path))
         sys.exit(1)
@@ -185,7 +185,7 @@ def kill_daemon(daemon_name):
 
 def daemonize(daemon_name):
     # are we already running?
-    daemon_dir = os.path.join(saq.SAQ_HOME, 'var', 'daemon')
+    daemon_dir = os.path.join(saq.DATA_DIR, 'var', 'daemon')
     if not os.path.exists(daemon_dir):
         try:
             os.makedirs(daemon_dir)
@@ -193,7 +193,7 @@ def daemonize(daemon_name):
             logging.error("unable to create {}: {}".format(daemon_dir, str(e)))
             sys.exit(1)
 
-    daemon_pid_path = os.path.join(saq.SAQ_HOME, 'var', 'daemon', daemon_name)
+    daemon_pid_path = os.path.join(saq.DATA_DIR, 'var', 'daemon', daemon_name)
     if os.path.exists(daemon_pid_path):
         pid = None
         with open(daemon_pid_path, 'r') as fp:
@@ -1188,9 +1188,22 @@ def add_user(args):
     from saq.database import get_db_connection
     from getpass import getpass
 
+
     u = User()
     u.username = args.username
     u.email = args.email
+
+    try:
+        import pytz
+        u.timezone = 'Etc/UTC'
+        if args.timezone:
+            u.timezone = args.timezone
+
+        pytz.timezone(u.timezone)
+
+    except Exception as e:
+        print(f"ERROR: invalid timezone {u.timezone}")
+        sys.exit(1)
 
     password = getpass("Enter password for {0}: ".format(u.username))
     confirm = getpass("Confirm password for {0}: ".format(u.username))
@@ -1202,8 +1215,8 @@ def add_user(args):
 
     with get_db_connection() as db:
         c = db.cursor()
-        c.execute("""INSERT INTO users ( username, email, password_hash ) VALUES ( %s, %s, %s )""", (
-            u.username, u.email, u.password_hash))
+        c.execute("""INSERT INTO users ( username, email, password_hash, timezone ) VALUES ( %s, %s, %s, %s )""", (
+            u.username, u.email, u.password_hash, u.timezone))
         db.commit()
 
     logging.info("added user {0}".format(u.username))
@@ -1212,6 +1225,8 @@ add_user_parser = subparsers.add_parser('add-user',
     help="Add a new user to the system.")
 add_user_parser.add_argument('username', help="The username of the new user.")
 add_user_parser.add_argument('email', help="The email address of the new user.")
+add_user_parser.add_argument('-z', '--timezone', required=False, default=None,
+    help="The timezone the user is in. Defaults to UTC.")
 add_user_parser.set_defaults(func=add_user)
 
 def modify_user(args):
@@ -1244,6 +1259,18 @@ def modify_user(args):
 
         u.password = password
 
+    try:
+        import pytz
+        u.timezone = 'Etc/UTC'
+        if args.timezone:
+            u.timezone = args.timezone
+
+        pytz.timezone(u.timezone)
+
+    except Exception as e:
+        print(f"ERROR: invalid timezone {target_timezone}")
+        sys.exit(1)
+
     with get_db_connection() as db:
         c = db.cursor()
         if args.email is not None:
@@ -1251,6 +1278,10 @@ def modify_user(args):
             
         if args.password:
             c.execute("""UPDATE users SET password_hash = %s WHERE id = %s""", ( u.password_hash, user_id ))
+
+        if args.timezone:
+            c.execute("""UPDATE users SET timezone = %s WHERE id = %s""", ( u.timezone, user_id ))
+
         db.commit()
 
     logging.info("modified user {0}".format(u.username))
@@ -1260,6 +1291,7 @@ modify_user_parser = subparsers.add_parser('modify-user',
 modify_user_parser.add_argument('username', help="The username of the user to modify.")
 modify_user_parser.add_argument('-e', '--email', dest='email', default=None, help="The new email address of the user.")
 modify_user_parser.add_argument('-p', '--password', action='store_true', dest='password', default=False, help="Prompt for a new password.")
+modify_user_parser.add_argument('-z', '--timezone', required=False, default=None, help="The timezone the user is in. Defaults to UTC.")
 modify_user_parser.set_defaults(func=modify_user)
 
 def delete_user(args):

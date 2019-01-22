@@ -625,9 +625,10 @@ class TestCase(ACEEngineTestCase):
 
     def test_autorefresh(self):
         saq.CONFIG['engine']['auto_refresh_frequency'] = '3'
-        engine = TestEngine()
+        engine = TestEngine(pool_size_limit=1)
         engine.start()
         wait_for_log_count('triggered reload of worker modules', 1)
+        wait_for_log_count('detected death of process', 1)
         engine.controlled_stop()
         engine.wait()
 

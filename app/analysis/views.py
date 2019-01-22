@@ -123,7 +123,13 @@ def get_current_alert():
         return None
 
     try:
-        return db.session.query(GUIAlert).filter(GUIAlert.uuid == alert_uuid).one()
+        result = db.session.query(GUIAlert).filter(GUIAlert.uuid == alert_uuid).one()
+        if current_user.timezone:
+            result.display_timezone = pytz.timezone(current_user.timezone)
+
+
+        return result
+
     except Exception as e:
         logging.error(f"couldn't get alert {alert_uuid}: {e}")
 
@@ -2237,6 +2243,14 @@ def manage():
         if sort_field in sort_instructions:
             sort_arrow_html[sort_field] = '&darr;' if sort_instructions[sort_field] == SORT_DIRECTION_ASC else '&uarr;'
 
+    # what timezone do we display the alerts in?
+    # all times MUST be UTC in the database
+    display_timezone = pytz.utc # defaults to UTC
+    if user.timezone:
+        display_timezone = pytz.timezone(user.timezone)
+        for alert in alerts:
+            alert.display_timezone = display_timezone
+
     return render_template(
         'analysis/manage.html',
         alerts=alerts,
@@ -3606,7 +3620,8 @@ def analyze_alert():
     alert = get_current_alert()
 
     try:
-        alert.schedule()
+        #alert.schedule()
+        flash("this is unavailable atm -- to be fixed soon")
     except:
         flash("unable to schedule alert for analysis")
 
