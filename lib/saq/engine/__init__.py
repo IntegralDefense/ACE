@@ -81,6 +81,11 @@ class Worker(object):
         # set this Event once you're started up and are running
         self.worker_startup_event = None
 
+        # how long do we execute before we die
+        # a value of 0 indicates we never die on our own
+        self.auto_refresh_frequency = saq.CONFIG['engine'].getint('auto_refresh_frequency', 0)
+        self.next_auto_refresh_time = None # datetime.datetime
+
     def start(self):
         self.worker_shutdown_event = Event()
         self.worker_startup_event = Event()
@@ -131,7 +136,7 @@ class Worker(object):
             return
 
         # if not then start it back up
-        logging.warning("detected death of process {} pid {}".format(self.process, self.process.pid))
+        logging.info("detected death of process {} pid {}".format(self.process, self.process.pid))
         self.start()
         self.wait_for_start()
 
@@ -142,6 +147,12 @@ class Worker(object):
         # let the main process know we started
         if self.worker_startup_event is not None:
             self.worker_startup_event.set()
+
+        # if auto_refresh_frequency is > 0 then we record when we want to call it quits and start a new process
+        if self.auto_refresh_frequency:
+            self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
+                                          seconds=self.auto_refresh_frequency)
+            logging.debug(f"next auto refresh time for {os.getpid()} set to {self.next_auto_refresh_time}")
         
         while True:
             # is the engine shutting down?
@@ -151,6 +162,13 @@ class Worker(object):
             # have we requested this single worker to shut down?
             if self.worker_shutdown_event is not None and self.worker_shutdown_event.is_set():
                 break
+
+            # is it time to die?
+            if self.next_auto_refresh_time:
+                if datetime.datetime.now() > self.next_auto_refresh_time:
+                    logging.info("auto refresh frequency {} triggered reload of worker modules".format(
+                                 self.auto_refresh_frequency))
+                    break
 
             try:
                 # if the control event is set then it means we're looking to exit when everything is done
@@ -467,12 +485,6 @@ class Engine(object):
         self.sigterm_received = False
         self.sighup_received = False
         self.sigint_received = False
-
-        # how often do we automatically reload the workers?
-        self.auto_refresh_frequency = self.config.getint('auto_refresh_frequency')
-
-        # every N minutes we act as though we received a SIGHUP
-        self.next_auto_refresh_time = None
 
         # the RootAnalysis object the current process is analyzing
         self.root = None
@@ -1247,10 +1259,6 @@ class Engine(object):
         self.worker_manager = WorkerManager()
         self.worker_manager.start()
 
-        if self.auto_refresh_frequency:
-            self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
-                                          seconds=self.auto_refresh_frequency)
-
         self.start_maintenance_threads()
         self.engine_startup_event.set()
         self.initialize_signal_handlers()
@@ -1274,16 +1282,6 @@ class Engine(object):
                     datetime.timedelta(seconds=self.node_status_update_frequency)
 
                 reload_flag = False
-                if self.auto_refresh_frequency and datetime.datetime.now() > self.next_auto_refresh_time:
-                    logging.info("auto refresh frequency {} triggered reload of worker modules".format(
-                                 self.auto_refresh_frequency))
-
-                    reload_flag = True
-
-                    self.next_auto_refresh_time = datetime.datetime.now() + \
-                    datetime.timedelta(seconds=self.auto_refresh_frequency)
-                    logging.debug("next auto refresh scheduled for {}".format(self.next_auto_refresh_time))
-
                 if self.sighup_received:
                     # we re-load the config when we receive SIGHUP
                     logging.info("reloading engine configuration")
