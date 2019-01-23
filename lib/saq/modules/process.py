@@ -294,8 +294,9 @@ class ProcessGUIDAnalyzer(AnalysisModule):
         if not 'carbon_black' in saq.CONFIG:
             raise ValueError("missing config section carbon_black")
 
-        key = 'credential_file'
-        if not key in saq.CONFIG['carbon_black']:
+        keys = ['credential_file', 'segment_limit']
+        for key in keys:
+            if key not in saq.CONFIG['carbon_black']:
                 raise ValueError("missing config item {} in section carbon_black".format(key))
 
     @property
@@ -324,6 +325,8 @@ class ProcessGUIDAnalyzer(AnalysisModule):
         if regex.match(observable.value) == None:
             logging.error("{} is not in the format of a process guid".format(observable.value))
             return False
+
+        segment_limit = saq.CONFIG['carbon_black'].getint('segment_limit')
 
         cb = CbResponseAPI(credential_file=saq.CONFIG['carbon_black']['credential_file'])
 
@@ -356,7 +359,7 @@ class ProcessGUIDAnalyzer(AnalysisModule):
         analysis = self.create_analysis(observable)
 
         process_tree = sp.walk_process_tree()
-        process_event_details = sp.events_to_json()
+        process_event_details = sp.events_to_json(segment_limit=segment_limit)
         process_event_details['process_tree'] =  process_tree.tuple_list()
         process_event_details['process_tree_str'] = str(process_tree)
 
