@@ -3171,6 +3171,11 @@ if __name__ == '__main__':
         print("do not run ace as root please")
         sys.exit(1)
 
+    # check the current version of python
+    if sys.version_info < (3, 6):
+        print("you need at least python version 3.6.* to run ACE")
+        sys.exit(1)
+
     # was this command called as a symlink?
     if os.path.basename(sys.argv[0]) == 'correlate':
         sys.argv.insert(1, 'correlate')
