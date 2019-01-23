@@ -18,6 +18,7 @@ import stat
 import sys
 import tempfile
 import time
+import zipfile
 
 from lxml import etree
 from urllib.parse import urlparse, urljoin
@@ -472,15 +473,21 @@ UNACE_SUMMARY_REGEX = re.compile(rb'^listed: (\d+) files,.*')
 class ArchiveAnalyzer(AnalysisModule):
     def verify_environment(self):
         self.verify_config_exists('max_file_count')
+        self.verify_config_exists('max_jar_file_count')
         self.verify_config_exists('timeout')
         self.verify_program_exists('7z')
         self.verify_program_exists('unrar')
         self.verify_program_exists('unace')
         self.verify_program_exists('unzip')
+        self.verify_program_exists('java')
 
     @property
     def max_file_count(self):
         return self.config.getint('max_file_count')
+
+    @property
+    def max_jar_file_count(self):
+        return self.config.getint('max_jar_file_count')
 
     @property
     def timeout(self):
@@ -532,6 +539,9 @@ class ArchiveAnalyzer(AnalysisModule):
         is_zip_file = 'Microsoft Excel 2007+' in file_type_analysis.file_type
         is_zip_file |= file_type_analysis.mime_type == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
+        # special logic for jar files
+        is_jar_file = file_type_analysis.mime_type == 'application/java-archive'
+
         # special logic for microsoft office files
         is_office_document = is_office_file(_file)
         #is_office_document = is_office_ext(os.path.basename(local_file_path))
@@ -575,6 +585,13 @@ class ArchiveAnalyzer(AnalysisModule):
                     break
 
                 count += 1
+
+        elif is_jar_file:
+            try:
+                with zipfile.ZipFile(local_file_path, "r") as zfile:
+                    count = len(zfile.namelist())
+            except Exception as e:
+                logging.error("unable to read jar file")
 
         elif is_zip_file:
             logging.debug("using unzip to extract files from {}".format(local_file_path))
@@ -673,7 +690,13 @@ class ArchiveAnalyzer(AnalysisModule):
             ole_object_regex = re.compile(b'word.embeddings.oleObject1\\.bin', re.M)
             is_office_document |= (ole_object_regex.search(stdout) is not None)
 
-        if not is_office_document:
+        # skip archives with lots of files
+        if is_jar_file:
+            if self.max_jar_file_count != 0 and count > self.max_jar_file_count:
+                logging.debug("skipping archive analysis of {}: file count {} exceeds configured maximum {} in max_jar_file_count setting".format(
+                    local_file_path, count, self.max_jar_file_count))
+                return False
+        elif not is_office_document:
             if self.max_file_count != 0 and count > self.max_file_count:
                 logging.debug("skipping archive analysis of {}: file count {} exceeds configured maximum {} in max_file_count setting".format(
                     local_file_path, count, self.max_file_count))
@@ -701,6 +724,9 @@ class ArchiveAnalyzer(AnalysisModule):
 
         if is_rar_file:
             params = ['unrar', 'e', '-y', '-o+', local_file_path, extracted_path]
+        elif is_jar_file:
+            decompiler_path = os.path.join(saq.SAQ_HOME, "bin", "procyon_decompiler.jar")
+            params = ['java', '-jar', decompiler_path, '-jar', local_file_path, '-o', extracted_path]
         elif is_zip_file:
             # avoid the numerious XML documents in excel files
             params = ['unzip', local_file_path, '-x', 'xl/activeX/*', 

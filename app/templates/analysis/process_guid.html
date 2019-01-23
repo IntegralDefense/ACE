@@ -1,4 +1,7 @@
 <p><b>Process Details</b></p>
+{% if analysis.details['segment_count'] > ace_config['carbon_black'].getint('segment_limit') %}
+<h6> {{ ace_config['carbon_black'].getint('segment_limit') }} out of {{ analysis.details['segment_count'] }} process segments stored.</h6>
+{% endif %}
 <div class="row">
     <div class="col-md-12">
         <!-- by default we just pretty-print the json -->
@@ -97,7 +100,7 @@
     <div class="card-header" role="tab" id="headingTwo">
       <h5 class="mb-0">
         <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseFileMods" aria-expanded="false" aria-controls="collapseFileMods">
-          File Modifications (Count <~ {{analysis.details['filemod_count']}})
+		File Modifications (Captured: {{analysis.details['filemods']|length}} / Total Reported: {{analysis.details['filemod_count']}})
         </a>
       </h5>
     </div>
@@ -126,7 +129,7 @@
     <div class="card-header" role="tab" id="headingTwo">
       <h5 class="mb-0">
         <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseNetconns" aria-expanded="false" aria-controls="collapseFileMods">
-          Network Connections (Count: {{analysis.details['netconn_count']}})
+		Network Connections (Captured: {{analysis.details['netconns']|length}} / Total Reported: {{analysis.details['netconn_count']}})
         </a>
       </h5>
     </div>
@@ -155,7 +158,7 @@
     <div class="card-header" role="tab" id="headingFour">
       <h5 class="mb-0">
         <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseRegMods" aria-expanded="false" aria-controls="collapseRegMods">
-          Registry Modifications (Count: {{analysis.details['regmod_count']}})
+		Registry Modifications (Captured: {{analysis.details['regmods']|length}}  / Total Reported: {{analysis.details['regmod_count']}})
         </a>
       </h5>
     </div> 
@@ -182,7 +185,7 @@
     <div class="card-header" role="tab" id="headingFour">
       <h5 class="mb-0">
         <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseUnModLoads" aria-expanded="false" aria-controls="collapseUnModLoads">
-          Unsigned ModLoads (Count: {{ analysis.details.unsigned_modloads | count }})
+          Unsigned ModLoads (Captured: {{ analysis.details.unsigned_modloads | length}})
         </a>
       </h5>
     </div> 
@@ -209,7 +212,7 @@
     <div class="card-header" role="tab" id="headingFour">
       <h5 class="mb-0">
         <a class="collapsed" data-toggle="collapse" data-parent="#accordion" href="#collapseCrossProcs" aria-expanded="false" aria-controls="collapseCrossProcs">
-          Crossprocs (Count: {{ analysis.details.crossproc_count }})
+		Crossprocs (Captured: {{analysis.details['crossprocs']|length}} / Total Reported: {{ analysis.details.crossproc_count }})
         </a>
       </h5>
     </div> 
