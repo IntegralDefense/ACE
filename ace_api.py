@@ -270,8 +270,8 @@ def submit(
         assert isinstance(t, str), "tag {} is not a string".format(t)
 
     # if details is a string interpret it as JSON
-    if isinstance(details, str):
-        details = json.loads(details)
+    #if isinstance(details, str):
+        #details = json.loads(details)
 
     # make sure each file is a tuple of (something, str)
     _error_message = "file parameter {} invalid: each element of the file parameter must be a tuple of " \
