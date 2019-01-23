@@ -59,4 +59,6 @@ then
     npm -g install esprima || fail "npm package installation failed"
 fi
 
+wget https://bitbucket.org/mstrobel/procyon/downloads/procyon-decompiler-0.5.30.jar bin/procyon-decompiler.jar
+
 exit 0

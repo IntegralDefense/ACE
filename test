@@ -41,8 +41,8 @@ if [ -d "$data_dir" ]
 then
     echo "clearing $data_dir..."
     rm -rf "$data_dir"
-    mkdir "$data_dir"
 fi
+mkdir "$data_dir"
 
 # if we passed no parameters then we run all the tests
 if [ "$#" -eq "0" ]
