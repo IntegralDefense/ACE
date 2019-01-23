@@ -17,6 +17,7 @@ from saq.error import report_exception
 from saq.performance import track_execution_time
 from saq.util import abs_path
 
+import pytz
 import businesstime
 import pymysql
 import pymysql.err
@@ -591,11 +592,22 @@ class SiteHolidays(Holidays):
                 return True
         return super(SiteHolidays, self)._day_rule_matches(rule, dt)
 
-_bt = businesstime.BusinessTime(business_hours=(datetime.time(6), datetime.time(18)), holidays=SiteHolidays())
 
 class Alert(RootAnalysis, Base):
 
     def _initialize(self):
+        # Create a businesstime object for SLA with the correct start and end hours converted to UTC
+        _bhours = saq.CONFIG['SLA']['business_hours'].split(',')
+        _bh_tz = pytz.timezone(saq.CONFIG['SLA']['time_zone'])
+        utc = pytz.timezone('UTC')
+        now = datetime.datetime.now()
+        now = now.astimezone(_bh_tz)
+        now = now.replace(hour=int(_bhours[0]))
+        self._start_hour = now.astimezone(utc).hour
+        now = now.astimezone(_bh_tz)
+        now = now.replace(hour=int(_bhours[1]))
+        self._end_hour = now.astimezone(utc).hour
+        self._bt = businesstime.BusinessTime(business_hours=(datetime.time(self._start_hour), datetime.time(self._end_hour)), holidays=SiteHolidays())
         # keep track of what Tag and Observable objects we add as we analyze
         self._tracked_tags = [] # of saq.analysis.Tag
         self._tracked_observables = [] # of saq.analysis.Observable
@@ -681,11 +693,11 @@ class Alert(RootAnalysis, Base):
     @property
     def business_time(self):
         """Returns a time delta that represents how old this alert is in business days and hours."""
-        # remember that 1 day == 8 hours
+        # remember that 1 day == _end_hour - _start_hour (default: 12)
         if hasattr(self, '_business_time'):
             return getattr(self, '_business_time')
 
-        result = _bt.businesstimedelta(self.insert_date, datetime.datetime.now())
+        result = self._bt.businesstimedelta(self.insert_date, datetime.datetime.utcnow())
         setattr(self, '_business_time', result)
         return result
 
@@ -703,8 +715,9 @@ class Alert(RootAnalysis, Base):
 
     @property
     def business_time_seconds(self):
-        """Returns self.business_time as seconds (computing 8 hours per day.)"""
-        return ((self.business_time.days * 8 * 60 * 60) + 
+        """Returns self.business_time as seconds (computing _end_time -  start_time hours per day.)"""
+        hours_per_day = self._end_hour - self._start_hour
+        return ((self.business_time.days * hours_per_day * 60 * 60) + 
                 (self.business_time.seconds))
 
     @property
