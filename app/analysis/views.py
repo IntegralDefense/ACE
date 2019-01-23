@@ -3323,17 +3323,18 @@ def index():
         def __str__(self):
             return "TreeNode({}, {}, {})".format(self.obj, self.reference_node, self.visible)
 
-    def find_all_domains(analysis, domains={}):
+
+    def find_all_domains(analysis):
         assert isinstance(analysis, saq.analysis.Analysis)
-
-        for observable in analysis.observables:
-            if observable.type == F_URL:
-                domains[urlparse(observable.value).hostname] = True
-
-            for observable_analysis in [a for a in observable.all_analysis if a]:
-                find_all_domains(observable_analysis, domains)
+        domains = {}
+        for observable in analysis.find_observables(lambda o: o.type == F_URL):
+            if urlparse(observable.value).hostname not in domains:
+                domains[urlparse(observable.value).hostname] = 1
+            else:
+                domains[urlparse(observable.value).hostname] += 1
 
         return domains
+
 
     def _recurse(current_node, node_tracker=None):
         assert isinstance(current_node, TreeNode)
@@ -3481,8 +3482,32 @@ def index():
 
     # get list of domains that appear in the alert
     domains = find_all_domains(analysis)
-    domain_list = list(domains)
-    domain_list.sort()
+    #domain_list = list(domains)
+    #domain_list = sorted(domains, key=lambda k: domains[k])
+
+    def _create_histogram_string(data):
+        assert isinstance(data, dict)
+        for key in data.keys():
+            assert isinstance(data[key], int)
+        total_results = sum([value for value in data.values()])
+        txt = ""
+        ordered_keys = sorted(data, key=lambda k: data[k])
+        results = []
+        longest_key = 0
+        for key in ordered_keys:
+            value = data[key]
+            longest_key = len(key) if len(key) > longest_key else longest_key
+            # truncating keys to 95 chars
+            longest_key = 100 if longest_key > 100 else longest_key
+            percent = value / total_results * 100
+            #txt += "%100s: %5s%% %s\n" % (key[:95], percent, u"\u25A0"*(int(percent/2)))
+            results.append((key[:95], value, percent, u"\u25A0"*(int(percent/2))))
+        for r in results:
+            txt += "%s%s: %5s - %5s%% %s\n" % (int(longest_key - len(r[0]))*' ', r[0] , r[1],
+                                               str(r[2])[:4], u"\u25A0"*(int(r[2]/2)))
+        return txt
+
+    domain_summary_str = _create_histogram_string(domains)
 
     return render_template('analysis/index.html',
                            alert=alert,
@@ -3507,7 +3532,9 @@ def index():
                            pp_counts=get_profile_point_counts(),
                            pp_scores=pp_scores,
                            pp_full=pp_full,
-                           domains=domain_list,
+                           domains=domains,
+                           #domain_list=domain_list,
+                           domain_summary_str=domain_summary_str,
                            email_remediations=email_remediations)
 
 @analysis.route('/file', methods=['GET'])
