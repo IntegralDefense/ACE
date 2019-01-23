@@ -2571,6 +2571,9 @@ class EmailLoggingAnalyzer(AnalysisModule):
 
         # are we updating the brocess database?
         mail_from = normalize_email_address(entry['mail_from'])
+        if not mail_from:
+            return
+
         logging.debug("updating brocess for {}".format(mail_from))
 
         try:
