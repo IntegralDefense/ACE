@@ -3656,10 +3656,19 @@ def analyze_alert():
     alert = get_current_alert()
 
     try:
-        #alert.schedule()
-        flash("this is unavailable atm -- to be fixed soon")
-    except:
-        flash("unable to schedule alert for analysis")
+        result = ace_api.resubmit_alert(
+            remote_host = alert.node_location,
+            ssl_verification = abs_path(saq.CONFIG['SSL']['ca_chain_path']),
+            uuid = alert.uuid)
+
+        if 'error' in result:
+            e_msg = result['error']
+            logging.error(f"failed to resubmit alert: {e_msg}")
+            flash(f"failed to resubmit alert: {e_msg}")
+
+    except Exception as e:
+        logging.error(f"unable to submit alert: {e}")
+        flash(f"unable to submit alert: {e}")
 
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
