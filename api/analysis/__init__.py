@@ -211,6 +211,17 @@ def submit():
 
         raise e
 
+@analysis_bp.route('/resubmit/<uuid>', methods=['GET'])
+def resubmit(uuid):
+    try:
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+        root.reset()
+        root.schedule()
+        return json_result({'result':'success'})
+    except Exception as e:
+        return json_result({'result':'failed', 'error':str(e)})
+
 @analysis_bp.route('/<uuid>', methods=['GET'])
 def get_analysis(uuid):
     root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
