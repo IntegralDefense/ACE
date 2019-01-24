@@ -35,7 +35,7 @@ from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
                          add_delayed_analysis_request, clear_expired_locks, clear_expired_local_nodes, \
-                         initialize_node, ALERT
+                         initialize_node, ALERT, DatabaseSession
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 from saq.performance import record_metric
@@ -1656,39 +1656,53 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 logging.error("unable to add {} to workload: {}".format(self.root, e))
                 report_exception()
 
+        elif self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
+            # if we are analyzing an alert, sync it to the database
+            session = None
+            try:
+                session = DatabaseSession()
+                alert = session.query(Alert).filter(Alert.uuid==self.root.uuid).first()
+                if alert:
+                    alert.load()
+                    alert.sync()
+            except Exception as e:
+                logging.error("unable to sync alert {self.root}: {e}")
+                report_exception()
+            finally:
+                session.close()
+
         # if the analysis mode did NOT change
         # then we look to see if we should clean this up
-        else:
-            # is this analysis_mode one that we want to clean up?
-            if self.root.analysis_mode is not None \
-            and 'analysis_mode_{}'.format(self.root.analysis_mode) in saq.CONFIG \
-            and saq.CONFIG['analysis_mode_{}'.format(self.root.analysis_mode)].getboolean('cleanup'):
-                # OK then is there any outstanding work assigned to this uuid?
-                try:
-                    with get_db_connection() as db:
-                        c = db.cursor()
-                        c.execute("""SELECT uuid FROM workload WHERE uuid = %s
-                                     UNION SELECT uuid FROM delayed_analysis WHERE uuid = %s
-                                     UNION SELECT uuid FROM locks WHERE uuid = %s
-                                     LIMIT 1
-                                     """, (self.root.uuid, self.root.uuid, self.root.uuid))
+        # is this analysis_mode one that we want to clean up?
+        if self.root.analysis_mode is not None \
+        and 'analysis_mode_{}'.format(self.root.analysis_mode) in saq.CONFIG \
+        and saq.CONFIG['analysis_mode_{}'.format(self.root.analysis_mode)].getboolean('cleanup'):
+            # OK then is there any outstanding work assigned to this uuid?
+            try:
+                with get_db_connection() as db:
+                    c = db.cursor()
+                    c.execute("""SELECT uuid FROM workload WHERE uuid = %s
+                                 UNION SELECT uuid FROM delayed_analysis WHERE uuid = %s
+                                 UNION SELECT uuid FROM locks WHERE uuid = %s
+                                 LIMIT 1
+                                 """, (self.root.uuid, self.root.uuid, self.root.uuid))
 
-                        row = c.fetchone()
-                        db.commit()
+                    row = c.fetchone()
+                    db.commit()
 
-                        if row is None:
-                            # OK then it's time to clean this one up
-                            logging.debug("clearing {}".format(self.root.storage_dir))
-                            try:
-                                shutil.rmtree(self.root.storage_dir)
-                            except Exception as e:
-                                logging.error("unable to clear {}: {}".format(self.root.storage_dir))
-                        else:
-                            logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
+                    if row is None:
+                        # OK then it's time to clean this one up
+                        logging.debug("clearing {}".format(self.root.storage_dir))
+                        try:
+                            shutil.rmtree(self.root.storage_dir)
+                        except Exception as e:
+                            logging.error("unable to clear {}: {}".format(self.root.storage_dir))
+                    else:
+                        logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
 
-                except Exception as e:
-                    logging.error("trouble checking finished status of {}: {}".format(self.root, e))
-                    report_exception()
+            except Exception as e:
+                logging.error("trouble checking finished status of {}: {}".format(self.root, e))
+                report_exception()
     
     def process_work_item(self, work_item):
         """Processes the work item."""
@@ -1892,7 +1906,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         except Exception as e:
             logging.error("unable to record statistics: {}".format(e))
-
 
         return
 

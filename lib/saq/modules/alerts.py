@@ -13,9 +13,11 @@ import saq.database
 
 from saq.analysis import Analysis, Observable
 from saq.constants import *
-from saq.database import get_db_connection, use_db, ALERT
+from saq.database import get_db_connection, use_db, ALERT, DatabaseSession
 from saq.error import report_exception
 from saq.modules import AnalysisModule
+
+from sqlalchemy.orm.exc import NoResultFound
 
 class ACEAlertDispositionAnalyzer(AnalysisModule):
     """Cancels any further analysis if the disposition has been set by the analyst."""
@@ -60,36 +62,6 @@ class ACEDetectionAnalyzer(AnalysisModule):
             self.root.analysis_mode = self.target_mode
 
         return True
-
-class ACEAlertDatabaseAnalyzer(AnalysisModule):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.target_mode = self.config['target_mode']
-
-    def verify_environment(self):
-        # make sure the target_mode is valid
-        if 'analysis_mode_{}'.format(self.config['target_mode']) not in saq.CONFIG:
-            raise ValueError("target_mode {} invalid".format(self.config['target_mode']))
-
-    @use_db
-    def execute_post_analysis(self, db, c):
-        # are we in the right analysis mode?
-        if self.root.analysis_mode != self.target_mode:
-            return False
-
-        # is this alert already in the database?
-        c.execute("SELECT id FROM alerts WHERE uuid = %s", (self.root.uuid,))
-        row = c.fetchone()
-        if row:
-            alert = saq.database.Alert()
-            alert.storage_dir = self.root.storage_dir
-            alert.load()
-            alert.sync()
-            return False
-
-        # otherwise insert the alert
-        ALERT(self)
-        return False
 
 class ACEAlertsAnalysis(Analysis):
     """What other alerts have we seen this in?"""
