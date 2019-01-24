@@ -834,8 +834,8 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         if Analysis.KEY_ALERTED in value:
             self.alerted = value[Analysis.KEY_ALERTED]
 
-        #if Analysis.KEY_DELAYED in value:
-            #self.delayed = value[Analysis.KEY_DELAYED]
+        if Analysis.KEY_DELAYED in value:
+            self.delayed = value[Analysis.KEY_DELAYED]
 
     @property
     def delayed(self):
@@ -2546,7 +2546,7 @@ class RootAnalysis(Analysis):
     @property
     def delayed(self):
         """Returns True if any delayed analysis is outstanding."""
-        for observable in self.observables:
+        for observable in self.all_observables:
             for analysis in observable.all_analysis:
                 if analysis.delayed:
                     return True
@@ -2556,7 +2556,8 @@ class RootAnalysis(Analysis):
     @delayed.setter
     def delayed(self, value):
         """This is computed so this value is thrown away."""
-        raise RuntimeError("delayed is read-only on RootAnalysis object")
+        # this will (attempt to be) set when the object is loaded from JSON
+        pass
 
     def get_delayed_analysis_start_time(self, observable, analysis_module):
         """Returns the time of the first attempt to delay analysis for this analysis module and observable, or None otherwise."""
