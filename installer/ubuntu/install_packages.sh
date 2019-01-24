@@ -33,6 +33,7 @@ apt-get -y install \
 	poppler-utils \
     rng-tools \
     memcached \
+    default-jdk \
     mysql-server || fail "package installation failed"
 
 apt-get -y install nodejs

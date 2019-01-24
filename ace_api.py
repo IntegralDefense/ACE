@@ -270,8 +270,8 @@ def submit(
         assert isinstance(t, str), "tag {} is not a string".format(t)
 
     # if details is a string interpret it as JSON
-    if isinstance(details, str):
-        details = json.loads(details)
+    #if isinstance(details, str):
+        #details = json.loads(details)
 
     # make sure each file is a tuple of (something, str)
     _error_message = "file parameter {} invalid: each element of the file parameter must be a tuple of " \
@@ -495,7 +495,7 @@ class Alert(object):
         self.ssl_verification = None
 
     def __str__(self):
-        return f'Alert({self.submit_kwargs})'
+        return 'Alert({})'.format(self.submit_kwargs)
 
     @property
     def description(self):
@@ -558,7 +558,8 @@ class Alert(object):
             return self.uuid
 
         except Exception as submission_error:
-            logging.warning(f"unable to submit alert {self}: {submission_error} (attempting to save alert to {fail_dir})")
+            logging.warning("unable to submit alert {}: {} (attempting to save alert to {})".format(
+                            self, submission_error, fail_dir))
 
             if not save_on_fail:
                 raise submission_error
@@ -573,7 +574,8 @@ class Alert(object):
                 try:
                     os.makedirs(dest_dir)
                 except Exception as e:
-                    logging.error(f"unable to create directory {dest_dir} to save alert {self}: {e}")
+                    logging.error("unable to create directory {} to save alert {}: {}".format(
+                                  dest_dir, self, e))
                     raise e
 
             # copy any files we wanted to submit to the directory
@@ -587,7 +589,7 @@ class Alert(object):
                 try:
                     shutil.copy2(source_path, destination_path)
                 except Exception as e:
-                    logging.error(f"unable to copy file from {source_path} to {destination_path}: {e}")
+                    logging.error("unable to copy file from {} to {}: {}".format(source_path, destination_path, e))
 
             # now we need to reference the copied files
             self.submit_kwargs['files'] = [(os.path.join(dest_dir, f[1]), f[1]) for f in self.submit_kwargs['files']]
@@ -601,7 +603,7 @@ class Alert(object):
             with open(os.path.join(dest_dir, 'alert'), 'wb') as fp:  
                 pickle.dump(self, fp)
 
-            logging.debug(f"saved alert {self} to {dest_dir}")
+            logging.debug("saved alert {} to {}".format(self, dest_dir))
             raise submission_error
 
         finally:
@@ -610,7 +612,7 @@ class Alert(object):
                 try:
                     fp.close()
                 except Exception as e:
-                    logging.error(f"unable to close file descriptor for {file_name}")
+                    logging.error("unable to close file descriptor for {}".format(file_name))
 
 @support_command
 def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq_alerts', delete_on_success=True, *args, **kwargs):
@@ -621,11 +623,11 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
     for subdir in os.listdir(fail_dir):
         target_path = os.path.join(fail_dir, subdir, 'alert')
         try:
-            logging.info(f"loading {target_path}")
+            logging.info("loading {}".format(target_path))
             with open(target_path, 'rb') as fp:
                 alert = pickle.load(fp)
         except Exception as e:
-            logging.error(f"unable to load {target_path}: {e}")
+            logging.error("unable to load {}: {}".format(target_path, e))
             continue
 
         try:
@@ -633,7 +635,7 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
             # otherwise
             kwargs = {}
             if remote_host is not None:
-                kwargs['uri'] = f'https://{remote_host}'
+                kwargs['uri'] = 'https://{}'.format(remote_host)
             if ssl_verification is not None:
                 kwargs['ssl_verification'] = ssl_verification
 
@@ -644,9 +646,9 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
                     target_dir = os.path.join(fail_dir, subdir)
                     shutil.rmtree(target_dir)
                 except Exception as e:
-                    logging.error(f"unable to delete directory {target_dir}: {e}")
+                    logging.error("unable to delete directory {}: {}".format(target_dir, e))
         except Exception as e:
-            logging.error(f"unable to submit {target_path}: {e}")
+            logging.error("unable to submit {}: {}".format(target_path, e))
 
 if __name__ == '__main__':
     import argparse
@@ -673,7 +675,7 @@ if __name__ == '__main__':
                                                    required=False,
                                                    dest=parameter.name,
                                                    default=parameter.default,
-                                                   help=f"(default: {parameter.default})")
+                                                   help="(default: {})".format(parameter.default))
 
         subcommand_parser.set_defaults(func=command, conv=None)
 
