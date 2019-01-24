@@ -1688,7 +1688,8 @@ INSERT INTO workload (
     exclusive_uuid,
     storage_dir,
     insert_date )
-VALUES ( %s, %s, %s, %s, %s, %s, NOW() )""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
+VALUES ( %s, %s, %s, %s, %s, %s, NOW() )
+ON DUPLICATE KEY UPDATE uuid=uuid""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
     db.commit()
     logging.info("added {} to workload with analysis mode {} company_id {} exclusive_uuid {}".format(
                   root.uuid, root.analysis_mode, root.company_id, exclusive_uuid))
