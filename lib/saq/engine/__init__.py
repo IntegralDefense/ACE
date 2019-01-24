@@ -1189,7 +1189,7 @@ class Engine(object):
                                          WHERE id = %s""", 
                               (self.is_local, saq.API_PREFIX, saq.SAQ_NODE_ID), commit=True)
 
-            logging.debug("updated node {} ({}) (is_local = {})".format(saq.SAQ_NODE, saq.SAQ_NODE_ID, self.is_local))
+            logging.info("updated node {} ({}) (is_local = {})".format(saq.SAQ_NODE, saq.SAQ_NODE_ID, self.is_local))
 
         except Exception as e:
             logging.error("unable to update node {} status: {}".format(saq.SAQ_NODE, e))
@@ -1263,8 +1263,8 @@ class Engine(object):
         self.engine_startup_event.set()
         self.initialize_signal_handlers()
 
-        try:
-            while True:
+        while True:
+            try:
                 if self.sigterm_received or self.sigint_received:
                     logging.info("received signal to shut down")
                     self.stop()
@@ -1301,14 +1301,19 @@ class Engine(object):
                 if self.control_event.wait(0.5):
                     break
 
-            # if we're shutting down then go ahead and tell the workers to shut down
-            self.worker_manager.wait()
-            self.stop_maintenance_threads()
+            except KeyboardInterrupt:
+                logging.warning("caught user interrupt in engine_loop")
 
-        except KeyboardInterrupt:
-            logging.warning("caught user interrupt in engine_loop")
+            except Exception as e:
+                logging.error(f"unexpected exception thrown: {e}")
+                report_exception()
+                time.sleep(1)
 
-        logging.debug("ended engine loop")
+        # if we're shutting down then go ahead and tell the workers to shut down
+        logging.info("ending engine loop")
+        self.worker_manager.wait()
+        self.stop_maintenance_threads()
+        logging.info("ended engine loop")
 
     #
     # PROCESS MANAGEMENT
