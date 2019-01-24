@@ -3665,6 +3665,8 @@ def analyze_alert():
             e_msg = result['error']
             logging.error(f"failed to resubmit alert: {e_msg}")
             flash(f"failed to resubmit alert: {e_msg}")
+        else:
+            flash("successfully submitted alert for re-analysis")
 
     except Exception as e:
         logging.error(f"unable to submit alert: {e}")
