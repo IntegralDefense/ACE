@@ -301,6 +301,10 @@ def submit(
     }, files=files_params, method=METHOD_POST, *args, **kwargs).json()
 
 @api_command
+def resubmit_alert(uuid, *args, **kwargs):
+    return _execute_api_call('analysis/resubmit/{}'.format(uuid), *args, **kwargs).json()
+
+@api_command
 def get_analysis(uuid, *args, **kwargs):
     return _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
 
