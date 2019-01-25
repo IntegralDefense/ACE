@@ -23,7 +23,7 @@ from saq.engine import Engine, DelayedAnalysisRequest, add_workload
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
 from saq.test import *
-from saq.util import storage_dir_from_uuid
+from saq.util import storage_dir_from_uuid, workload_storage_dir
 
 class TestCase(ACEEngineTestCase):
 
@@ -513,7 +513,7 @@ class TestCase(ACEEngineTestCase):
         from saq.modules.test import DelayedAnalysisTestAnalysis
 
         # the second one should finish before the first one
-        root_1 = RootAnalysis(uuid=root_1.uuid, storage_dir=storage_dir_from_uuid(root_1.uuid))
+        root_1 = RootAnalysis(uuid=root_1.uuid, storage_dir=root_1.storage_dir)
         root_1.load()
         analysis_1 = root_1.get_observable(o_1.id).get_analysis(DelayedAnalysisTestAnalysis)
         self.assertTrue(analysis_1.initial_request)
@@ -521,7 +521,7 @@ class TestCase(ACEEngineTestCase):
         self.assertEquals(analysis_1.request_count, 2)
         self.assertTrue(analysis_1.completed)
 
-        root_2 = RootAnalysis(uuid=root_2.uuid, storage_dir=storage_dir_from_uuid(root_2.uuid))
+        root_2 = RootAnalysis(uuid=root_2.uuid, storage_dir=root_2.storage_dir)
         root_2.load()
         analysis_2 = root_2.get_observable(o_2.id).get_analysis(DelayedAnalysisTestAnalysis)
         self.assertTrue(analysis_2.initial_request)
@@ -1405,6 +1405,20 @@ class TestCase(ACEEngineTestCase):
 
         self.assertFalse(os.path.isdir(root.storage_dir))
 
+    def test_cleanup_alt_workdir(self):
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_cleanup')
+        root.storage_dir = workload_storage_dir(root.uuid)
+        root.initialize_storage()
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine()
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        self.assertFalse(os.path.isdir(root.storage_dir))
+
     def test_no_cleanup(self):
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_empty')
         root.initialize_storage()
@@ -2117,3 +2131,22 @@ class TestCase(ACEEngineTestCase):
 
         self.assertEquals(log_count('execute_post_analysis called'), 1)
         self.assertEquals(log_count('executing post analysis routines for'), 1)
+    
+    def test_alt_workload_move(self):
+
+        # when an analysis moves into alert (correlation) mode and we are using an alt workload dir
+        # then that analysis should move into the saq.DATA_DIR directory
+        
+        root = create_root_analysis()
+        root.storage_dir = workload_storage_dir(root.uuid)
+        root.initialize_storage()
+        t1 = root.add_observable(F_TEST, 'test')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_forced_detection', 'test_groups')
+        engine.enable_module('analysis_module_detection', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()

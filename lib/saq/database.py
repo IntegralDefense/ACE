@@ -1161,18 +1161,20 @@ WHERE
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
 
-        self.insert()
+        if self.id is None:
+            self.insert()
+
         if self.id is None:
             logging.error("unable to get the unique id of the alert")
             return False
 
         self.build_index()
 
-        try:
-            self.sync_profile_points()
-        except Exception as e:
-            logging.error("unable to sync profile points: {}".format(e))
-            report_exception()
+        #try:
+            #self.sync_profile_points()
+        #except Exception as e:
+            #logging.error("unable to sync profile points: {}".format(e))
+            #report_exception()
 
         self.save() # save this alert now that it has the id
 
@@ -1203,6 +1205,9 @@ WHERE
 
     def insert(self):
         """Insert this Alert into the alerts database table. Sets the id property of this Alert and returns the id value."""
+        if self.id is not None:
+            return self.id
+
         new_session = False
         try:
             # do we already have a session we're using?
@@ -1211,7 +1216,7 @@ WHERE
                 session = DatabaseSession()
                 new_session = True
 
-            self.priority = self.calculate_priority()
+            #self.priority = self.calculate_priority()
             session.add(self)
             session.commit()
 

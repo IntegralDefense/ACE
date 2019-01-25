@@ -18,6 +18,7 @@ from saq.constants import *
 from saq.cloudphish import *
 from saq.database import use_db, get_db_connection, initialize_node
 from saq.test import *
+from saq.util import *
 
 import requests
 from flask import url_for
@@ -197,7 +198,7 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         self.assertIsNotNone(insert_date)
         self.assertEquals(company_id, saq.COMPANY_ID)
         self.assertIsNone(exclusive_uuid)
-        self.assertEquals(storage_dir, old_storage_dir)
+        self.assertEquals(storage_dir, storage_dir_from_uuid(workload_uuid))
 
         # now we make a second api call to the same url
         result = self.client.get(url_for('cloudphish.submit', url=TEST_URL, ignore_filters='1'))

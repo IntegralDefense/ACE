@@ -382,7 +382,7 @@ class CloudphishAnalyzer(AnalysisModule):
             logging.debug("ignoring result of 0 length data for {}".format(url.value))
             analysis.result = RESULT_ERROR
             analysis.result_details = 'EMPTY CONTENT'
-            return False
+            return True
 
         # save the analysis results
         analysis.query_result = response

@@ -16,7 +16,7 @@ from saq.constants import *
 from saq.crawlphish import CrawlphishURLFilter
 from saq.database import execute_with_retry, use_db
 from saq.error import report_exception
-from saq.util import storage_dir_from_uuid
+from saq.util import workload_storage_dir, storage_dir_from_uuid
 
 import pymysql.err
 
@@ -249,11 +249,14 @@ def _get_cached_analysis(url, db, c):
             file_name = file_name.decode('unicode_internal')
 
         storage_dir = storage_dir_from_uuid(uuid)
+        if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(storage_dir):
+            storage_dir = workload_storage_dir(uuid)
+
         root_details = None
 
         if os.path.exists(storage_dir):
             try:
-                root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+                root = RootAnalysis(storage_dir=storage_dir)
                 root.load()
                 root_details = root.details
             except Exception as e:
@@ -342,7 +345,7 @@ def _create_analysis(url, reprocess, details, db, c):
 
     root = RootAnalysis()
     root.uuid = _uuid
-    root.storage_dir = storage_dir_from_uuid(root.uuid)
+    root.storage_dir = workload_storage_dir(root.uuid)
     root.initialize_storage()
     root.analysis_mode = ANALYSIS_MODE_CLOUDPHISH
     # this is kind of a kludge but,
