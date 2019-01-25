@@ -1541,7 +1541,10 @@ FILTER_CB_USE_DISPLAY_TEXT = 'use_display_text'
 FILTER_TXT_DISPLAY_TEXT = 'display_text'
 FILTER_CB_DIS_NONE = 'dis_none'
 FILTER_CB_DIS_FALSE_POSITIVE = 'dis_false_positive'
+FILTER_CB_DIS_IGNORE = 'dis_ignore'
 FILTER_CB_DIS_UNKNOWN = 'dis_unknown'
+FILTER_CB_DIS_REVIEWED = 'dis_reviewed'
+FILTER_CB_DIS_GRAYWARE = 'dis_grayware'
 FILTER_CB_DIS_POLICY_VIOLATION = 'dis_policy_violation'
 FILTER_CB_DIS_RECONNAISSANCE = 'dis_reconnaissance'
 FILTER_CB_DIS_WEAPONIZATION = 'dis_weaponization'
@@ -1632,7 +1635,10 @@ def manage():
         FILTER_TXT_DISPLAY_TEXT: SearchFilter('display_text', FILTER_TYPE_TEXT, ''),
         FILTER_CB_DIS_NONE: SearchFilter('dis_none', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_FALSE_POSITIVE: SearchFilter('dis_false_positive', FILTER_TYPE_CHECKBOX, False),
+        FILTER_CB_DIS_IGNORE: SearchFilter('dis_ignore', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_UNKNOWN: SearchFilter('dis_unknown', FILTER_TYPE_CHECKBOX, False),
+        FILTER_CB_DIS_REVIEWED: SearchFilter('dis_reviewed', FILTER_TYPE_CHECKBOX, False),
+        FILTER_CB_DIS_GRAYWARE: SearchFilter('dis_grayware', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_POLICY_VIOLATION: SearchFilter('dis_policy_violation', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_RECONNAISSANCE: SearchFilter('dis_reconnaissance', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_WEAPONIZATION: SearchFilter('dis_weaponization', FILTER_TYPE_CHECKBOX, False),
@@ -1899,9 +1905,18 @@ def manage():
     if filters[FILTER_CB_DIS_FALSE_POSITIVE].value:
         dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_FALSE_POSITIVE)
         dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_FALSE_POSITIVE))
+    if filters[FILTER_CB_DIS_IGNORE].value:
+        dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_IGNORE)
+        dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_IGNORE))
     if filters[FILTER_CB_DIS_UNKNOWN].value:
         dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_UNKNOWN)
         dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_UNKNOWN))
+    if filters[FILTER_CB_DIS_REVIEWED].value:
+        dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_REVIEWED)
+        dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_REVIEWED))
+    if filters[FILTER_CB_DIS_GRAYWARE].value:
+        dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_GRAYWARE)
+        dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_GRAYWARE))
     if filters[FILTER_CB_DIS_POLICY_VIOLATION].value:
         dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_POLICY_VIOLATION)
         dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_POLICY_VIOLATION))
