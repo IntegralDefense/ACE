@@ -3133,16 +3133,16 @@ def display_workload(args):
 
     with get_db_connection() as db:
         c = db.cursor()
-        c.execute("SELECT analysis_mode, COUNT(*) FROM workload GROUP BY analysis_mode ORDER BY analysis_mode")
-        print(" -- WORKLOAD --")
+        c.execute("SELECT analysis_mode, COUNT(*) FROM workload WHERE company_id = %s GROUP BY analysis_mode ORDER BY analysis_mode", (saq.COMPANY_ID,))
+        print(f" -- WORKLOAD ({saq.COMPANY_NAME}) --")
         print("{: <15}{}".format('MODE', 'COUNT'))
         for analysis_mode, count in c:
             print("{: <15}{}".format(analysis_mode, count))
 
         db.commit()
         print()
-        print(" -- DELAYED WORKLOAD --")
-        c.execute("SELECT storage_dir, analysis_module, COUNT(*) FROM delayed_analysis GROUP BY storage_dir, analysis_module")
+        print(f" -- DELAYED WORKLOAD ({saq.SAQ_NODE})--")
+        c.execute("SELECT storage_dir, analysis_module, COUNT(*) FROM delayed_analysis JOIN nodes ON delayed_analysis.node_id = nodes.id WHERE nodes.name = %s GROUP BY storage_dir, analysis_module", (saq.SAQ_NODE,))
         print("{: <36} {: <20} {}".format('UUID', 'MODULE', 'COUNT'))
         for storage_dir, analysis_module, count in c:
             storage_dir = os.path.basename(storage_dir)
@@ -3151,8 +3151,8 @@ def display_workload(args):
 
         db.commit()
         print()
-        print(" -- LOCKS --")
-        c.execute("SELECT uuid, lock_uuid, lock_time, lock_owner FROM locks ORDER BY lock_time")
+        print(f" -- LOCKS ({saq.SAQ_NODE}) --")
+        c.execute("SELECT uuid, lock_uuid, lock_time, lock_owner FROM locks WHERE lock_owner LIKE CONCAT(%s, '-%%') ORDER BY lock_time", (saq.SAQ_NODE,))
         print("{: <36} {: <36} {: <19} {}".format('UUID', 'LOCK', 'TIME', 'OWNER'))
         for _uuid, lock_uuid, lock_time, lock_owner in c:
             print("{: <36} {: <36} {: <19} {}".format(_uuid, lock_uuid, str(lock_time), lock_owner))

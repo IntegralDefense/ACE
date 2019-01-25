@@ -200,7 +200,7 @@ class APIAnalysisTestCase(APIBasicTestCase):
         self.assertEquals(result.status_code, 400)
         self.assertTrue('invalid event time format' in result.data.decode())
         # there should be nothing in the data directory (it should have been removed)
-        self.assertTrue(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
+        self.assertEquals(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
 
         result = self.client.post(url_for('analysis.submit'), data={
             'analysis': json.dumps({
@@ -224,7 +224,7 @@ class APIAnalysisTestCase(APIBasicTestCase):
         self.assertEquals(result.status_code, 400)
         self.assertEquals(result.data.decode(), 'an observable is missing the value field')
         # there should be nothing in the data directory (it should have been removed)
-        self.assertTrue(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
+        self.assertEquals(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
 
         result = self.client.post(url_for('analysis.submit'), data={
             'analysis': json.dumps({
@@ -248,7 +248,7 @@ class APIAnalysisTestCase(APIBasicTestCase):
         self.assertEquals(result.status_code, 400)
         self.assertTrue(result.data.decode(), 'an observable is missing the type field')
         # there should be nothing in the data directory (it should have been removed)
-        self.assertTrue(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
+        self.assertEquals(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
 
         result = self.client.post(url_for('analysis.submit'), data={
             'analysis': json.dumps({
@@ -271,7 +271,7 @@ class APIAnalysisTestCase(APIBasicTestCase):
         self.assertEquals(result.status_code, 400)
         self.assertTrue('an observable has an invalid time format' in result.data.decode())
         # there should be nothing in the data directory (it should have been removed)
-        self.assertTrue(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
+        self.assertEquals(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
 
         result = self.client.post(url_for('analysis.submit'), data={
             'analysis': json.dumps({
@@ -294,7 +294,7 @@ class APIAnalysisTestCase(APIBasicTestCase):
         self.assertEquals(result.status_code, 400)
         self.assertTrue('has invalid directive' in result.data.decode())
         # there should be nothing in the data directory (it should have been removed)
-        self.assertTrue(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
+        self.assertEquals(len(os.listdir(os.path.join(saq.SAQ_HOME, saq.DATA_DIR, saq.SAQ_NODE))), 0)
 
     def test_api_analysis_invalid_status(self):
         result = self.client.get(url_for('analysis.get_status', uuid='invalid'))

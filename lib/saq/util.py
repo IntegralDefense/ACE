@@ -148,6 +148,14 @@ def storage_dir_from_uuid(uuid):
     validate_uuid(uuid)
     return os.path.relpath(os.path.join(saq.DATA_DIR, saq.SAQ_NODE, uuid[0:3], uuid), start=saq.SAQ_HOME)
 
+def workload_storage_dir(uuid):
+    """Returns the path (relative to SAQ_HOME) to the storage directory for the current engien for the given uuid."""
+    validate_uuid(uuid)
+    if saq.CONFIG['engine']['work_dir']:
+        return os.path.join(saq.CONFIG['engine']['work_dir'], uuid)
+    else:
+        return storage_dir_from_uuid(uuid)
+
 def validate_uuid(uuid):
     if not UUID_REGEX.match(uuid):
         raise ValueError("invalid UUID {}".format(uuid))
