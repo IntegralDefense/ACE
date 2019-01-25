@@ -606,15 +606,9 @@ class Alert(RootAnalysis, Base):
     def _initialize(self):
         # Create a businesstime object for SLA with the correct start and end hours converted to UTC
         _bhours = saq.CONFIG['SLA']['business_hours'].split(',')
-        _bh_tz = pytz.timezone(saq.CONFIG['SLA']['time_zone'])
-        utc = pytz.timezone('UTC')
-        now = datetime.datetime.now()
-        now = now.astimezone(_bh_tz)
-        now = now.replace(hour=int(_bhours[0]))
-        self._start_hour = now.astimezone(utc).hour
-        now = now.astimezone(_bh_tz)
-        now = now.replace(hour=int(_bhours[1]))
-        self._end_hour = now.astimezone(utc).hour
+        self._bh_tz = pytz.timezone(saq.CONFIG['SLA']['time_zone'])
+        self._start_hour = int(_bhours[0])
+        self._end_hour = int(_bhours[1])
         self._bt = businesstime.BusinessTime(business_hours=(datetime.time(self._start_hour), datetime.time(self._end_hour)), holidays=SiteHolidays())
         # keep track of what Tag and Observable objects we add as we analyze
         self._tracked_tags = [] # of saq.analysis.Tag
@@ -669,6 +663,20 @@ class Alert(RootAnalysis, Base):
         nullable=False, 
         server_default=text('CURRENT_TIMESTAMP'))
 
+    def _datetime_to_sla_time_zone(self, dt=None):
+        """Returns a datetime.datetime object to it's equivalent in the SLA time zone."""
+        if dt is not None:
+            assert isinstance(dt, datetime.datetime)
+        else:
+            dt = datetime.datetime.utcnow()
+        # convert to the business hour time zone
+        dt = dt.astimezone(self._bh_tz)
+        # because the businesshour library's math in -> def _build_spanning_datetimes(self, d1, d2) throws
+        # an error if datetime.datetime objects are time zone aware, we make the datetime naive again, 
+        # however, the replace method trys to be smart and convert the time back to UTC.. so we explicitly
+        # make replace keep the hour set to the business time zone hour UGH
+        return dt.replace(hour=dt.hour, tzinfo=None)
+
     @property
     def sla(self):
         """Returns the correct SLA for this alert, or None if SLA is disabled for this alert."""
@@ -705,7 +713,12 @@ class Alert(RootAnalysis, Base):
         if hasattr(self, '_business_time'):
             return getattr(self, '_business_time')
 
-        result = self._bt.businesstimedelta(self.insert_date, datetime.datetime.utcnow())
+        sla_now = self._datetime_to_sla_time_zone()
+        _converted_insert_date = self._datetime_to_sla_time_zone(dt=self.insert_date)
+        logging.info("Getting business time delta between '{}' and '{}' - CONVERTED: '{}' and '{}' - tzino: {} and {}".format(self.insert_date,
+                                        datetime.datetime.now(), _converted_insert_date, self._datetime_to_sla_time_zone(), _converted_insert_date.tzinfo, sla_now.tzinfo))
+        result = self._bt.businesstimedelta(_converted_insert_date, self._datetime_to_sla_time_zone())
+        logging.info("Got business time delta of '{}'".format(result))
         setattr(self, '_business_time', result)
         return result
 
@@ -1169,18 +1182,20 @@ WHERE
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
 
-        self.insert()
+        if self.id is None:
+            self.insert()
+
         if self.id is None:
             logging.error("unable to get the unique id of the alert")
             return False
 
         self.build_index()
 
-        try:
-            self.sync_profile_points()
-        except Exception as e:
-            logging.error("unable to sync profile points: {}".format(e))
-            report_exception()
+        #try:
+            #self.sync_profile_points()
+        #except Exception as e:
+            #logging.error("unable to sync profile points: {}".format(e))
+            #report_exception()
 
         self.save() # save this alert now that it has the id
 
@@ -1211,6 +1226,9 @@ WHERE
 
     def insert(self):
         """Insert this Alert into the alerts database table. Sets the id property of this Alert and returns the id value."""
+        if self.id is not None:
+            return self.id
+
         new_session = False
         try:
             # do we already have a session we're using?
@@ -1219,7 +1237,7 @@ WHERE
                 session = DatabaseSession()
                 new_session = True
 
-            self.priority = self.calculate_priority()
+            #self.priority = self.calculate_priority()
             session.add(self)
             session.commit()
 

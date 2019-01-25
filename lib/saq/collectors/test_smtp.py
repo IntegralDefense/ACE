@@ -14,7 +14,7 @@ from saq.constants import *
 from saq.collectors.test_bro import BroBaseTestCase
 from saq.collectors.smtp import BroSMTPStreamCollector
 from saq.test import *
-from saq.util import storage_dir_from_uuid
+from saq.util import storage_dir_from_uuid, workload_storage_dir
 
 class BroSMTPBaseTestCase(BroBaseTestCase):
     def setUp(self, *args, **kwargs):
@@ -92,7 +92,7 @@ class BroSMTPEngineTestCase(BroSMTPBaseTestCase, ACEEngineTestCase):
 
             with self.subTest(uuid=uuid):
 
-                root = RootAnalysis(uuid=uuid, storage_dir=storage_dir_from_uuid(uuid))
+                root = RootAnalysis(uuid=uuid, storage_dir=workload_storage_dir(uuid))
                 root.load()
 
                 # find the SMTP stream

@@ -550,6 +550,9 @@ class Engine(object):
         # this is useful for debugging
         self.single_threaded_mode = single_threaded_mode
 
+        # are we using a different directory for the workload?
+        self.work_dir = self.config['work_dir']
+
     def __str__(self):
         return "Engine ({} - {})".format(saq.SAQ_NODE, self.name)
 
@@ -697,6 +700,14 @@ class Engine(object):
                     os.makedirs(d)
             except Exception as e:
                 logging.error("unable to create directory {}: {}".format(d, e))
+
+        if self.work_dir:
+            if not os.path.isdir(self.work_dir):
+                try:
+                    os.makedirs(self.work_dir)
+                    logging.info(f"using {self.work_dir} as workload directory")
+                except Exception as e:
+                    logging.error(f"unable to create directory {self.work_dir}: {e}")
 
         # insert this engine as a node (if it isn't already)
         initialize_node()
@@ -1341,6 +1352,7 @@ class Engine(object):
             logging.info("unable to acquire lock on {} for transfer".format(uuid))
             return False
 
+        # XXX get the storage directory from the database
         target_dir = storage_dir_from_uuid(uuid)
         if os.path.isdir(target_dir):
             logging.error("target_dir {} for transfer exists! bailing...".format(target_dir))
@@ -1648,7 +1660,25 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
             # did this analysis become an alert?
             if self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
-                ALERT(self.root)
+                # is the current storage directory in a different directory than the alerts?
+                target_dir = storage_dir_from_uuid(self.root.uuid)
+                if self.root.storage_dir != target_dir:
+                    # then we need to move it over
+                    if os.path.exists(target_dir):
+                        logging.error("target directory {} already exists".format(target_dir))
+                    else:
+                        logging.info("moving {} to {}".format(self.root.storage_dir, target_dir))
+                        try:
+                            shutil.move(self.root.storage_dir, target_dir)
+                            self.root.storage_dir = target_dir
+                        except Exception as e:
+                            logging.error(f"unable to move {self.root.storage_dir} to {target_dir}: {e}")
+                            report_exception()
+                try:
+                    ALERT(self.root)
+                except Exception as e:
+                    logging.error(f"unable to create alert for {self.root}: {e}")
+                    report_exception()
 
             try:
                 add_workload(self.root, exclusive_uuid=self.exclusive_uuid)
@@ -1656,39 +1686,54 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 logging.error("unable to add {} to workload: {}".format(self.root, e))
                 report_exception()
 
+        elif self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
+            # if we are analyzing an alert, sync it to the database
+            session = None
+            try:
+                session = saq.database.DatabaseSession()
+                alert = session.query(Alert).filter(Alert.uuid==self.root.uuid).first()
+                if alert:
+                    alert.load()
+                    alert.sync()
+            except Exception as e:
+                logging.error(f"unable to sync alert {self.root}: {e}")
+                report_exception()
+            finally:
+                if session:
+                    session.close()
+
         # if the analysis mode did NOT change
         # then we look to see if we should clean this up
-        else:
-            # is this analysis_mode one that we want to clean up?
-            if self.root.analysis_mode is not None \
-            and 'analysis_mode_{}'.format(self.root.analysis_mode) in saq.CONFIG \
-            and saq.CONFIG['analysis_mode_{}'.format(self.root.analysis_mode)].getboolean('cleanup'):
-                # OK then is there any outstanding work assigned to this uuid?
-                try:
-                    with get_db_connection() as db:
-                        c = db.cursor()
-                        c.execute("""SELECT uuid FROM workload WHERE uuid = %s
-                                     UNION SELECT uuid FROM delayed_analysis WHERE uuid = %s
-                                     UNION SELECT uuid FROM locks WHERE uuid = %s
-                                     LIMIT 1
-                                     """, (self.root.uuid, self.root.uuid, self.root.uuid))
+        # is this analysis_mode one that we want to clean up?
+        if self.root.analysis_mode is not None \
+        and 'analysis_mode_{}'.format(self.root.analysis_mode) in saq.CONFIG \
+        and saq.CONFIG['analysis_mode_{}'.format(self.root.analysis_mode)].getboolean('cleanup'):
+            # OK then is there any outstanding work assigned to this uuid?
+            try:
+                with get_db_connection() as db:
+                    c = db.cursor()
+                    c.execute("""SELECT uuid FROM workload WHERE uuid = %s
+                                 UNION SELECT uuid FROM delayed_analysis WHERE uuid = %s
+                                 UNION SELECT uuid FROM locks WHERE uuid = %s
+                                 LIMIT 1
+                                 """, (self.root.uuid, self.root.uuid, self.root.uuid))
 
-                        row = c.fetchone()
-                        db.commit()
+                    row = c.fetchone()
+                    db.commit()
 
-                        if row is None:
-                            # OK then it's time to clean this one up
-                            logging.debug("clearing {}".format(self.root.storage_dir))
-                            try:
-                                shutil.rmtree(self.root.storage_dir)
-                            except Exception as e:
-                                logging.error("unable to clear {}: {}".format(self.root.storage_dir))
-                        else:
-                            logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
+                    if row is None:
+                        # OK then it's time to clean this one up
+                        logging.debug("clearing {}".format(self.root.storage_dir))
+                        try:
+                            shutil.rmtree(self.root.storage_dir)
+                        except Exception as e:
+                            logging.error("unable to clear {}: {}".format(self.root.storage_dir))
+                    else:
+                        logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
 
-                except Exception as e:
-                    logging.error("trouble checking finished status of {}: {}".format(self.root, e))
-                    report_exception()
+            except Exception as e:
+                logging.error("trouble checking finished status of {}: {}".format(self.root, e))
+                report_exception()
     
     def process_work_item(self, work_item):
         """Processes the work item."""
@@ -1892,7 +1937,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         except Exception as e:
             logging.error("unable to record statistics: {}".format(e))
-
 
         return
 
