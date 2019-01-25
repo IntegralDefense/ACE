@@ -53,7 +53,7 @@ from saq.analysis import RootAnalysis, _enable_io_tracker, _disable_io_tracker
 from saq.database import initialize_database, get_db_connection, use_db
 from saq.engine import Engine
 from saq.error import report_exception
-from saq.util import storage_dir_from_uuid
+from saq.util import storage_dir_from_uuid, workload_storage_dir
 
 from splunklib import SplunkQueryObject
 
@@ -359,7 +359,7 @@ def create_root_analysis(tool=None, tool_instance=None, alert_type=None, desc=No
                         state=state if state else None,
                         uuid=uuid if uuid else EV_ROOT_ANALYSIS_UUID,
                         location=location if location else None,
-                        storage_dir=storage_dir if storage_dir else storage_dir_from_uuid(uuid if uuid else EV_ROOT_ANALYSIS_UUID),
+                        storage_dir=storage_dir if storage_dir else workload_storage_dir(uuid if uuid else EV_ROOT_ANALYSIS_UUID),
                         company_name=company_name if company_name else None,
                         company_id=company_id if company_id else None,
                         analysis_mode=analysis_mode if analysis_mode else 'test_groups')

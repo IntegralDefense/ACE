@@ -11,7 +11,7 @@ import saq
 from saq.analysis import RootAnalysis
 from saq.constants import *
 from saq.test import *
-from saq.util import storage_dir_from_uuid
+from saq.util import storage_dir_from_uuid, workload_storage_dir
 
 import pytz
 
@@ -128,7 +128,7 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root = RootAnalysis(storage_dir=workload_storage_dir(uuid))
         root.load()
 
         self.verify(root)

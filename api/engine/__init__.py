@@ -17,7 +17,7 @@ from .. import json_result, json_request
 from saq.analysis import RootAnalysis
 from saq.database import use_db
 from saq.error import report_exception
-from saq.util import validate_uuid, storage_dir_from_uuid
+from saq.util import validate_uuid, storage_dir_from_uuid, workload_storage_dir
 
 from flask import Blueprint, request, abort, Response, make_response
 
@@ -32,6 +32,9 @@ def download(uuid):
     validate_uuid(uuid)
 
     target_dir = storage_dir_from_uuid(uuid)
+    if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(target_dir):
+        target_dir = workload_storage_dir(uuid)
+
     if not os.path.isdir(target_dir):
         logging.error("request to download unknown target {}".format(target_dir))
         abort(make_response("unknown target {}".format(target_dir), 400))
@@ -172,6 +175,9 @@ def clear(uuid, lock_uuid, db, c):
         abort(Response("nope", 400))
 
     target_dir = storage_dir_from_uuid(uuid)
+    if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(target_dir):
+        target_dir = workload_storage_dir(uuid)
+
     if not os.path.isdir(target_dir):
         logging.error("request to clear unknown target {}".format(target_dir))
         abort(Response("unknown target {}".format(target_dir)))
