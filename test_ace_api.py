@@ -128,7 +128,7 @@ class TestCase(ACEEngineTestCase):
         uuid = result['uuid']
 
         # make sure this actually uploaded
-        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root = RootAnalysis(storage_dir=workload_storage_dir(uuid))
         root.load()
 
         self.assertEquals(root.analysis_mode, 'test_empty')
@@ -179,7 +179,7 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(result['uuid'])
         uuid = result['uuid']
 
-        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root = RootAnalysis(storage_dir=workload_storage_dir(uuid))
         root.load()
 
         self.assertEquals(root.event_time, self._get_localized_submit_time())
@@ -194,7 +194,7 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(result['uuid'])
         uuid = result['uuid']
 
-        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root = RootAnalysis(storage_dir=workload_storage_dir(uuid))
         root.load()
 
         self.assertEquals(root.event_time, self._get_localized_submit_time())
@@ -334,6 +334,8 @@ class TestCase(ACEEngineTestCase):
         result = ace_api.upload(root.uuid, root.storage_dir)
         self.assertTrue(result['result'])
 
+        # uploads go straight into saq.DATA_DIR
+        # XXX I don't think we need uploads at all
         root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
 

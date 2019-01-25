@@ -9,6 +9,7 @@ from saq.analysis import RootAnalysis
 from saq.database import use_db, get_db_connection
 from saq.constants import *
 from saq.test import *
+from saq.util import *
 
 from .hal9000 import HAL9000Analysis, _compute_hal9000_md5, \
                      KEY_MAL_COUNT, KEY_TOTAL_COUNT, STATE_KEY_ID_TRACKING, STATE_KEY_PREVIOUS_DISPOSITION
@@ -91,7 +92,7 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=root.storage_dir)
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
 
         # make sure we alerted
@@ -194,7 +195,8 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=root.storage_dir)
+        # storage dir changes when it turns into alert
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
 
         # make sure we alerted
@@ -276,7 +278,7 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=root.storage_dir)
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
 
         test_observable = root.get_observable(test_observable.id)
@@ -355,7 +357,7 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=root.storage_dir)
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
 
         test_observable = root.get_observable(test_observable.id)

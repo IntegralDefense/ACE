@@ -35,7 +35,7 @@ from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
                          add_delayed_analysis_request, clear_expired_locks, clear_expired_local_nodes, \
-                         initialize_node, ALERT, DatabaseSession
+                         initialize_node, ALERT
 from saq.error import report_exception
 from saq.modules import AnalysisModule
 from saq.performance import record_metric
@@ -550,6 +550,9 @@ class Engine(object):
         # this is useful for debugging
         self.single_threaded_mode = single_threaded_mode
 
+        # are we using a different directory for the workload?
+        self.work_dir = self.config['work_dir']
+
     def __str__(self):
         return "Engine ({} - {})".format(saq.SAQ_NODE, self.name)
 
@@ -697,6 +700,14 @@ class Engine(object):
                     os.makedirs(d)
             except Exception as e:
                 logging.error("unable to create directory {}: {}".format(d, e))
+
+        if self.work_dir:
+            if not os.path.isdir(self.work_dir):
+                try:
+                    os.makedirs(self.work_dir)
+                    logging.info(f"using {self.work_dir} as workload directory")
+                except Exception as e:
+                    logging.error(f"unable to create directory {self.work_dir}: {e}")
 
         # insert this engine as a node (if it isn't already)
         initialize_node()
@@ -1341,6 +1352,7 @@ class Engine(object):
             logging.info("unable to acquire lock on {} for transfer".format(uuid))
             return False
 
+        # XXX get the storage directory from the database
         target_dir = storage_dir_from_uuid(uuid)
         if os.path.isdir(target_dir):
             logging.error("target_dir {} for transfer exists! bailing...".format(target_dir))
@@ -1648,7 +1660,25 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
             # did this analysis become an alert?
             if self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
-                ALERT(self.root)
+                # is the current storage directory in a different directory than the alerts?
+                target_dir = storage_dir_from_uuid(self.root.uuid)
+                if self.root.storage_dir != target_dir:
+                    # then we need to move it over
+                    if os.path.exists(target_dir):
+                        logging.error("target directory {} already exists".format(target_dir))
+                    else:
+                        logging.info("moving {} to {}".format(self.root.storage_dir, target_dir))
+                        try:
+                            shutil.move(self.root.storage_dir, target_dir)
+                            self.root.storage_dir = target_dir
+                        except Exception as e:
+                            logging.error(f"unable to move {self.root.storage_dir} to {target_dir}: {e}")
+                            report_exception()
+                try:
+                    ALERT(self.root)
+                except Exception as e:
+                    logging.error(f"unable to create alert for {self.root}: {e}")
+                    report_exception()
 
             try:
                 add_workload(self.root, exclusive_uuid=self.exclusive_uuid)
@@ -1660,16 +1690,17 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             # if we are analyzing an alert, sync it to the database
             session = None
             try:
-                session = DatabaseSession()
+                session = saq.database.DatabaseSession()
                 alert = session.query(Alert).filter(Alert.uuid==self.root.uuid).first()
                 if alert:
                     alert.load()
                     alert.sync()
             except Exception as e:
-                logging.error("unable to sync alert {self.root}: {e}")
+                logging.error(f"unable to sync alert {self.root}: {e}")
                 report_exception()
             finally:
-                session.close()
+                if session:
+                    session.close()
 
         # if the analysis mode did NOT change
         # then we look to see if we should clean this up

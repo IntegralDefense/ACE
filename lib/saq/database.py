@@ -1161,7 +1161,9 @@ WHERE
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
 
-        self.insert()
+        if self.id is None:
+            self.insert()
+
         if self.id is None:
             logging.error("unable to get the unique id of the alert")
             return False

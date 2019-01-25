@@ -16,7 +16,7 @@ from saq.analysis import RootAnalysis
 from saq.constants import *
 from saq.database import get_db_connection
 from saq.test import *
-from saq.util import storage_dir_from_uuid
+from saq.util import storage_dir_from_uuid, workload_storage_dir
 
 class TestCase(ACEModuleTestCase):
     def test_mailbox(self):
@@ -151,7 +151,7 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root = RootAnalysis(storage_dir=workload_storage_dir(uuid))
         root.load()
         observable = root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_EMAIL))
         self.assertIsNotNone(observable)
@@ -299,7 +299,7 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root = RootAnalysis(storage_dir=workload_storage_dir(uuid))
         root.load()
         observable = root.find_observable(lambda o: o.has_directive(DIRECTIVE_ORIGINAL_SMTP))
         self.assertIsNotNone(observable)
