@@ -189,13 +189,11 @@
 </div>
 {% endfor %}
 
-{% if domains | length > 0 %}
+{% if domain_summary_str %}
 <div class="panel panel-default">
     <div class="panel-heading">Domain Summary <a role="button" data-toggle="collapse" data-target="#collapseDomainSummary" aria-expanded="false" aria-controls="collapseHeaders">(hide/show)</a></div>
     <div class="panel-body collapse" id="collapseDomainSummary">
-	{% for domain in domains %}
-        <h6>{{domain}}</h6>
-	{% endfor %}
+	<pre>{{domain_summary_str}}</pre>
     </div>
 </div>
 {% endif %}
