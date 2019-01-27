@@ -23,7 +23,7 @@ from saq.engine import Engine, DelayedAnalysisRequest, add_workload
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
 from saq.test import *
-from saq.util import storage_dir_from_uuid, workload_storage_dir
+from saq.util import *
 
 class TestCase(ACEEngineTestCase):
 
@@ -2150,3 +2150,72 @@ class TestCase(ACEEngineTestCase):
         engine.controlled_stop()
         engine.start()
         engine.wait()
+
+    def test_analysis_reset(self):
+        
+        root = create_root_analysis()
+        root.initialize_storage()
+        o1 = root.add_observable(F_TEST, 'test_add_file')
+        o2 = root.add_observable(F_TEST, 'test_action_counter')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_basic_test')  
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+        
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        o1 = root.get_observable(o1.id)
+        self.assertIsNotNone(o1)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = o1.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+        # this analysis should have two file observables
+        file_observables = analysis.find_observables(lambda o: o.type == F_FILE)
+        self.assertEquals(len(file_observables), 2)
+
+        # make sure the files are actually there
+        for _file in file_observables:
+            self.assertTrue(os.path.exists(abs_path(_file.value)))
+
+        # we should also have a non-empty state
+        self.assertTrue(bool(root.state))
+
+        # and we should have some action counters
+        self.assertTrue(bool(root.action_counters))
+
+        # reset the analysis
+        root.reset()
+
+        # the original observable should still be there
+        o1 = root.get_observable(o1.id)
+        self.assertIsNotNone(o1)
+        analysis = o1.get_analysis(BasicTestAnalysis)
+        # but it should NOT have analysis
+        self.assertIsNone(analysis)
+
+        # and that should be the only observable
+        self.assertEquals(len(root.all_observables), 2)
+
+        # and those two files should not exist anymore
+        for _file in file_observables:
+            self.assertFalse(os.path.exists(abs_path(_file.value)))
+
+        #root.schedule()
+
+        #engine = TestEngine(pool_size_limit=1)
+        #engine.enable_module('analysis_module_basic_test')  
+        #engine.controlled_stop()
+        #engine.start()
+        #engine.wait()
+        
+        #root = RootAnalysis(storage_dir=root.storage_dir)
+        #observable = root.get_observable(observable.id)
+        #self.assertIsNotNone(observable)
+        #from saq.modules.test import BasicTestAnalysis
+        #analysis = observable.get_analysis(BasicTestAnalysis)
+        ##self.assertIsNotNone(analysis)

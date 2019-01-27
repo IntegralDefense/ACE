@@ -14,6 +14,7 @@ from saq.constants import *
 from saq.analysis import Analysis
 from saq.modules import AnalysisModule
 from saq.test import *
+from saq.util import *
 
 KEY_TEST_RESULT = 'test_result'
 KEY_ACTUAL_VALUE = 'actual'
@@ -62,6 +63,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_worker_death(test)
         elif test.value.startswith('test_action_counter'):
             return self.execute_analysis_test_action_counter(test)
+        elif test.value == 'test_add_file':
+            return self.execute_analysis_test_add_file(test)
         else:
             return False
 
@@ -112,6 +115,22 @@ class BasicTestAnalyzer(AnalysisModule):
     def execute_analysis_worker_death(self, test):
         logging.info("execute_worker_death")
         os._exit(1)
+
+    def execute_analysis_test_add_file(self, test):
+        analysis = self.create_analysis(test)
+        path = os.path.join(self.root.storage_dir, 'test.txt')
+        with open(path, 'w') as fp:
+            fp.write("hello, world")
+
+        analysis.add_observable(F_FILE, path) # already relative
+
+        os.mkdir(os.path.join(self.root.storage_dir, 'subdir'))
+        path = os.path.join(self.root.storage_dir, 'subdir', 'test2.txt')
+        with open(path, 'w') as fp:
+            fp.write("Hello, world, 2!")
+    
+        analysis.add_observable(F_FILE, path)
+        return True
 
 class MergeTestAnalysis(TestAnalysis):
     def initialize_details(self):
