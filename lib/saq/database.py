@@ -501,6 +501,14 @@ class EventMapping(Base):
     alert = relationship('saq.database.Alert', backref='event_mapping')
     event = relationship('saq.database.Event', backref='event_mapping')
 
+class Nodes(Base):
+
+    __tablename__ = 'nodes'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(1024), nullable=False)
+    location = Column(String(1024), nullable=False)
+
 class Company(Base):
 
     __tablename__ = 'company'
@@ -1364,6 +1372,12 @@ WHERE
     lock = relationship('saq.database.Lock', foreign_keys=[uuid],
                         primaryjoin='saq.database.Lock.uuid == Alert.uuid')
 
+    nodes = relationship('saq.database.Nodes', foreign_keys=[location], primaryjoin='saq.database.Nodes.name == Alert.location')
+
+    @property
+    def node_location(self):
+        return self.nodes.location
+
 class Similarity:
     def __init__(self, uuid, disposition, percent):
         self.uuid = uuid
@@ -1692,7 +1706,8 @@ INSERT INTO workload (
     exclusive_uuid,
     storage_dir,
     insert_date )
-VALUES ( %s, %s, %s, %s, %s, %s, NOW() )""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
+VALUES ( %s, %s, %s, %s, %s, %s, NOW() )
+ON DUPLICATE KEY UPDATE uuid=uuid""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
     db.commit()
     logging.info("added {} to workload with analysis mode {} company_id {} exclusive_uuid {}".format(
                   root.uuid, root.analysis_mode, root.company_id, exclusive_uuid))
