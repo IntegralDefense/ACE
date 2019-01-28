@@ -34,6 +34,17 @@ class BasicTestAnalysis(TestAnalysis):
         self.details = { KEY_TEST_RESULT: True }
 
 class BasicTestAnalyzer(AnalysisModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.watched_file_path = os.path.join(saq.TEMP_DIR, 'watched_file')
+        with open(self.watched_file_path, 'w') as fp:
+            fp.write('test1')
+
+        self.watch_file(self.watched_file_path, self.watched_file_modified)
+
+    def watched_file_modified(self ):
+        logging.info(f"watched_file_modified: {self.watched_file_path}")
+
     @property
     def generated_analysis_type(self):
         return BasicTestAnalysis
@@ -65,6 +76,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_test_action_counter(test)
         elif test.value == 'test_add_file':
             return self.execute_analysis_test_add_file(test)
+        elif test.value == 'test_watched_file':
+            return self.execute_test_watched_file(test)
         else:
             return False
 
@@ -130,6 +143,10 @@ class BasicTestAnalyzer(AnalysisModule):
             fp.write("Hello, world, 2!")
     
         analysis.add_observable(F_FILE, path)
+        return True
+
+    def execute_test_watched_file(self, test):
+        analysis = self.create_analysis(test)
         return True
 
 class MergeTestAnalysis(TestAnalysis):
