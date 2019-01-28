@@ -501,6 +501,14 @@ class EventMapping(Base):
     alert = relationship('saq.database.Alert', backref='event_mapping')
     event = relationship('saq.database.Event', backref='event_mapping')
 
+class Nodes(Base):
+
+    __tablename__ = 'nodes'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(1024), nullable=False)
+    location = Column(String(1024), nullable=False)
+
 class Company(Base):
 
     __tablename__ = 'company'
@@ -1364,6 +1372,12 @@ WHERE
     lock = relationship('saq.database.Lock', foreign_keys=[uuid],
                         primaryjoin='saq.database.Lock.uuid == Alert.uuid')
 
+    nodes = relationship('saq.database.Nodes', foreign_keys=[location], primaryjoin='saq.database.Nodes.name == Alert.location')
+
+    @property
+    def node_location(self):
+        return self.nodes.location
+
 class Similarity:
     def __init__(self, uuid, disposition, percent):
         self.uuid = uuid
@@ -1692,7 +1706,8 @@ INSERT INTO workload (
     exclusive_uuid,
     storage_dir,
     insert_date )
-VALUES ( %s, %s, %s, %s, %s, %s, NOW() )""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
+VALUES ( %s, %s, %s, %s, %s, %s, NOW() )
+ON DUPLICATE KEY UPDATE uuid=uuid""", (root.uuid, saq.SAQ_NODE_ID, root.analysis_mode, root.company_id, exclusive_uuid, root.storage_dir))
     db.commit()
     logging.info("added {} to workload with analysis mode {} company_id {} exclusive_uuid {}".format(
                   root.uuid, root.analysis_mode, root.company_id, exclusive_uuid))
@@ -1723,7 +1738,7 @@ class Lock(Base):
 @use_db
 def acquire_lock(_uuid, lock_uuid=None, lock_owner=None, db=None, c=None):
     """Attempts to acquire a lock on a workitem by inserting the uuid into the locks database table.
-       Returns False if a lock already exists or True if the lock was acquired.
+       Returns False if a lock already exists or the lock_uuid if the lock was acquired.
        If a lock_uuid is not given, then a random one is generated and used and returned on success."""
 
     try:
@@ -1808,6 +1823,13 @@ def clear_expired_locks(db, c):
     db.commit()
     if c.rowcount:
         logging.debug("removed {} expired locks".format(c.rowcount))
+
+class LockedException(Exception):
+    def __init__(self, target, *args, **kwargs):
+        self.target = target
+
+    def __str__(self):
+        return f"LockedException: unable to get lock on {self.target} uuid {self.target.uuid}"
 
 @use_db
 def clear_expired_local_nodes(db, c):

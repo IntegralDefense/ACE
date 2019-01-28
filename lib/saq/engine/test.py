@@ -23,7 +23,7 @@ from saq.engine import Engine, DelayedAnalysisRequest, add_workload
 from saq.network_client import submit_alerts
 from saq.observables import create_observable
 from saq.test import *
-from saq.util import storage_dir_from_uuid, workload_storage_dir
+from saq.util import *
 
 class TestCase(ACEEngineTestCase):
 
@@ -2149,4 +2149,117 @@ class TestCase(ACEEngineTestCase):
         engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
+        engine.wait()
+
+    def test_analysis_reset(self):
+        
+        root = create_root_analysis()
+        root.initialize_storage()
+        o1 = root.add_observable(F_TEST, 'test_add_file')
+        o2 = root.add_observable(F_TEST, 'test_action_counter')
+        root.save()
+        root.schedule()
+        
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_basic_test')  
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+        
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        o1 = root.get_observable(o1.id)
+        self.assertIsNotNone(o1)
+        from saq.modules.test import BasicTestAnalysis
+        analysis = o1.get_analysis(BasicTestAnalysis)
+        self.assertIsNotNone(analysis)
+
+        # this analysis should have two file observables
+        file_observables = analysis.find_observables(lambda o: o.type == F_FILE)
+        self.assertEquals(len(file_observables), 2)
+
+        # make sure the files are actually there
+        for _file in file_observables:
+            self.assertTrue(os.path.exists(abs_path(_file.value)))
+
+        # we should also have a non-empty state
+        self.assertTrue(bool(root.state))
+
+        # and we should have some action counters
+        self.assertTrue(bool(root.action_counters))
+
+        # reset the analysis
+        root.reset()
+
+        # the original observable should still be there
+        o1 = root.get_observable(o1.id)
+        self.assertIsNotNone(o1)
+        analysis = o1.get_analysis(BasicTestAnalysis)
+        # but it should NOT have analysis
+        self.assertIsNone(analysis)
+
+        # and that should be the only observable
+        self.assertEquals(len(root.all_observables), 2)
+
+        # and those two files should not exist anymore
+        for _file in file_observables:
+            self.assertFalse(os.path.exists(abs_path(_file.value)))
+
+    def test_analysis_reset_locked(self):
+
+        from saq.database import acquire_lock, release_lock, LockedException
+
+        root = create_root_analysis()
+        root.initialize_storage()
+        o1 = root.add_observable(F_TEST, 'test_add_file')
+        o2 = root.add_observable(F_TEST, 'test_action_counter')
+        root.save()
+        root.schedule()
+
+        # lock the analysis we created
+        lock_uuid = acquire_lock(root.uuid)
+
+        # now try to reset it
+        with self.assertRaises(LockedException):
+            root = RootAnalysis(storage_dir=root.storage_dir)
+            root.load()
+            root.reset()
+
+        # unlock the analysis we created
+        release_lock(root.uuid, lock_uuid)
+
+        # the reset should work this time
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        root.reset()
+
+    def test_watched_files(self):
+
+        # make sure we check every time
+        saq.CONFIG['global']['check_watched_files_frequency'] = '0'
+
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_basic_test')  
+        engine.start()
+
+        # the module creates the file we're going to watch, so wait for that to appear
+        watched_file_path = os.path.join(saq.TEMP_DIR, 'watched_file')
+        self.wait_for_condition(lambda : os.path.exists(watched_file_path))
+        # and then wait for it to start watching it
+        wait_for_log_count(f"watching file {watched_file_path}", 1)
+
+        # go ahead and modify it
+        with open(watched_file_path, 'w') as fp:
+            fp.write("data has changed")
+        
+        root = create_root_analysis()
+        root.initialize_storage()
+        o1 = root.add_observable(F_TEST, 'test_watched_file')
+        root.save()
+        root.schedule()
+
+        wait_for_log_count(f"detected change to {watched_file_path}", 1)
+        wait_for_log_count(f"watched_file_modified: {watched_file_path}", 1)
+
+        engine.controlled_stop()
         engine.wait()

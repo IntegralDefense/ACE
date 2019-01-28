@@ -102,6 +102,10 @@ class AnalysisModule(object):
         # higher priority scores go last
         self.priority = self.config.getint('priority', fallback=10)
 
+        # the next time we check to see if any files we are watching have changed
+        # this is automatically checked and updated every time this module is used to analyze something
+        self.next_check_watched_files = None
+
     def start_threaded_execution(self):
         if not self.is_threaded:
             return
@@ -186,6 +190,15 @@ class AnalysisModule(object):
         self.check_watched_files()
 
     def check_watched_files(self):
+        # is it time to check the files this module is watching?
+        if self.next_check_watched_files is not None and datetime.datetime.now() < self.next_check_watched_files:
+            return
+
+        # check every 5 seconds
+        self.next_check_watched_files = datetime.datetime.now() + \
+                                        datetime.timedelta(seconds=saq.CONFIG['global'].getint(
+                                                           'check_watched_files_frequency'))
+
         for watched_file in self.watched_files.values():
             try:
                 current_mtime = os.stat(watched_file.path).st_mtime
@@ -573,11 +586,8 @@ class AnalysisModule(object):
 
         assert isinstance(obj, Analysis) or isinstance(obj, Observable)
 
-        # should we be analyzing this observable with this analysis module?
-        # this call makes a lot of different checks
-        # XXX this was moved into the main engine logic
-        #if not self.accepts(obj):
-            #return False
+        # if we're watching any files, see if they've changed and need to be reloaded
+        self.check_watched_files()
 
         # if we are executing in "final analysis mode" then we call this function instead
         if final_analysis:

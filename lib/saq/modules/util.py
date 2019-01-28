@@ -6,11 +6,6 @@ import re
 
 from saq.constants import *
 
-__all__ = [ 
-    'get_email',
-    'COMPRESSION_FILE_EXTENSIONS'
-]
-
 def get_email(root):
     """Returns the main EmailAnalysis object, or None if there isn't one."""
     from saq.modules.email import EmailAnalysis

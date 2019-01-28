@@ -23,7 +23,7 @@ import requests
 import saq
 from saq.constants import *
 from saq.error import report_exception
-from saq.util import parse_event_time
+from saq.util import *
 
 STATE_KEY_WHITELISTED = 'whitelisted'
 
@@ -701,7 +701,7 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         """Deletes the current analysis output if it exists."""
         logging.debug("called reset() on {}".format(self))
         if self.external_details_path is not None:
-            full_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.root.storage_dir, '.ace', self.external_details_path)
+            full_path = abs_path(os.path.join(self.root.storage_dir, '.ace', self.external_details_path))
             if os.path.exists(full_path):
                 logging.debug("removing external details file {}".format(full_path))
                 os.remove(full_path)
@@ -3008,14 +3008,27 @@ class RootAnalysis(Analysis):
 
     def reset(self):
         """Removes analysis, dispositions and any observables that did not originally come with the alert."""
+        from saq.database import acquire_lock, release_lock, LockedException
 
+        lock_uuid = None
+        try:
+            lock_uuid = acquire_lock(self.uuid)
+            if not lock_uuid:
+                raise LockedException(self)
+
+            return self._reset()
+
+        finally:
+            if lock_uuid:
+                release_lock(self.uuid, lock_uuid)
+
+    def _reset(self):
         from subprocess import Popen
 
         self.set_modified() 
         logging.info("resetting {}".format(self))
 
         # NOTE that we do not clear the details that came with Alert
-
         # clear external details storage for all analysis (except self)
         for _analysis in self.all_analysis:
             if _analysis is self:
@@ -3028,6 +3041,7 @@ class RootAnalysis(Analysis):
             o.clear_analysis()
 
         # remove observables from the observable_store that didn't come with the original alert
+        #import pdb; pdb.set_trace()
         original_uuids = set([o.id for o in self.observables])
         remove_list = []
         for uuid in self.observable_store.keys():
@@ -3036,8 +3050,8 @@ class RootAnalysis(Analysis):
 
         for uuid in remove_list:
             # if the observable is a F_FILE then try to also delete the file
-            if self.observable_store[uuid].type == F_FILE or self.observable_store[uuid].type == F_SUSPECT_FILE:
-                target_path = os.path.join(saq.SAQ_RELATIVE_DIR, self.storage_dir, self.observable_store[uuid].value)
+            if self.observable_store[uuid].type == F_FILE:
+                target_path = abs_path(self.observable_store[uuid].value)
                 if os.path.exists(target_path):
                     logging.debug("deleting observable file {}".format(target_path))
 
@@ -3049,15 +3063,20 @@ class RootAnalysis(Analysis):
             del self.observable_store[uuid]
 
         # remove tags from observables
+        # NOTE there's currently no way to know which tags originally came with the alert
         for o in self.observables:
             o.clear_tags()
 
         # clear the action counters
         self.action_counters = {} 
 
+        # clear the state
+        # this also clears any pre/post analysis module tracking
+        self.state = {}
+
         # remove any empty directories left behind
         logging.debug("removing empty directories inside {}".format(self.storage_dir))
-        p = Popen(['find', os.path.join(saq.DATA_DIR, self.storage_dir), '-type', 'd', '-empty', '-delete'])
+        p = Popen(['find', abs_path(self.storage_dir), '-type', 'd', '-empty', '-delete'])
         p.wait()
 
     def archive(self):
