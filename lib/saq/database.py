@@ -1738,7 +1738,7 @@ class Lock(Base):
 @use_db
 def acquire_lock(_uuid, lock_uuid=None, lock_owner=None, db=None, c=None):
     """Attempts to acquire a lock on a workitem by inserting the uuid into the locks database table.
-       Returns False if a lock already exists or True if the lock was acquired.
+       Returns False if a lock already exists or the lock_uuid if the lock was acquired.
        If a lock_uuid is not given, then a random one is generated and used and returned on success."""
 
     try:
@@ -1823,6 +1823,13 @@ def clear_expired_locks(db, c):
     db.commit()
     if c.rowcount:
         logging.debug("removed {} expired locks".format(c.rowcount))
+
+class LockedException(Exception):
+    def __init__(self, target, *args, **kwargs):
+        self.target = target
+
+    def __str__(self):
+        return f"LockedException: unable to get lock on {self.target} uuid {self.target.uuid}"
 
 @use_db
 def clear_expired_local_nodes(db, c):

@@ -75,6 +75,13 @@ class FilterResult(object):
 
 class CrawlphishURLFilter(object):
 
+    def __init__(self):
+        self.blacklisted_cidr = []
+        self.blacklisted_fqdn = []
+        self.whitelisted_cidr = []
+        self.whitelisted_fqdn = []
+        self.path_regexes = []
+
     #def __init__(self):
         #self.reason = REASON_UNKNOWN
         #self.parsed_url = None

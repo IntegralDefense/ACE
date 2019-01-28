@@ -3008,14 +3008,27 @@ class RootAnalysis(Analysis):
 
     def reset(self):
         """Removes analysis, dispositions and any observables that did not originally come with the alert."""
+        from saq.database import acquire_lock, release_lock, LockedException
 
+        lock_uuid = None
+        try:
+            lock_uuid = acquire_lock(self.uuid)
+            if not lock_uuid:
+                raise LockedException(self)
+
+            return self._reset()
+
+        finally:
+            if lock_uuid:
+                release_lock(self.uuid, lock_uuid)
+
+    def _reset(self):
         from subprocess import Popen
 
         self.set_modified() 
         logging.info("resetting {}".format(self))
 
         # NOTE that we do not clear the details that came with Alert
-
         # clear external details storage for all analysis (except self)
         for _analysis in self.all_analysis:
             if _analysis is self:
