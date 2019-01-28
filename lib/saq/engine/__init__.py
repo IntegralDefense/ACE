@@ -1654,7 +1654,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         # did the analysis mode change?
         # NOTE that we do this AFTER locks are released
-        if self.root.analysis_mode != current_analysis_mode:
+        if not self.is_local and self.root.analysis_mode != current_analysis_mode:
             logging.info("analysis mode for {} changed from {} to {}".format(
                           self.root, current_analysis_mode, self.root.analysis_mode))
 
@@ -1686,7 +1686,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 logging.error("unable to add {} to workload: {}".format(self.root, e))
                 report_exception()
 
-        elif self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
+        elif not self.is_local and self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
             # if we are analyzing an alert, sync it to the database
             session = None
             try:
