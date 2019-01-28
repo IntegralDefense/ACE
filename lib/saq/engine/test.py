@@ -2219,3 +2219,34 @@ class TestCase(ACEEngineTestCase):
         #from saq.modules.test import BasicTestAnalysis
         #analysis = observable.get_analysis(BasicTestAnalysis)
         ##self.assertIsNotNone(analysis)
+
+    def test_watched_files(self):
+
+        # make sure we check every time
+        saq.CONFIG['global']['check_watched_files_frequency'] = '0'
+
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_basic_test')  
+        engine.start()
+
+        # the module creates the file we're going to watch, so wait for that to appear
+        watched_file_path = os.path.join(saq.TEMP_DIR, 'watched_file')
+        self.wait_for_condition(lambda : os.path.exists(watched_file_path))
+        # and then wait for it to start watching it
+        wait_for_log_count(f"watching file {watched_file_path}", 1)
+
+        # go ahead and modify it
+        with open(watched_file_path, 'w') as fp:
+            fp.write("data has changed")
+        
+        root = create_root_analysis()
+        root.initialize_storage()
+        o1 = root.add_observable(F_TEST, 'test_watched_file')
+        root.save()
+        root.schedule()
+
+        wait_for_log_count(f"detected change to {watched_file_path}", 1)
+        wait_for_log_count(f"watched_file_modified: {watched_file_path}", 1)
+
+        engine.controlled_stop()
+        engine.wait()
