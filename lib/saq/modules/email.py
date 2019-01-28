@@ -19,7 +19,7 @@ import uuid
 
 import saq
 
-from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree
+from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree, search_down
 from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_source_email
 from saq.constants import *
 from saq.crypto import encrypt, decrypt
@@ -3535,7 +3535,7 @@ class MSOfficeEncryptionAnalyzer(AnalysisModule):
 
                 # OK then we've found an office document that is encrypted
                 # we'll try to find the passwords by looking at the plain text and html of the email, if they exist
-                email = get_email(self.root)
+                email = seach_down(_file, lambda obj: isinstance(obj, EmailAnalysis) and obj.email is not None)
                 if email is None:
                     logging.info("encrypted word document {} found but no associated email was found".format(_file.value))
                     return False
