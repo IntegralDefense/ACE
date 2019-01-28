@@ -2205,20 +2205,33 @@ class TestCase(ACEEngineTestCase):
         for _file in file_observables:
             self.assertFalse(os.path.exists(abs_path(_file.value)))
 
-        #root.schedule()
+    def test_analysis_reset_locked(self):
 
-        #engine = TestEngine(pool_size_limit=1)
-        #engine.enable_module('analysis_module_basic_test')  
-        #engine.controlled_stop()
-        #engine.start()
-        #engine.wait()
-        
-        #root = RootAnalysis(storage_dir=root.storage_dir)
-        #observable = root.get_observable(observable.id)
-        #self.assertIsNotNone(observable)
-        #from saq.modules.test import BasicTestAnalysis
-        #analysis = observable.get_analysis(BasicTestAnalysis)
-        ##self.assertIsNotNone(analysis)
+        from saq.database import acquire_lock, release_lock, LockedException
+
+        root = create_root_analysis()
+        root.initialize_storage()
+        o1 = root.add_observable(F_TEST, 'test_add_file')
+        o2 = root.add_observable(F_TEST, 'test_action_counter')
+        root.save()
+        root.schedule()
+
+        # lock the analysis we created
+        lock_uuid = acquire_lock(root.uuid)
+
+        # now try to reset it
+        with self.assertRaises(LockedException):
+            root = RootAnalysis(storage_dir=root.storage_dir)
+            root.load()
+            root.reset()
+
+        # unlock the analysis we created
+        release_lock(root.uuid, lock_uuid)
+
+        # the reset should work this time
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        root.reset()
 
     def test_watched_files(self):
 
