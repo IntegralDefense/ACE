@@ -596,7 +596,11 @@ class ACEBasicTestCase(TestCase):
         data_subdir = os.path.join(saq.CONFIG['global']['data_dir'], saq.SAQ_NODE)
         failed_alert_subdir = os.path.join(saq.SAQ_HOME, '.saq_alerts')
 
-        for subdir in [ data_subdir, failed_alert_subdir ]:
+        subdirs = [ data_subdir, failed_alert_subdir ]
+        if saq.CONFIG['engine']['work_dir']:
+            subdirs.append(saq.CONFIG['engine']['work_dir'])
+
+        for subdir in subdirs:
             if os.path.isdir(subdir):
                 try:
                     shutil.rmtree(subdir)
