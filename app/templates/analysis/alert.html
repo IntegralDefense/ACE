@@ -52,7 +52,7 @@
     {% if alert.disposition %}
     <tr>
         <td class="col-md-2">Disposition</td>
-        <td class="col-md-10"><b>{{alert.disposition}}</b> by {{alert.disposition_user.username}} @ {{alert.disposition_time}}</td>
+	<td class="col-md-10"><b>{{alert.disposition}}</b> by {{alert.disposition_user.username}} @ {{alert.display_disposition_time}} ({{alert.disposition_time}} UTC)</td>
     </tr>
     {% endif %}
     {% if alert.owner %}
