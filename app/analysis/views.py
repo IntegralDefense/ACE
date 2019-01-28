@@ -3343,6 +3343,10 @@ def index():
         assert isinstance(analysis, saq.analysis.Analysis)
         domains = {}
         for observable in analysis.find_observables(lambda o: o.type == F_URL):
+            hostname = urlparse(observable.value).hostname
+            if hostname is None:
+                continue
+
             if urlparse(observable.value).hostname not in domains:
                 domains[urlparse(observable.value).hostname] = 1
             else:
