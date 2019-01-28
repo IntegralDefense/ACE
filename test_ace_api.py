@@ -171,8 +171,8 @@ class TestCase(ACEEngineTestCase):
 
     @use_db
     def test_resubmit(self, db, c):
-        # submit something so we have somethign to resubmit
-        result = self._submit()
+        # submit something so we have something to resubmit
+        result = self._submit(analysis_mode=ANALYSIS_MODE_CORRELATION)
         self.assertIsNotNone(result)
 
         self.assertTrue('result' in result)
@@ -184,7 +184,7 @@ class TestCase(ACEEngineTestCase):
         root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
         root.load()
 
-        self.assertEquals(root.analysis_mode, 'test_empty')
+        self.assertEquals(root.analysis_mode, ANALYSIS_MODE_CORRELATION)
         self.assertEquals(root.tool, 'unittest_tool')
         self.assertEquals(root.tool_instance, 'unittest_tool_instance')
         self.assertEquals(root.alert_type, 'unittest_type')
@@ -220,7 +220,7 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(row[0])
         self.assertEquals(row[1], uuid)
         self.assertIsNotNone(row[2])
-        self.assertEquals(row[3], 'test_empty')
+        self.assertEquals(row[3], ANALYSIS_MODE_CORRELATION)
 
         # now resubmit the alert
         result = ace_api.resubmit_alert(uuid)
