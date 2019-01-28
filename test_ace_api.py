@@ -169,6 +169,63 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(row[2])
         self.assertEquals(row[3], 'test_empty')
 
+    @use_db
+    def test_resubmit(self, db, c):
+        # submit something so we have something to resubmit
+        result = self._submit(analysis_mode=ANALYSIS_MODE_CORRELATION)
+        self.assertIsNotNone(result)
+
+        self.assertTrue('result' in result)
+        result = result['result']
+        self.assertIsNotNone(result['uuid'])
+        uuid = result['uuid']
+
+        # make sure this actually uploaded
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+
+        self.assertEquals(root.analysis_mode, ANALYSIS_MODE_CORRELATION)
+        self.assertEquals(root.tool, 'unittest_tool')
+        self.assertEquals(root.tool_instance, 'unittest_tool_instance')
+        self.assertEquals(root.alert_type, 'unittest_type')
+        self.assertEquals(root.description, 'testing')
+        self.assertEquals(root.details, {'hello': 'world'})
+        self.assertEquals(root.event_time, self._get_localized_submit_time())
+        self.assertEquals(root.tags[0].name, 'alert_tag_1')
+        self.assertEquals(root.tags[1].name, 'alert_tag_2')
+        # NOTE that this is 4 instead of 2 since adding a file adds a F_FILE observable type
+        self.assertEquals(len(root.all_observables), 4)
+
+        o = root.find_observable(lambda o: o.type == 'ipv4')
+        self.assertIsNotNone(o)
+        self.assertEquals(o.value, '1.2.3.4')
+        self.assertEquals(len(o.tags), 2)
+        self.assertTrue(o.has_directive('no_scan'))
+        self.assertTrue('basic_test' in o.limited_analysis)
+
+        o = root.find_observable(lambda o: o.type == 'file' and o.value == 'sample.dat')
+        self.assertIsNotNone(o)
+
+        with open(os.path.join(root.storage_dir, o.value), 'rb') as fp:
+            self.assertEquals(fp.read(), b'Hello, world!')
+
+        o = root.find_observable(lambda o: o.type == 'file' and o.value == 'submit_test.dat')
+        self.assertIsNotNone(o)
+        self.assertEquals(os.path.getsize(os.path.join(root.storage_dir, o.value)), 1024)
+
+        # we should see a single workload entry
+        c.execute("SELECT id, uuid, node_id, analysis_mode FROM workload WHERE uuid = %s", (uuid,))
+        row = c.fetchone()
+        self.assertIsNotNone(row)
+        self.assertIsNotNone(row[0])
+        self.assertEquals(row[1], uuid)
+        self.assertIsNotNone(row[2])
+        self.assertEquals(row[3], ANALYSIS_MODE_CORRELATION)
+
+        # now resubmit the alert
+        result = ace_api.resubmit_alert(uuid)
+        self.assertFalse('error' in result)
+
     def test_submit_with_utc_timezone(self):
         # make sure we can submit with a UTC timezone already set
         result = self._submit(event_time=self._get_localized_submit_time())

@@ -3355,6 +3355,10 @@ def index():
         assert isinstance(analysis, saq.analysis.Analysis)
         domains = {}
         for observable in analysis.find_observables(lambda o: o.type == F_URL):
+            hostname = urlparse(observable.value).hostname
+            if hostname is None:
+                continue
+
             if urlparse(observable.value).hostname not in domains:
                 domains[urlparse(observable.value).hostname] = 1
             else:
@@ -3683,10 +3687,21 @@ def analyze_alert():
     alert = get_current_alert()
 
     try:
-        #alert.schedule()
-        flash("this is unavailable atm -- to be fixed soon")
-    except:
-        flash("unable to schedule alert for analysis")
+        result = ace_api.resubmit_alert(
+            remote_host = alert.node_location,
+            ssl_verification = abs_path(saq.CONFIG['SSL']['ca_chain_path']),
+            uuid = alert.uuid)
+
+        if 'error' in result:
+            e_msg = result['error']
+            logging.error(f"failed to resubmit alert: {e_msg}")
+            flash(f"failed to resubmit alert: {e_msg}")
+        else:
+            flash("successfully submitted alert for re-analysis")
+
+    except Exception as e:
+        logging.error(f"unable to submit alert: {e}")
+        flash(f"unable to submit alert: {e}")
 
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
