@@ -69,6 +69,11 @@ class GUIAlert(Alert):
         """Returns the insert date in the timezone specified by display_timezone."""
         return self.insert_date.astimezone(self.display_timezone).strftime(event_time_format_tz)
 
+    @property
+    def display_disposition_time(self):
+        """Returns the disposition time in the timezone specified by display_timezone."""
+        return self.disposition_time.astimezone(self.display_timezone).strftime(event_time_format_tz)
+
 class ObservableAction(object):
     """Represents an "action" that a user can take with an Observable in the GUI."""
     def __init__(self):
