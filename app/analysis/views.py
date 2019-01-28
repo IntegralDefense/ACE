@@ -1842,6 +1842,12 @@ def manage():
         query = query.filter(or_(GUIAlert.owner_id == current_user.id, GUIAlert.owner_id == None))
         filter_english.append("not owned by others")
 
+    # what timezone do we display the alerts in?
+    # all times MUST be UTC in the database
+    display_timezone = pytz.utc # defaults to UTC
+    if current_user.timezone:
+        display_timezone = pytz.timezone(current_user.timezone)
+    user_timezone_offset = datetime.datetime.now(display_timezone).strftime("%z")
 
     if filters[FILTER_CB_ONLY_REMEDIATED].value and filters[FILTER_CB_ONLY_UNREMEDIATED].value:
         flash("You cannot select both 'Only Remediated GUIAlerts' and 'Only Unremediated GUIAlerts'")
@@ -1852,15 +1858,17 @@ def manage():
             if filters[FILTER_CB_REMEDIATE_DATE].value and filters[FILTER_TXT_REMEDIATE_DATERANGE].value.strip() != '':
                 try:
                     daterange_start, daterange_end = filters[FILTER_TXT_REMEDIATE_DATERANGE].value.split(' - ')
-                    daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M')
-                    daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M')
+                    daterange_start = "{} {}".format(daterange_start, user_timezone_offset)
+                    daterange_end = "{} {}".format(daterange_end, user_timezone_offset)
+                    daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
+                    daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
                 except Exception as error:
                     flash("error parsing date range, using default 7 days: {0}".format(str(error)))
                     daterange_end = datetime.datetime.now()
                     daterange_start = daterange_end - datetime.timedelta(days=7)
 
-                query = query.filter(and_(GUIAlert.insert_date >= daterange_start, GUIAlert.insert_date <= daterange_end))
-                filter_english.append("alert remediated between {0} and {1}".format(daterange_start, daterange_end))
+                query = query.filter(and_(GUIAlert.removal_time >= daterange_start, GUIAlert.removal_time <= daterange_end))
+                filter_english.append("alert remediated between {0} and {1}".format(daterange_start.astimezone(display_timezone), daterange_end.astimezone(display_timezone)))
         if filters[FILTER_CB_ONLY_UNREMEDIATED].value:
             query = query.filter(and_(GUIAlert.removal_user_id == None))
             filter_english.append("unremediated alerts")
@@ -1868,15 +1876,17 @@ def manage():
     if filters[FILTER_CB_USE_DATERANGE].value and filters[FILTER_TXT_DATERANGE].value != '':
         try:
             daterange_start, daterange_end = filters[FILTER_TXT_DATERANGE].value.split(' - ')
-            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M')
-            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M')
+            daterange_start = "{} {}".format(daterange_start, user_timezone_offset)
+            daterange_end = "{} {}".format(daterange_end, user_timezone_offset)
+            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
+            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
         except Exception as error:
             flash("error parsing date range, using default 7 days: {0}".format(str(error)))
             daterange_end = datetime.datetime.now()
             daterange_start = daterange_end - datetime.timedelta(days=7)
 
         query = query.filter(and_(GUIAlert.insert_date >= daterange_start, GUIAlert.insert_date <= daterange_end))
-        filter_english.append("alert received between {0} and {1}".format(daterange_start, daterange_end))
+        filter_english.append("alert received between {0} and {1}".format(daterange_start.astimezone(display_timezone), daterange_end.astimezone(display_timezone)))
 
     if filters[FILTER_CB_USE_SEARCH_OBSERVABLE].value and filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value != '' and \
                     filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value != '':
@@ -2009,15 +2019,17 @@ def manage():
     if filters[FILTER_CB_USE_DIS_DATERANGE].value and filters[FILTER_TXT_DIS_DATERANGE].value != '':
         try:
             daterange_start, daterange_end = filters[FILTER_TXT_DIS_DATERANGE].value.split(' - ')
-            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M')
-            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M')
+            daterange_start = "{} {}".format(daterange_start, user_timezone_offset)
+            daterange_end = "{} {}".format(daterange_end, user_timezone_offset)
+            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
+            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
         except Exception as error:
             flash("error parsing disposition date range, using default 7 days: {0}".format(str(error)))
             daterange_end = datetime.datetime.now()
             daterange_start = daterange_end - datetime.timedelta(days=7)
 
         query = query.filter(and_(GUIAlert.disposition_time >= daterange_start, GUIAlert.disposition_time <= daterange_end))
-        filter_english.append("alert reviewed between {0} and {1}".format(daterange_start, daterange_end))
+        filter_english.append("alert reviewed between {0} and {1}".format(daterange_start.astimezone(display_timezone), daterange_end.astimezone(display_timezone)))
 
     if filters[FILTER_TXT_MIN_PRIORITY].value != '':
         query = query.filter(GUIAlert.priority > filters[FILTER_TXT_MIN_PRIORITY].value)
