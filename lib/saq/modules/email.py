@@ -28,7 +28,6 @@ from saq.email import normalize_email_address, search_archive, get_email_archive
 from saq.error import report_exception
 from saq.modules import AnalysisModule, SplunkAnalysisModule, AnalysisModule
 from saq.modules.util import get_email
-from saq.observables import MessageIDObservable
 from saq.process_server import Popen, PIPE
 from saq.whitelist import BrotexWhitelist, WHITELIST_TYPE_SMTP_FROM, WHITELIST_TYPE_SMTP_TO
 
@@ -130,10 +129,6 @@ class MailboxEmailAnalyzer(AnalysisModule):
             # merge the email analysis into the details of the root analysis
             # XXX remove this
             self.root.details.update(email_analysis.details)
-
-            # set the tracking for this analysis
-            if email_analysis.message_id:
-                self.root.tracking.track_observable(MessageIDObservable(email_analysis.message_id))
 
         return True
 

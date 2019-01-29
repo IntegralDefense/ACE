@@ -26,7 +26,6 @@ from saq.error import report_exception
 from saq.util import *
 
 STATE_KEY_WHITELISTED = 'whitelisted'
-STATE_KEY_TRACKING = 'tracking'
 
 def MODULE_PATH(analysis_module):
     """Returns the "module_path" used as a key to look up analysis in ACE."""
@@ -337,49 +336,6 @@ class ProfilePointTarget(object):
     def value(self):
         """Just an alias for the data property."""
         return self.data
-
-class Tracking(object):
-    """Used to track information between related analysis."""
-    
-    KEY_OBSERVABLES = 'observables'
-    
-    def __init__(self, root, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._root = root
-        self._observables = []
-
-    @property
-    def json(self):
-        return { Tracking.KEY_OBSERVABLES: self._observables }
-
-    @json.setter
-    def json(self, value):
-        assert isinstance(value, dict)
-        if Tracking.KEY_OBSERVABLES in value:
-            self._observables = value[Tracking.KEY_OBSERVABLES]
-            # translate these JSON formatted observables into Observable objects
-            self._observables = [Observable(None, None, json=_) for _ in self._observables]
-
-    @property
-    def observables(self):
-        return self._observables
-
-    @observables.setter
-    def observables(self, value:list):
-        assert all([isinstance(_, Observable) for _ in value])
-        self._observables = value
-
-    def track_observable(self, observable):
-        """Adds the given observable to the list of tracked observables."""
-        assert isinstance(observable, Observable)
-
-        for o in self._observables:
-            if o == observable:
-                return o
-
-        logging.debug(f"{self._root} tracking {observable}")
-        self._observables.append(observable)
-        self._root.set_modified()
 
 class DetectableObject(EventSource):
     """Mixin for objects that can have detection points."""
@@ -2567,22 +2523,6 @@ class RootAnalysis(Analysis):
     def whitelisted(self, value):
         assert isinstance(value, bool)
         self.state[STATE_KEY_WHITELISTED] = value
-
-    @property
-    def tracking(self):
-        if STATE_KEY_TRACKING not in self.state:
-            self.state[STATE_KEY_TRACKING] = Tracking(self.root)
-
-        if isinstance(self.state[STATE_KEY_TRACKING], dict):
-            json_data = self.state[STATE_KEY_TRACKING]
-            self.state[STATE_KEY_TRACKING] = Tracking(self.root)
-            self.state[STATE_KEY_TRACKING].json = json_data
-
-        return self.state[STATE_KEY_TRACKING]
-
-    @tracking.setter
-    def tracking(self, value):
-        self.state[STATE_KEY_TRACKING] = value
 
     @property
     def company_name(self):
