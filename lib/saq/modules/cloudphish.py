@@ -282,7 +282,7 @@ class CloudphishAnalyzer(AnalysisModule):
 
     def execute_analysis(self, url):
         # don't run cloudphish on cloudphish alerts
-        if self.alert_type == ANALYSIS_TYPE_CLOUDPHISH:
+        if self.root.alert_type == ANALYSIS_TYPE_CLOUDPHISH:
             return False
     
         # we keep track of what URLs we've given to cloudphish to process
