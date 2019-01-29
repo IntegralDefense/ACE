@@ -16,6 +16,7 @@ from saq.cloudphish import *
 from saq.constants import *
 from saq.database import get_db_connection, use_db
 from saq.test import *
+from saq.util import *
 
 import requests
 
@@ -37,6 +38,7 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
 
         # disable cleaup for analysis mode analysis
         saq.CONFIG['analysis_mode_analysis']['cleanup'] = 'no'
+        saq.CONFIG['analysis_mode_cloudphish']['cleanup'] = 'no'
 
         self.start_api_server()
 
@@ -161,6 +163,7 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
+        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
 
         engine.start()
 
@@ -171,7 +174,7 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         engine.wait()
 
         # check the results
-        root = RootAnalysis(storage_dir=root.storage_dir)
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
         url = root.get_observable(url.id)
         self.assertIsNotNone(url)
@@ -222,7 +225,7 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         engine.wait()
 
         # check the results
-        root = RootAnalysis(storage_dir=root.storage_dir)
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
         url = root.get_observable(url.id)
         self.assertIsNotNone(url)
@@ -338,6 +341,9 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         # set the timeouts really low
         saq.CONFIG['analysis_module_cloudphish']['frequency'] = '1'
         saq.CONFIG['analysis_module_cloudphish']['query_timeout'] = '1'
+
+        # disable cleaup for analysis mode analysis
+        saq.CONFIG['analysis_mode_analysis']['cleanup'] = 'no'
         
         self.start_api_server()
 
@@ -386,7 +392,7 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         self.assertEquals(c.fetchone()[0], 1)
 
     def test_request_limit(self):
-        
+
         # only allow one request
         saq.CONFIG['analysis_module_cloudphish']['cloudphish_request_limit'] = '1'
         
