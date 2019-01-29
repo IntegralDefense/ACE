@@ -892,7 +892,7 @@ class Alert(RootAnalysis, Base):
 
         # XXX this kind of sucks -- find a different way to do this
         if self.removal_time is not None:
-            return 'Completed (Removed)'.format(status)
+            return 'Completed (Removed)'
 
         return 'Completed'
 
