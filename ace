@@ -1938,6 +1938,14 @@ WHERE
                     where_clauses.append(_archive_search_template.format(field='subject'))
                     parameters.append(_archive_search_value)
 
+            if args.url:
+                if args.exact:
+                    where_clauses.append(_archive_index_template.format(field='url'))
+                    parameters.append(_archive_index_value)
+                else:
+                    where_clauses.append(_archive_search_template.format(field='url'))
+                    parameters.append(_archive_search_value)
+
             if args.message_id:
                 if args.exact:
                     where_clauses.append(_archive_index_template.format(field='message_id'))
@@ -1953,7 +1961,7 @@ WHERE
     c.execute(query, parameters)
     for server, md5 in c:
         # does this archive file exist?
-        archive_base_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'])
+        archive_base_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['analysis_module_email_archiver']['archive_dir'])
         if args.archive_dir:
             archive_base_dir = args.archive_dir
 
@@ -2019,6 +2027,8 @@ search_archive_parser.add_argument('--subject', required=False, default=False, a
     help="Narrow searching to the message body Subject field.")
 search_archive_parser.add_argument('--message-id', required=False, default=False, action='store_true', dest='message_id',
     help="Narrow searching to the message body Message-ID field.")
+search_archive_parser.add_argument('--url', required=False, default=False, action='store_true', dest='url',
+    help="Narrow searching to a URL found anywhere in the email.")
 search_archive_parser.add_argument('--exact', required=False, default=False, action='store_true', dest='exact',
     help="Perform an exact match (ignores options to narrow down search.) This is the fastest search.")
 search_archive_parser.add_argument('--from-stdin', required=False, default=False, action='store_true', dest='from_stdin',
@@ -2811,10 +2821,13 @@ def check_url(args):
     cw = CrawlphishURLFilter()
     cw.load()
 
-    if cw.is_filtered(args.url):
-        print("url filtered (reason {})".format(cw.reason))
-    else:
-        print("url OK (reason {})".format(cw.reason))
+    result = cw.filter(args.url)
+    print(f"filtered: {result.filtered} reason: {result.reason}")
+
+    #if cw.is_filtered(args.url):
+        #print("url filtered (reason {})".format(cw.reason))
+    #else:
+        #print("url OK (reason {})".format(cw.reason))
 
     sys.exit(0)
 
