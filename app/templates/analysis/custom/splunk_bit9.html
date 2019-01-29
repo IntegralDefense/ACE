@@ -1,16 +1,16 @@
 {% extends "analysis/alert.html" %}
 {% block alert_details %}
 <div class="panel panel-default">
-    <div class="panel-heading">Bit9 Alert Summary</div>
-    <div class="panel-body">
+    <div class="panel-heading">Bit9 Alert Summary <a role="button" data-toggle="collapse" data-target="#collapse_b9_summary" aria-expanded="true" aria-controls="collapse_b9_summary">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_b9_summary">
         {% for row in analysis.details %}
         <div class="well">{{row['_time']}} <span style="color: #0000FF">host <b>{{row['HostName']}}</b> ({{row['HostIP']}})</span> {{row['Message']}}</div>
         {% endfor %}
     </div>
 </div>
 <div class="panel panel-default">
-    <div class="panel-heading">Bit9 Alert Raw Details</div>
-    <div class="panel-body">
+    <div class="panel-heading">Bit9 Alert Raw Details <a role="button" data-toggle="collapse" data-target="#collapse_b9_details" aria-expanded="true" aria-controls="collapse_b9_details">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_b9_details">
         {% for row in analysis.details %}
         <div class="well">{{row['_raw'] }}</div>
         {% endfor %}
