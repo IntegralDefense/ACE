@@ -344,7 +344,7 @@ class CloudphishAnalyzer(AnalysisModule):
         try:
             context = {
                 'c': self.root.uuid, # context
-                't': self.root.tracking.json,
+                't': {} # tracking information XXX fix this
             }
 
             response = ace_api.cloudphish_submit(url.value, 

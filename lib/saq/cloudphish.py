@@ -11,7 +11,7 @@ import os, os.path
 from urllib.parse import urlparse
 
 import saq
-from saq.analysis import RootAnalysis, Tracking
+from saq.analysis import RootAnalysis
 from saq.constants import *
 from saq.crawlphish import CrawlphishURLFilter
 from saq.database import execute_with_retry, use_db
@@ -51,7 +51,6 @@ __all__ = [
     'KEY_DETAILS_SHA256_URL',
     'KEY_DETAILS_ALERTABLE',
     'KEY_DETAILS_CONTEXT',
-    'KEY_CONTEXT_TRACKING',
     'update_cloudphish_result',
     'update_content_metadata',
     'get_content_metadata',
@@ -97,7 +96,6 @@ KEY_DETAILS_URL = 'url'
 KEY_DETAILS_SHA256_URL = 'sha256_url'
 KEY_DETAILS_ALERTABLE = 'alertable'
 KEY_DETAILS_CONTEXT = 'context'
-KEY_CONTEXT_TRACKING = 'tracking'
 
 # some utility functions
 @use_db
@@ -367,15 +365,6 @@ def _create_analysis(url, reprocess, details, db, c):
         KEY_DETAILS_ALERTABLE: True,
         KEY_DETAILS_CONTEXT: details, # <-- optionally contains the source company_id
     }
-
-    # tracking in the context can optionally contain additional observables to add
-    if KEY_CONTEXT_TRACKING in root.details[KEY_DETAILS_CONTEXT]:
-        tracking = Tracking(root)
-        tracking.json = root.details[KEY_DETAILS_CONTEXT][KEY_CONTEXT_TRACKING]
-        for observable in tracking.observables:
-            # NOTE that we add by spec (type, value, time) rather than adding the Observable object itself
-            # as the Observable object probably has a bunch of internal state data we don't want to copy
-            observable = root.add_observable(o_type=observable.type, o_value=observable.value, o_time=observable.time)
 
     url_observable = root.add_observable(F_URL, url)
     if url_observable:
