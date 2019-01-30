@@ -127,8 +127,16 @@ class MailboxEmailAnalyzer(AnalysisModule):
                 self.root.description = '{} (no subject)'.format(MAILBOX_ALERT_PREFIX)
 
             # merge the email analysis into the details of the root analysis
-            # XXX remove this
+            if self.root.details is None:
+                self.root.details = {}
+
             self.root.details.update(email_analysis.details)
+
+            # make sure we track message IDs across analysis
+            # this is basically so that cloudphish requests receive the message_id
+            for observable in email_analysis.observables:
+                if observable.type == F_MESSAGE_ID:
+                    observable.add_directive(DIRECTIVE_TRACKED)
 
         return True
 
