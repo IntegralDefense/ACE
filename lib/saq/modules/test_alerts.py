@@ -10,6 +10,7 @@ from saq.analysis import RootAnalysis
 from saq.database import use_db
 from saq.constants import *
 from saq.test import *
+from saq.util import *
 
 class TestCase(ACEModuleTestCase):
     def setUp(self, *args, **kwargs):
@@ -31,7 +32,8 @@ class TestCase(ACEModuleTestCase):
         engine.start()
         engine.wait()
 
-        root = RootAnalysis(storage_dir=root.storage_dir)
+        # analysis will have moved over to data dir now
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
 
         # the analysis mode should have changed
@@ -108,6 +110,7 @@ class TestCase(ACEModuleTestCase):
     @use_db
     def test_existing_alert(self, db, c):
         root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
         root.initialize_storage()
         observable = root.add_observable(F_TEST, 'test_7')
         root.save()

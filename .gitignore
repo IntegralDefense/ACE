@@ -134,3 +134,10 @@ etc/crawlphish.unittest.whitelist
 etc/api_logging.ini
 etc/blacklist.yar
 etc/remote_assignments.yar
+etc/saq.ini.saved
+
+# java decompiler
+bin/procyon-decompiler*
+
+# unit testing
+data_unittest

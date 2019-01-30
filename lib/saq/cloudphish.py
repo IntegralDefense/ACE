@@ -2,11 +2,12 @@
 # constants used by cloudphish
 
 import datetime
-import logging
 import hashlib
+import json
+import logging
+import os, os.path
 import pickle
 import uuid
-import os, os.path
 
 from urllib.parse import urlparse
 
@@ -16,7 +17,7 @@ from saq.constants import *
 from saq.crawlphish import CrawlphishURLFilter
 from saq.database import execute_with_retry, use_db
 from saq.error import report_exception
-from saq.util import storage_dir_from_uuid
+from saq.util import workload_storage_dir, storage_dir_from_uuid
 
 import pymysql.err
 
@@ -249,11 +250,14 @@ def _get_cached_analysis(url, db, c):
             file_name = file_name.decode('unicode_internal')
 
         storage_dir = storage_dir_from_uuid(uuid)
+        if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(storage_dir):
+            storage_dir = workload_storage_dir(uuid)
+
         root_details = None
 
         if os.path.exists(storage_dir):
             try:
-                root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+                root = RootAnalysis(storage_dir=storage_dir)
                 root.load()
                 root_details = root.details
             except Exception as e:
@@ -342,7 +346,7 @@ def _create_analysis(url, reprocess, details, db, c):
 
     root = RootAnalysis()
     root.uuid = _uuid
-    root.storage_dir = storage_dir_from_uuid(root.uuid)
+    root.storage_dir = workload_storage_dir(root.uuid)
     root.initialize_storage()
     root.analysis_mode = ANALYSIS_MODE_CLOUDPHISH
     # this is kind of a kludge but,
@@ -362,6 +366,14 @@ def _create_analysis(url, reprocess, details, db, c):
         KEY_DETAILS_ALERTABLE: True,
         KEY_DETAILS_CONTEXT: details, # <-- optionally contains the source company_id
     }
+
+    # the context can optionally contain tracking information (sent as the "t" POST variable)
+    # this will be a list of dict({'type': o_type, 'value': o_value, 'time': o_time})
+    if 't' in root.details[KEY_DETAILS_CONTEXT]:
+        tracking = json.loads(root.details[KEY_DETAILS_CONTEXT]['t'])
+        for o_dict in tracking:
+            o = root.add_observable(o_dict['type'], o_dict['value'], o_time=o_dict['time'])
+            o.add_tag("tracked")
 
     url_observable = root.add_observable(F_URL, url)
     if url_observable:

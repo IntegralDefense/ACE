@@ -1541,7 +1541,10 @@ FILTER_CB_USE_DISPLAY_TEXT = 'use_display_text'
 FILTER_TXT_DISPLAY_TEXT = 'display_text'
 FILTER_CB_DIS_NONE = 'dis_none'
 FILTER_CB_DIS_FALSE_POSITIVE = 'dis_false_positive'
+FILTER_CB_DIS_IGNORE = 'dis_ignore'
 FILTER_CB_DIS_UNKNOWN = 'dis_unknown'
+FILTER_CB_DIS_REVIEWED = 'dis_reviewed'
+FILTER_CB_DIS_GRAYWARE = 'dis_grayware'
 FILTER_CB_DIS_POLICY_VIOLATION = 'dis_policy_violation'
 FILTER_CB_DIS_RECONNAISSANCE = 'dis_reconnaissance'
 FILTER_CB_DIS_WEAPONIZATION = 'dis_weaponization'
@@ -1632,7 +1635,10 @@ def manage():
         FILTER_TXT_DISPLAY_TEXT: SearchFilter('display_text', FILTER_TYPE_TEXT, ''),
         FILTER_CB_DIS_NONE: SearchFilter('dis_none', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_FALSE_POSITIVE: SearchFilter('dis_false_positive', FILTER_TYPE_CHECKBOX, False),
+        FILTER_CB_DIS_IGNORE: SearchFilter('dis_ignore', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_UNKNOWN: SearchFilter('dis_unknown', FILTER_TYPE_CHECKBOX, False),
+        FILTER_CB_DIS_REVIEWED: SearchFilter('dis_reviewed', FILTER_TYPE_CHECKBOX, False),
+        FILTER_CB_DIS_GRAYWARE: SearchFilter('dis_grayware', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_POLICY_VIOLATION: SearchFilter('dis_policy_violation', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_RECONNAISSANCE: SearchFilter('dis_reconnaissance', FILTER_TYPE_CHECKBOX, False),
         FILTER_CB_DIS_WEAPONIZATION: SearchFilter('dis_weaponization', FILTER_TYPE_CHECKBOX, False),
@@ -1836,6 +1842,12 @@ def manage():
         query = query.filter(or_(GUIAlert.owner_id == current_user.id, GUIAlert.owner_id == None))
         filter_english.append("not owned by others")
 
+    # what timezone do we display the alerts in?
+    # all times MUST be UTC in the database
+    display_timezone = pytz.utc # defaults to UTC
+    if current_user.timezone:
+        display_timezone = pytz.timezone(current_user.timezone)
+    user_timezone_offset = datetime.datetime.now(display_timezone).strftime("%z")
 
     if filters[FILTER_CB_ONLY_REMEDIATED].value and filters[FILTER_CB_ONLY_UNREMEDIATED].value:
         flash("You cannot select both 'Only Remediated GUIAlerts' and 'Only Unremediated GUIAlerts'")
@@ -1846,15 +1858,17 @@ def manage():
             if filters[FILTER_CB_REMEDIATE_DATE].value and filters[FILTER_TXT_REMEDIATE_DATERANGE].value.strip() != '':
                 try:
                     daterange_start, daterange_end = filters[FILTER_TXT_REMEDIATE_DATERANGE].value.split(' - ')
-                    daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M')
-                    daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M')
+                    daterange_start = "{} {}".format(daterange_start, user_timezone_offset)
+                    daterange_end = "{} {}".format(daterange_end, user_timezone_offset)
+                    daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
+                    daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
                 except Exception as error:
                     flash("error parsing date range, using default 7 days: {0}".format(str(error)))
                     daterange_end = datetime.datetime.now()
                     daterange_start = daterange_end - datetime.timedelta(days=7)
 
-                query = query.filter(and_(GUIAlert.insert_date >= daterange_start, GUIAlert.insert_date <= daterange_end))
-                filter_english.append("alert remediated between {0} and {1}".format(daterange_start, daterange_end))
+                query = query.filter(and_(GUIAlert.removal_time >= daterange_start, GUIAlert.removal_time <= daterange_end))
+                filter_english.append("alert remediated between {0} and {1}".format(daterange_start.astimezone(display_timezone), daterange_end.astimezone(display_timezone)))
         if filters[FILTER_CB_ONLY_UNREMEDIATED].value:
             query = query.filter(and_(GUIAlert.removal_user_id == None))
             filter_english.append("unremediated alerts")
@@ -1862,15 +1876,17 @@ def manage():
     if filters[FILTER_CB_USE_DATERANGE].value and filters[FILTER_TXT_DATERANGE].value != '':
         try:
             daterange_start, daterange_end = filters[FILTER_TXT_DATERANGE].value.split(' - ')
-            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M')
-            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M')
+            daterange_start = "{} {}".format(daterange_start, user_timezone_offset)
+            daterange_end = "{} {}".format(daterange_end, user_timezone_offset)
+            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
+            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
         except Exception as error:
             flash("error parsing date range, using default 7 days: {0}".format(str(error)))
             daterange_end = datetime.datetime.now()
             daterange_start = daterange_end - datetime.timedelta(days=7)
 
         query = query.filter(and_(GUIAlert.insert_date >= daterange_start, GUIAlert.insert_date <= daterange_end))
-        filter_english.append("alert received between {0} and {1}".format(daterange_start, daterange_end))
+        filter_english.append("alert received between {0} and {1}".format(daterange_start.astimezone(display_timezone), daterange_end.astimezone(display_timezone)))
 
     if filters[FILTER_CB_USE_SEARCH_OBSERVABLE].value and filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value != '' and \
                     filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value != '':
@@ -1899,9 +1915,18 @@ def manage():
     if filters[FILTER_CB_DIS_FALSE_POSITIVE].value:
         dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_FALSE_POSITIVE)
         dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_FALSE_POSITIVE))
+    if filters[FILTER_CB_DIS_IGNORE].value:
+        dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_IGNORE)
+        dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_IGNORE))
     if filters[FILTER_CB_DIS_UNKNOWN].value:
         dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_UNKNOWN)
         dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_UNKNOWN))
+    if filters[FILTER_CB_DIS_REVIEWED].value:
+        dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_REVIEWED)
+        dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_REVIEWED))
+    if filters[FILTER_CB_DIS_GRAYWARE].value:
+        dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_GRAYWARE)
+        dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_GRAYWARE))
     if filters[FILTER_CB_DIS_POLICY_VIOLATION].value:
         dis_filters.append(GUIAlert.disposition == saq.constants.DISPOSITION_POLICY_VIOLATION)
         dis_filter_english.append("disposition is {0}".format(saq.constants.DISPOSITION_POLICY_VIOLATION))
@@ -1994,15 +2019,17 @@ def manage():
     if filters[FILTER_CB_USE_DIS_DATERANGE].value and filters[FILTER_TXT_DIS_DATERANGE].value != '':
         try:
             daterange_start, daterange_end = filters[FILTER_TXT_DIS_DATERANGE].value.split(' - ')
-            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M')
-            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M')
+            daterange_start = "{} {}".format(daterange_start, user_timezone_offset)
+            daterange_end = "{} {}".format(daterange_end, user_timezone_offset)
+            daterange_start = datetime.datetime.strptime(daterange_start, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
+            daterange_end = datetime.datetime.strptime(daterange_end, '%m-%d-%Y %H:%M %z').astimezone(pytz.utc)
         except Exception as error:
             flash("error parsing disposition date range, using default 7 days: {0}".format(str(error)))
             daterange_end = datetime.datetime.now()
             daterange_start = daterange_end - datetime.timedelta(days=7)
 
         query = query.filter(and_(GUIAlert.disposition_time >= daterange_start, GUIAlert.disposition_time <= daterange_end))
-        filter_english.append("alert reviewed between {0} and {1}".format(daterange_start, daterange_end))
+        filter_english.append("alert reviewed between {0} and {1}".format(daterange_start.astimezone(display_timezone), daterange_end.astimezone(display_timezone)))
 
     if filters[FILTER_TXT_MIN_PRIORITY].value != '':
         query = query.filter(GUIAlert.priority > filters[FILTER_TXT_MIN_PRIORITY].value)
@@ -3324,10 +3351,14 @@ def index():
             return "TreeNode({}, {}, {})".format(self.obj, self.reference_node, self.visible)
 
 
-    def find_all_domains(analysis):
+    def find_all_url_domains(analysis):
         assert isinstance(analysis, saq.analysis.Analysis)
         domains = {}
         for observable in analysis.find_observables(lambda o: o.type == F_URL):
+            hostname = urlparse(observable.value).hostname
+            if hostname is None:
+                continue
+
             if urlparse(observable.value).hostname not in domains:
                 domains[urlparse(observable.value).hostname] = 1
             else:
@@ -3481,27 +3512,36 @@ def index():
                                       excluded_emails=saq.CONFIG['remediation']['excluded_emails'].split(',')).values())
 
     # get list of domains that appear in the alert
-    domains = find_all_domains(analysis)
+    domains = find_all_url_domains(analysis)
     #domain_list = list(domains)
-    #domain_list = sorted(domains, key=lambda k: domains[k])
+    domain_list = sorted(domains, key=lambda k: domains[k])
 
     def _create_histogram_string(data):
+        """A convenience function that creates a graph in the form of a string.
+
+        :param dict data: A dictionary, where the values are integers representing a count of the keys.
+        :return: A graph in string form, pre-formatted for raw printing.
+        """
         assert isinstance(data, dict)
         for key in data.keys():
             assert isinstance(data[key], int)
         total_results = sum([value for value in data.values()])
         txt = ""
+        # order keys for printing in order (purly ascetics)
         ordered_keys = sorted(data, key=lambda k: data[k])
         results = []
+        # longest_key used to calculate how many white spaces should be printed
+        # to make the graph columns line up with each other
         longest_key = 0
         for key in ordered_keys:
             value = data[key]
             longest_key = len(key) if len(key) > longest_key else longest_key
-            # truncating keys to 95 chars
+            # IMPOSING LIMITATION: truncating keys to 95 chars, keeping longest key 5 chars longer
             longest_key = 100 if longest_key > 100 else longest_key
             percent = value / total_results * 100
-            #txt += "%100s: %5s%% %s\n" % (key[:95], percent, u"\u25A0"*(int(percent/2)))
             results.append((key[:95], value, percent, u"\u25A0"*(int(percent/2))))
+        # two for loops are ugly, but allowed us to count the longest_key - 
+        # so we loop through again to print the text
         for r in results:
             txt += "%s%s: %5s - %5s%% %s\n" % (int(longest_key - len(r[0]))*' ', r[0] , r[1],
                                                str(r[2])[:4], u"\u25A0"*(int(r[2]/2)))
@@ -3533,7 +3573,7 @@ def index():
                            pp_scores=pp_scores,
                            pp_full=pp_full,
                            domains=domains,
-                           #domain_list=domain_list,
+                           domain_list=domain_list,
                            domain_summary_str=domain_summary_str,
                            email_remediations=email_remediations)
 
@@ -3647,10 +3687,21 @@ def analyze_alert():
     alert = get_current_alert()
 
     try:
-        #alert.schedule()
-        flash("this is unavailable atm -- to be fixed soon")
-    except:
-        flash("unable to schedule alert for analysis")
+        result = ace_api.resubmit_alert(
+            remote_host = alert.node_location,
+            ssl_verification = abs_path(saq.CONFIG['SSL']['ca_chain_path']),
+            uuid = alert.uuid)
+
+        if 'error' in result:
+            e_msg = result['error']
+            logging.error(f"failed to resubmit alert: {e_msg}")
+            flash(f"failed to resubmit alert: {e_msg}")
+        else:
+            flash("successfully submitted alert for re-analysis")
+
+    except Exception as e:
+        logging.error(f"unable to submit alert: {e}")
+        flash(f"unable to submit alert: {e}")
 
     return redirect(url_for('analysis.index', direct=alert.uuid))
 

@@ -333,6 +333,56 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         _file = analysis.get_observables_by_type(F_FILE)
         self.assertEquals(len(_file), 1)
 
+    def test_file_analysis_archive_7z_under(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.initialize_storage()
+        shutil.copy('test_data/7z/under.7z', root.storage_dir)
+        _file = root.add_observable(F_FILE, 'under.7z')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        _file = root.get_observable(_file.id)
+        
+        from saq.modules.file_analysis import ArchiveAnalysis
+        analysis = _file.get_analysis(ArchiveAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertEquals(analysis.file_count, 1)
+        _file = analysis.get_observables_by_type(F_FILE)
+        self.assertEquals(len(_file), 1)
+
+    def test_file_analysis_archive_7z_over(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.initialize_storage()
+        shutil.copy('test_data/7z/over.7z', root.storage_dir)
+        _file = root.add_observable(F_FILE, 'over.7z')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        _file = root.get_observable(_file.id)
+        
+        from saq.modules.file_analysis import ArchiveAnalysis
+        analysis = _file.get_analysis(ArchiveAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertFalse(analysis)
+
     def test_file_analysis_002_archive_002_ace(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()))
@@ -358,6 +408,54 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         self.assertEquals(analysis.file_count, 1)
         _file = analysis.get_observables_by_type(F_FILE)
         self.assertEquals(len(_file), 1)
+
+    def test_file_analysis_002_archive_003_jar(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.initialize_storage()
+        shutil.copy('test_data/jar/test.jar', root.storage_dir)
+        _file = root.add_observable(F_FILE, 'test.jar')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        _file = root.get_observable(_file.id)
+        
+        from saq.modules.file_analysis import ArchiveAnalysis
+        analysis = _file.get_analysis(ArchiveAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertEquals(analysis.file_count, 42)
+
+    def test_file_analysis_002_archive_004_jar(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.initialize_storage()
+        shutil.copy('test_data/jar/too_many_files.jar', root.storage_dir)
+        _file = root.add_observable(F_FILE, 'too_many_files.jar')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root.load()
+        _file = root.get_observable(_file.id)
+        
+        from saq.modules.file_analysis import ArchiveAnalysis
+        analysis = _file.get_analysis(ArchiveAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertFalse(analysis)
         
     def test_file_analysis_003_xml_000_rels(self):
 
