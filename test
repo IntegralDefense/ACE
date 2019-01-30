@@ -62,6 +62,7 @@ then
         saq.engine.test \
         saq.modules.test_alerts \
         saq.modules.test_asset \
+        saq.modules.test_cloudphish \
         saq.modules.test_url \
         saq.modules.test_file_analysis \
         saq.modules.test_email \
