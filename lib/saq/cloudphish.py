@@ -2,11 +2,12 @@
 # constants used by cloudphish
 
 import datetime
-import logging
 import hashlib
+import json
+import logging
+import os, os.path
 import pickle
 import uuid
-import os, os.path
 
 from urllib.parse import urlparse
 
@@ -365,6 +366,14 @@ def _create_analysis(url, reprocess, details, db, c):
         KEY_DETAILS_ALERTABLE: True,
         KEY_DETAILS_CONTEXT: details, # <-- optionally contains the source company_id
     }
+
+    # the context can optionally contain tracking information (sent as the "t" POST variable)
+    # this will be a list of dict({'type': o_type, 'value': o_value, 'time': o_time})
+    if 't' in root.details[KEY_DETAILS_CONTEXT]:
+        tracking = json.loads(root.details[KEY_DETAILS_CONTEXT]['t'])
+        for o_dict in tracking:
+            o = root.add_observable(o_dict['type'], o_dict['value'], o_time=o_dict['time'])
+            o.add_tag("tracked")
 
     url_observable = root.add_observable(F_URL, url)
     if url_observable:

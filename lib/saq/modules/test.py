@@ -66,7 +66,7 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_5(test)
         elif test.value == 'test_6':
             return self.execute_analysis_6(test)
-        elif test.value == 'test_7':
+        elif test.value == 'test_7' or test.value == 'test_detection':
             return self.execute_analysis_7(test)
         elif test.value == 'test_8':
             return self.execute_analysis_8(test)
