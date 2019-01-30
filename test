@@ -41,8 +41,8 @@ if [ -d "$data_dir" ]
 then
     echo "clearing $data_dir..."
     rm -rf "$data_dir"
-    mkdir "$data_dir"
 fi
+mkdir "$data_dir"
 
 # if we passed no parameters then we run all the tests
 if [ "$#" -eq "0" ]
@@ -62,6 +62,7 @@ then
         saq.engine.test \
         saq.modules.test_alerts \
         saq.modules.test_asset \
+        saq.modules.test_cloudphish \
         saq.modules.test_url \
         saq.modules.test_file_analysis \
         saq.modules.test_email \

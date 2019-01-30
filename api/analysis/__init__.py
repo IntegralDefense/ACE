@@ -18,7 +18,7 @@ from saq.analysis import RootAnalysis, _JSONEncoder
 from saq.database import get_db_connection, ALERT
 from saq.error import report_exception
 from saq.constants import *
-from saq.util import parse_event_time, storage_dir_from_uuid, validate_uuid
+from saq.util import parse_event_time, storage_dir_from_uuid, validate_uuid, workload_storage_dir
 
 from flask import Blueprint, request, abort, Response, send_from_directory
 from werkzeug import secure_filename
@@ -65,7 +65,14 @@ def submit():
 
     root = RootAnalysis()
     root.uuid = str(uuid.uuid4())
-    root.storage_dir = storage_dir_from_uuid(root.uuid)
+
+    # does the engine use a different drive for the workload?
+    analysis_mode = r[KEY_ANALYSIS_MODE] if KEY_ANALYSIS_MODE in r else saq.CONFIG['engine']['default_analysis_mode']
+    if analysis_mode != ANALYSIS_MODE_CORRELATION:
+        root.storage_dir = workload_storage_dir(root.uuid)
+    else:
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+
     root.initialize_storage()
 
     try:
@@ -211,9 +218,24 @@ def submit():
 
         raise e
 
+@analysis_bp.route('/resubmit/<uuid>', methods=['GET'])
+def resubmit(uuid):
+    try:
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root.load()
+        root.reset()
+        root.schedule()
+        return json_result({'result':'success'})
+    except Exception as e:
+        return json_result({'result':'failed', 'error':str(e)})
+
 @analysis_bp.route('/<uuid>', methods=['GET'])
 def get_analysis(uuid):
-    root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+    storage_dir = storage_dir_from_uuid(uuid)
+    if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(storage_dir):
+        storage_dir = workload_storage_dir(uuid)
+    
+    root = RootAnalysis(storage_dir=storage_dir)
     root.load()
     return json_result({'result': root.json})
 
@@ -225,7 +247,11 @@ def get_status(uuid):
     except ValueError as e:
         abort(Response(str(e), 400))
 
-    if not os.path.exists(storage_dir_from_uuid(uuid)):
+    storage_dir = storage_dir_from_uuid(uuid)
+    if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(storage_dir):
+        storage_dir = workload_storage_dir(uuid)
+
+    if not os.path.exists(storage_dir):
         abort(Response("invalid uuid {}".format(uuid), 400))
 
     result = {
@@ -313,7 +339,11 @@ WHERE
 
 @analysis_bp.route('/details/<uuid>/<name>', methods=['GET'])
 def get_details(uuid, name):
-    root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+    storage_dir = storage_dir_from_uuid(uuid)
+    if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(storage_dir):
+        storage_dir = workload_storage_dir(uuid)
+
+    root = RootAnalysis(storage_dir=storage_dir)
     root.load()
 
     # find the analysis with this name
@@ -326,7 +356,11 @@ def get_details(uuid, name):
 
 @analysis_bp.route('/file/<uuid>/<file_uuid_or_name>', methods=['GET'])
 def get_file(uuid, file_uuid_or_name):
-    root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+    storage_dir = storage_dir_from_uuid(uuid)
+    if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(storage_dir):
+        storage_dir = workload_storage_dir(uuid)
+
+    root = RootAnalysis(storage_dir=storage_dir)
     root.load()
 
     # is this a UUID?

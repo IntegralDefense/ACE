@@ -19,7 +19,7 @@ import uuid
 
 import saq
 
-from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree
+from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree, search_down
 from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_source_email
 from saq.constants import *
 from saq.crypto import encrypt, decrypt
@@ -127,8 +127,16 @@ class MailboxEmailAnalyzer(AnalysisModule):
                 self.root.description = '{} (no subject)'.format(MAILBOX_ALERT_PREFIX)
 
             # merge the email analysis into the details of the root analysis
-            # XXX remove this
+            if self.root.details is None:
+                self.root.details = {}
+
             self.root.details.update(email_analysis.details)
+
+            # make sure we track message IDs across analysis
+            # this is basically so that cloudphish requests receive the message_id
+            for observable in email_analysis.observables:
+                if observable.type == F_MESSAGE_ID:
+                    observable.add_directive(DIRECTIVE_TRACKED)
 
         return True
 
@@ -2571,6 +2579,9 @@ class EmailLoggingAnalyzer(AnalysisModule):
 
         # are we updating the brocess database?
         mail_from = normalize_email_address(entry['mail_from'])
+        if not mail_from:
+            return
+
         logging.debug("updating brocess for {}".format(mail_from))
 
         try:
@@ -3532,7 +3543,7 @@ class MSOfficeEncryptionAnalyzer(AnalysisModule):
 
                 # OK then we've found an office document that is encrypted
                 # we'll try to find the passwords by looking at the plain text and html of the email, if they exist
-                email = get_email(self.root)
+                email = seach_down(_file, lambda obj: isinstance(obj, EmailAnalysis) and obj.email is not None)
                 if email is None:
                     logging.info("encrypted word document {} found but no associated email was found".format(_file.value))
                     return False

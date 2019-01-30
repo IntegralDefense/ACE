@@ -26,8 +26,8 @@
 </ul>
     
 <div class="panel panel-default">
-    <div class="panel-heading"><a role="button" data-toggle="collapse" data-target="#collapseHeaders" aria-expanded="false" aria-controls="collapseHeaders">Headers</a> (click to expand)</div>
-    <div class="panel-body collapse" id="collapseHeaders">
+    <div class="panel-heading">Headers <a role="button" data-toggle="collapse" data-target="#collapse_headers" aria-expanded="false" aria-controls="collapse_headers">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_headers">
         <pre>{% for header, value in analysis.details['email']['headers'] %}{{header}}: {{value}}
 {% endfor %}
         </pre>
