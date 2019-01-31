@@ -3,7 +3,7 @@ rule TEMPLATE_RULE_NAME
 {
     meta:
         author = "CRITS Export"
-        file_name = "email.rfc822"
+        file_name = "sub:email.rfc822.headers,email.rfc822.unknown_"
     strings:
 TEMPLATE_STRINGS
     condition:
