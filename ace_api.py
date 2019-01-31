@@ -643,6 +643,7 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
             if ssl_verification is not None:
                 kwargs['ssl_verification'] = ssl_verification
 
+            logging.info("submitting {} to {}".format(target_path, kwargs['uri']))
             alert.submit(save_on_fail=False, **kwargs)
 
             if delete_on_success:
@@ -655,6 +656,9 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
             logging.error("unable to submit {}: {}".format(target_path, e))
 
 if __name__ == '__main__':
+
+    logging.basicConfig(level=logging.DEBUG)
+
     import argparse
     parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
     subparsers = parser.add_subparsers(dest='cmd')
