@@ -739,7 +739,8 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
         except Exception as e:
             logging.error("unable to submit {}: {}".format(target_path, e))
 
-if __name__ == '__main__':
+
+def main():
     import argparse
     parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
     subparsers = parser.add_subparsers(dest='cmd')
@@ -831,3 +832,6 @@ if __name__ == '__main__':
         if hasattr(e, 'response'):
             if hasattr(e.response, 'text'):
                 print(e.response.text)
+
+if __name__ == '__main__':
+    main()
