@@ -58,15 +58,23 @@ METHOD_GET = 'get'
 METHOD_POST = 'post'
 
 def set_default_remote_host(remote_host):
-    """Sets the default remote host used when no remote host is provided to the API calls."""
+    """Sets the default remote host used when no remote host is provided to the API calls.
+    
+    :param str remote_host: The ACE node you want to work with. Default: localhost
+    """
     global default_remote_host
     default_remote_host = remote_host
 
 def set_default_ssl_ca_path(ssl_verification):
-    """Sets the default SSL verification mode. 
-       If set to None (the default) then the default (installed) CAs are used.
-       If set to False, then SSL verification is disabled.
-       Other it is assumed to be a file that contains the CAs to be used to verify the SSL certificates."""
+    """Sets the default SSL verification mode. Behavior: 
+      
+       - If set to None (the default) then the system installed CAs are used.
+       - If set to False, then SSL verification is disabled.
+       - Else, it is assumed to be a file that contains the CAs to be used to verify the SSL certificates.
+
+       :param ssl_verification: see behavior above.
+       :type ssl_verification: str or None or False
+       """
     global default_ssl_verification
     default_ssl_verification = ssl_verification
 
@@ -138,21 +146,38 @@ def _execute_api_call(command,
 
 @api_command
 def get_supported_api_version(*args, **kwargs):
+    """Get the API version for the ACE ecosystem you're working with.
+    
+    :return: Result dictionary containing the version string.
+    :rtype: dict
+    """
     return _execute_api_call('common/get_supported_api_version', *args, **kwargs).json()
 
 @api_command
 def get_valid_companies(*args, **kwargs):
+    """Get a list of the companies supported by this ACE ecosystem.
+    
+    :return: Result dictionary containing a list of companies.
+    :rtype: dict
+    """
     return _execute_api_call('common/get_valid_companies', *args, **kwargs).json()
 
 @api_command
 def get_valid_observables(*args, **kwargs):
+    """Get all of the valid observable types for this ACE ecosystem.
+
+    :return: result dictionary containing observables names and discription.
+    :rtype: dict
+    """
     return _execute_api_call('common/get_valid_observables', *args, **kwargs).json()
 
 @api_command
 def ping(*args, **kwargs):
+    """Connectivity check to the ACE ecosystem."""
     return _execute_api_call('common/ping', *args, **kwargs).json()
 
 def parse_submit(args):
+    # Utility funciton
     if args.event_time:
         # make sure the time is formatted correctly
         datetime.datetime.strptime(args.event_time, DATETIME_FORMAT)
@@ -231,7 +256,22 @@ def submit(
     tags=[],
     files=[],
     *args, **kwargs):
-    """Submit an analysis request to ACE."""
+    """Submit a request to ACE for analysis and/or correlation.
+    
+    :param str discription: A brief description of this analysis data (Why? What? How?).
+    :param str analysis_mode: (optional) The ACE mode this analysis should be put into. 'correlation' will force an alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
+    :param str tool: (optional) The "tool" that is submitting this analysis. Meant for distinguishing your custom hunters and detection tools. Default: 'ace_api'.
+    :param str tool_instance: (optional) The instance of the tool that is submitting this analysis.
+    :param str type: (optional) The type of analysis this is, kinda like the focus of the alert. Mainly used internally by some ACE modules. Default: 'generic'
+    :param datetime event_time: (optional) Assign a time to this analysis. Usually, the time associated to what ever event triggered this analysis creation. Default: now()
+    :param dict details: (optional) A dictionary of additional details to get added to the alert, think notes and comments.
+    :param list observables: (optional) A list of observables to add to the request.
+    :param list tags: (optional) If this request becomes an Alert, these tags will get added to it.
+    :param list files: (optional) A list of (file_name, file_descriptor) tuples to be included in this ACE request.
+    :return: A result dictionary. If submission was successful, the UUID of the analysis will be contained. Like this:
+        {'result': {'uuid': '960b0a0f-3ea2-465f-852f-ebccac6ae282'}}
+    :rtype: dict
+    """
 
     # make sure you passed in *something* for the description
     assert(description)
@@ -302,18 +342,35 @@ def submit(
 
 @api_command
 def resubmit_alert(uuid, *args, **kwargs):
+    """Resubmit an alert for analysis. This means the alert will be re-analyzed as-if it was new.
+
+    :param str uuid: The uuid of the alert to be resubmitted.
+    :return: A result dictionary (has 'result' key).
+    :rtype: dict
+    """
     return _execute_api_call('analysis/resubmit/{}'.format(uuid), *args, **kwargs).json()
 
 @api_command
 def get_analysis(uuid, *args, **kwargs):
+    """Get any analysis results.
+
+    :param str uuid: The UUID of the analysis request.
+    :return: Result dictionary containing any and all analysis results.
+    :rtype: dict
+    """
     return _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
 
 @api_command
 def get_analysis_details(uuid, name, *args, **kwargs):
+    # Get external details.
     return _execute_api_call('analysis/details/{}/{}'.format(uuid, name), *args, **kwargs).json()
 
 @api_command
 def get_analysis_file(uuid, name, output_file=None, output_fp=None, *args, **kwargs):
+    #Get a file from an analysis result.
+    # Coming back to this one
+    #:param str uuid: The UUID of the analysis.
+    #:param str name: The name or UUID of the file.
     if output_file is None and output_fp is None:
         output_fp = sys.stdout.buffer
     elif output_fp is None:
@@ -334,11 +391,20 @@ def get_analysis_file(uuid, name, output_file=None, output_fp=None, *args, **kwa
 
 @api_command
 def get_analysis_status(uuid, *args, **kwargs):
+    """Get the status of an analysis.
+
+    :param str uuid: The analysis UUID.
+    :return: Result dictionary
+    """
     return _execute_api_call('analysis/status/{}'.format(uuid), *args, **kwargs).json()
 
 @api_command
 def download(uuid, target_dir, *args, **kwargs):
-
+    """Download everything related to this uuid and write it to target_dir.
+    
+    :param str uuid: The ACE analysis/alert uuid.
+    :param str target_dir: The directory you want everything written to.
+    """ 
     if not os.path.isdir(target_dir):
         os.makedirs(target_dir)
 
@@ -366,7 +432,11 @@ def download(uuid, target_dir, *args, **kwargs):
 
 @api_command
 def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
-    
+    """Upload an ACE analysis/alert directory.
+
+    :param str uuid: A new UUID for ACE to use.
+    :param str source_dir: The directory to upload.
+    """
     if not os.path.isdir(source_dir):
         raise ValueError("{} is not a directory".format(source_dir))
 
@@ -392,11 +462,18 @@ def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
 
 @api_command
 def clear(uuid, lock_uuid, *args, **kwargs):
+    # Clear/Delete an analysis?
     return _execute_api_call('engine/clear/{}/{}'.format(uuid, lock_uuid), *args, **kwargs).status_code == 200
 
 @api_command
 def cloudphish_submit(url, reprocess=False, ignore_filters=False, context={}, *args, **kwargs):
+    """Submit a URL for Cloudphish to analyze.
 
+    :param str url: The URL
+    :param bool reprocess: (optional) If True, re-analyze the URL and ignore the cache.
+    :param bool ignore_filters: (optional) What?
+    :param dict context: (optional) Additional context to associated to the analysis.
+    """
     # make sure the following keys are not in the context
     for key in [ 'url', 'reprocess', 'ignore_filters' ]:
         if key in context:
@@ -414,6 +491,14 @@ def cloudphish_submit(url, reprocess=False, ignore_filters=False, context={}, *a
 
 @api_command
 def cloudphish_download(url=None, sha256=None, output_path=None, output_fp=None, *args, **kwargs):
+    """Download content from Cloudphish. 
+    Note: either the url OR the sha256 of the url is expected to passed.
+
+    :param str url: (optional) The url
+    :param str sha256: (optional) The sha256 of the url.
+    :param str output_path: (optional) The path to write the content. Default: stdout
+    :param str output_fp: (optional) a file handle/buffer to write the content. Default: stdout
+    """
     if url is None and sha256 is None:
         raise ValueError("you must supply either url or sha256 to cloudphish_download")
 
@@ -654,7 +739,8 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
         except Exception as e:
             logging.error("unable to submit {}: {}".format(target_path, e))
 
-if __name__ == '__main__':
+
+def main():
     import argparse
     parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
     subparsers = parser.add_subparsers(dest='cmd')
@@ -746,3 +832,6 @@ if __name__ == '__main__':
         if hasattr(e, 'response'):
             if hasattr(e.response, 'text'):
                 print(e.response.text)
+
+if __name__ == '__main__':
+    main()
