@@ -13,7 +13,7 @@ cat etc/failed_submission_directories | while read fail_dir
 do
     if [ -d $fail_dir ]
     then
-        python3 ace_api.py api-submit-failed-alerts \
+        http_proxy="" https_proxy="" python3 ace_api.py api-submit-failed-alerts \
             --remote-host $(ace config -v api.prefix) \
             --ssl-verification $(ace config -v SSL.ca_chain_path) \
             --fail-dir $fail_dir
