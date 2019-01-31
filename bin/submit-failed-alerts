@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+
+cd /opt/ace || exit 1
+source load_environment
+
+# if you use the Alert object in the ace_api.py to submit an alert and it fails
+# and save_on_fail is True then the Alert object gets serialized (pickled) into a subdirectory
+# inside whatever directory fail_dir is set to (defaults to .saq_alerts)
+
+# we keep a list of all these failed submission directories here
+cat etc/failed_submission_directories | while read fail_dir
+do
+    if [ -d $fail_dir ]
+    then
+        python3 ace_api.py api-submit-failed-alerts \
+            --remote-host $(ace config -v api.prefix) \
+            --ssl-verification $(ace config -v SSL.ca_chain_path) \
+            --fail-dir $fail_dir
+    fi
+done
