@@ -543,7 +543,20 @@ def cloudphish_clear_alert(url=None, sha256=None, *args, **kwargs):
 class AlertSubmitException(Exception):
     pass
 
-class Alert(object):
+class Analysis(object):
+    """A ACE Analysis object.
+
+    :param str discription: A brief description of this analysis data (Why? What? How?).
+    :param str analysis_mode: (optional) The ACE mode this analysis should be put into. 'correlation' will force an alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
+    :param str tool: (optional) The "tool" that is submitting this analysis. Meant for distinguishing your custom hunters and detection tools. Default: 'ace_api'.
+    :param str tool_instance: (optional) The instance of the tool that is submitting this analysis.
+    :param str type: (optional) The type of analysis this is, kinda like the focus of the alert. Mainly used internally by some ACE modules. Default: 'generic'
+    :param datetime event_time: (optional) Assign a time to this analysis. Usually, the time associated to what ever event triggered this analysis creation. Default: now()
+    :param dict details: (optional) A dictionary of additional details to get added to the alert, think notes and comments.
+    :param list observables: (optional) A list of observables to add to the request.
+    :param list tags: (optional) If this request becomes an Alert, these tags will get added to it.
+    :param list files: (optional) A list of (file_name, file_descriptor) tuples to be included in this ACE request.
+    """
     def __init__(self, *args, **kwargs):
         # these just get passed to ace_api.submit function
         self.submit_args = args
@@ -574,7 +587,10 @@ class Alert(object):
                 self.submit_kwargs['type'] = value
             else:
                 logging.debug("ignoring parameter {}".format(key))
-        
+
+        # to support add_file method while still supporting backwards compatibility of kwargs['files']
+        self.files = []
+
         # this gets set after a successful call to submit
         self.uuid = None
 
@@ -584,7 +600,7 @@ class Alert(object):
         self.ssl_verification = None
 
     def __str__(self):
-        return 'Alert({})'.format(self.submit_kwargs)
+        return 'Analysis({})'.format(self.submit_kwargs)
 
     @property
     def description(self):
@@ -594,6 +610,7 @@ class Alert(object):
         return None
 
     def add_tag(self, value):
+        """Add a tag to this Analysis."""
         self.submit_kwargs['tags'].append(value)
 
     def add_observable(self, o_type, o_value, o_time=None, is_suspect=False, directives=[]):
@@ -613,6 +630,24 @@ class Alert(object):
     def add_attachment_link(self, source_path, relative_storage_path):
         self.submit_kwargs['files'].append((source_path, relative_storage_path))
 
+    def add_file(self, filename, data_or_fp=None):
+        """Add a file to this analysis.
+
+        :param str filename: The name of the file. Assumed to be a valid path to the file if data_or_fp is None.
+        :param data_or_fp: (optional) A string or file pointer. 
+        :type data_or_fp: str or None or _io.TextIOWrapper or _io.BufferedReader 
+        """
+        if data_or_fp is None:
+            if not os.path.exists(filename):
+                logging.error("'{}' does not exist.".format(filename))
+                return False
+            _name = filename[:filename.rfind('/')]
+            self.files.append((_name, open(filename, 'rb')))
+            return True
+        else:
+            self.files.append((filename, data_or_fp))
+            return True
+
     def submit(self, uri=None, key=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
 
         if uri is None:
@@ -630,14 +665,15 @@ class Alert(object):
 
         kwargs = {}
         kwargs.update(self.submit_kwargs)
-        # currently kwargs['files'] is a tuple of (source_path, relative_storage_path)
+        # originally kwargs['files'] was a tuple of (source_path, relative_storage_path)
         # the file params should be a tuple of (remote_name, file descriptor)
         kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in kwargs['files']]
+        # account for files added with self.add_file
+        kwargs['files'].extend(self.files)
 
         try:
             result = submit(remote_host=remote_host, 
-                               # the old "api" didn't even use SSL so we just use the ACE default SSL cert location
-                               ssl_verification=ssl_verification if ssl_verification else '/opt/ace/ssl/ca-chain.cert.pem', 
+                               ssl_verification=ssl_verification, 
                                *self.submit_args, **kwargs)
 
             if 'result' in result:
@@ -702,6 +738,15 @@ class Alert(object):
                     fp.close()
                 except Exception as e:
                     logging.error("unable to close file descriptor for {}".format(file_name))
+
+
+class Alert(Analysis):
+    """To support backwards compatibility with old client lib."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # the old "api" didn't even use SSL so if this Alert class is used to submit the
+        # ACE default SSL cert location should be used rather than the OS's trusted certs
+        self.ssl_verification = '/opt/ace/ssl/ca-chain.cert.pem'
 
 @support_command
 def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq_alerts', delete_on_success=True, *args, **kwargs):
