@@ -10,25 +10,6 @@ cd "${SAQ_HOME}" || { echo "cannot cd to ${SAQ_HOME}"; exit 1; }
 
 rm -rf error_reports/* 2> /dev/null
 
-# make sure we're using the saq.unittest.ini config
-if [ ! -L etc/saq.ini ]
-then
-    echo "etc/saq.ini should be a symlink"
-    exit 1
-fi
-
-if [ "$(readlink etc/saq.ini)" != "saq.unittest.ini" ]
-then
-    echo "switching to saq.unittest.ini"
-    cp etc/saq.ini etc/saq.ini.saved
-    rm etc/saq.ini && ln -s saq.unittest.ini etc/saq.ini
-    if [ "$(readlink etc/saq.ini)" != "saq.unittest.ini" ]
-    then
-        echo "unable to set config"
-        exit 1
-    fi
-fi
-
 # clear logs
 if [ -e logs/unittest.log ]
 then
