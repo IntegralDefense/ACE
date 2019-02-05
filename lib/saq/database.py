@@ -4,6 +4,7 @@ import logging
 import shutil
 import sys
 import threading
+import time
 import uuid
 
 from contextlib import closing, contextmanager
@@ -53,6 +54,7 @@ def use_db(method=None, name=None):
             raise e.with_traceback(tb)
 
     return wrapper
+
 
 def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=False):
     """Executes the given SQL or function (and params) against the given cursor with
@@ -342,8 +344,10 @@ import logging
 import os.path
 from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum
 from sqlalchemy.dialects.mysql import BOOLEAN
-from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates, scoped_session
 from sqlalchemy.orm.exc import NoResultFound, DetachedInstanceError
+from sqlalchemy.sql.expression import Executable
 from sqlalchemy.orm.session import Session
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import and_, or_
@@ -353,6 +357,98 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 DatabaseSession = None
 Base = declarative_base()
+
+# if target is an executable, then *args is to session.execute function
+# if target is a callable, then *args is to the callable function (whatever that is)
+
+def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **kwargs):
+    """Executes the given targets, in order. If a deadlock condition is detected, the database session
+       is rolled back and the targets are executed in order, again. This can happen up to :param:attempts times
+       before the failure is raised as an exception.
+
+       :param targets Can be any of the following
+       * A function or callable.
+       * A list of functions or callables.
+       * A sqlalchemy.sql.expression.Executable object.
+       * A list of sqlalchemy.sql.expression.Executable objects.
+       :param session The session to use for the database operations. If not passed the the default session is used 
+       (see :meth:saq.db)
+       :param int attempts The maximum number of times the operations are tried before passing the exception on.
+       :param bool commit If set to True then the ``commit`` function is called on the session object before returning
+       from the function. If a deadlock occurs during the commit then further attempts are made.
+
+       In the case where targets are functions, session can be omitted, in which case :meth:saq.db is used to 
+       acquire a Session to use. When this is the case, the acquired Session object is passed as a keyword parameter
+       to the functions.
+
+       In the case where targets are executables, session cannot be omitted. The executables are passed to the
+       ``execute`` function of the Session object as if you had called ``session.execute(target)``.
+
+       :return This function returns the last operation in the list of targets."""
+
+    # if we don't pass in a session then we just grab the one available
+    # and pass it to the target function as the "session" argument
+    if session is None:
+        session = saq.db()
+        kwargs['session'] = session
+
+    if not isinstance(targets, list):
+        targets = [ targets ]
+
+    # this doesn't seem to work
+    #session.begin_nested()
+
+    current_attempt = 0
+    while True:
+        try:
+            last_result = None
+            for target in targets:
+                if isinstance(target, Executable) or isinstance(target, str):
+                    session.execute(target, *args, **kwargs)
+                elif callable(target):
+                    last_result = target(*args, **kwargs)
+
+            if commit:
+                session.commit()
+
+            return last_result
+
+        except DBAPIError as e:
+            # catch the deadlock error ids 1213 and 1205
+            # NOTE this is for MySQL only
+            if e.orig.args[0] == 1213 or e.orig.args[0] == 1205 and current_attempt < attempts:
+                logging.debug(f"DEADLOCK STATEMENT attempt #{current_attempt + 1} SQL {e.statement} PARAMS {e.params}")
+
+                try:
+                    session.rollback() # rolls back to the begin_nested()
+                except Exception as e:
+                    logging.error(f"unable to roll back transaction: {e}")
+                    report_exception()
+
+                    et, ei, tb = sys.exc_info()
+                    raise e.with_traceback(tb)
+
+                # ... and try again 
+                time.sleep(0.1) # ... after a bit
+                current_attempt += 1
+                continue
+
+            # otherwise we propagate the error
+            et, ei, tb = sys.exc_info()
+            raise e.with_traceback(tb)
+
+def retry_function_on_deadlock(function, *args, **kwargs):
+    assert callable(function)
+    return retry_on_deadlock(targets=function, *args, **kwargs)
+
+def retry_sql_on_deadlock(executable, *args, **kwargs):
+    assert isinstance(executable, Executable)
+    return retry_on_deadlock(targets=executable, *args, **kwargs)
+
+def retry_multi_sql_on_deadlock(executables, *args, **kwargs):
+    assert isinstance(executables, list)
+    assert all([isinstance(_, Executable) for _ in executables])
+    return retry_on_deadlock(targets=executables, *args, **kwargs)
 
 class User(UserMixin, Base):
 
@@ -850,6 +946,15 @@ class Alert(RootAnalysis, Base):
         nullable=False,
         default=False)
 
+    def archive(self, *args, **kwargs):
+        if self.archived:
+            logging.warning(f"called archive() on {self} but already archived")
+            return None
+
+        result = super().archive(*args, **kwargs)
+        self.archived = True
+        return result
+
     removal_user_id = Column(
         Integer,
         ForeignKey('users.id'),
@@ -1163,11 +1268,15 @@ WHERE
                 else:
                     raise e
 
+    def _save_to_database(self, session):
+        session.add(self)
+
     def sync(self):
         """Saves the Alert to disk and database."""
         assert self.storage_dir is not None # requires a valid storage_dir at this point
         assert isinstance(self.storage_dir, str)
 
+        # XXX is this check still required?
         # newly generated alerts will have a company_name but no company_id
         # we look that up here if we don't have it yet
         if self.company_name and not self.company_id:
@@ -1182,13 +1291,9 @@ WHERE
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
 
-        if self.id is None:
-            self.insert()
-
-        if self.id is None:
-            logging.error("unable to get the unique id of the alert")
-            return False
-
+        # save the alert to the database
+        saq.db.add(self)
+        retry_on_deadlock(saq.db.commit, session=saq.db())
         self.build_index()
 
         #try:
@@ -1223,31 +1328,6 @@ WHERE
             return False
 
         return True
-
-    def insert(self):
-        """Insert this Alert into the alerts database table. Sets the id property of this Alert and returns the id value."""
-        if self.id is not None:
-            return self.id
-
-        new_session = False
-        try:
-            # do we already have a session we're using?
-            session = Session.object_session(self)
-            if session is None:
-                session = DatabaseSession()
-                new_session = True
-
-            #self.priority = self.calculate_priority()
-            session.add(self)
-            session.commit()
-
-            #self.database_id = self.id
-            return self.id
-
-        finally:
-            # if we opened a new Sesion then we need to make sure we close it when we're done
-            if new_session:
-                session.close()
 
     #@track_execution_time
     #def sync_tracked_objects(self):
@@ -1927,6 +2007,7 @@ def initialize_database():
         **config[saq.CONFIG['global']['instance_type']].SQLALCHEMY_DATABASE_OPTIONS)
 
     DatabaseSession = sessionmaker(bind=engine)
+    saq.db = scoped_session(DatabaseSession)
 
 @use_db
 def initialize_node(db, c):

@@ -24,6 +24,10 @@ import pymysql.err
 
 class TestCase(ACEBasicTestCase):
 
+    def test_session(self):
+        from sqlalchemy.orm.session import Session
+        self.assertTrue(isinstance(saq.db(), Session))
+
     @use_db
     def test_execute_with_retry(self, db, c):
         # simple single statement transaction
@@ -202,17 +206,17 @@ class TestCase(ACEBasicTestCase):
         self.assertIsNotNone(alert.id)
         return alert
 
-    def test_database_000_connection(self):
+    def test_connection(self):
         with get_db_connection() as db:
             pass
 
         session = saq.database.DatabaseSession()
         self.assertIsNotNone(session)
 
-    def test_database_001_insert_alert(self):
+    def test_insert_alert(self):
         alert = self.insert_alert()
 
-    def test_database_002_lock(self):
+    def test_lock(self):
         alert = self.insert_alert()
 
         lock_uuid = acquire_lock(alert.uuid)
@@ -232,7 +236,7 @@ class TestCase(ACEBasicTestCase):
         self.assertTrue(alert.is_locked())
 
     #@unittest.skip("...")
-    def test_database_003_multiprocess_lock(self):
+    def test_multiprocess_lock(self):
         alert = self.insert_alert()
         sync0 = Event()
         sync1 = Event()
@@ -278,7 +282,7 @@ class TestCase(ACEBasicTestCase):
                 p.terminate()
                 p.join()
 
-    def test_database_003_expired(self):
+    def test_expired(self):
         # set locks to expire immediately
         saq.LOCK_TIMEOUT_SECONDS = 0
         alert = self.insert_alert()
@@ -290,7 +294,7 @@ class TestCase(ACEBasicTestCase):
         lock_uuid = acquire_lock(alert.uuid)
         self.assertTrue(lock_uuid)
 
-    def test_database_005_caching(self):
+    def test_caching(self):
         from saq.database import _cached_db_connections_enabled
 
         self.assertFalse(_cached_db_connections_enabled())
@@ -309,7 +313,7 @@ class TestCase(ACEBasicTestCase):
         self.assertEquals(len(saq.database._global_db_cache), 0)
         self.assertEquals(len(saq.database._use_cache_flags), 0)
 
-    def test_database_006_caching_threaded(self):
+    def test_caching_threaded(self):
         """Cached database connections for threads."""
         enable_cached_db_connections()
         e = threading.Event()
@@ -345,7 +349,7 @@ class TestCase(ACEBasicTestCase):
         disable_cached_db_connections()
         self.assertEquals(len(saq.database._global_db_cache), 0)
 
-    def test_database_007_caching_processes(self):
+    def test_caching_processes(self):
         """Cached database connections for processes."""
         enable_cached_db_connections()
         with get_db_connection() as conn_1:
@@ -401,3 +405,106 @@ class TestCase(ACEBasicTestCase):
         alert.sync()
 
         self.assertEquals(len(alert.description), 1024)
+
+    def test_retry_function_on_deadlock(self):
+
+        from saq.database import User, retry_function_on_deadlock
+
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("INSERT INTO users ( username, email ) VALUES ( 'user0', 'user0@localhost' )")
+            c.execute("INSERT INTO users ( username, email ) VALUES ( 'user1', 'user1@localhost' )")
+            db.commit()
+
+        lock_user0 = threading.Event()
+        lock_user1 = threading.Event()
+
+        def _t1(session):
+            # acquire lock on user0
+            session.execute(User.__table__.update().where(User.username == 'user0').values(email='user0@t1'))
+            lock_user0.set()
+            # wait for lock on user1
+            lock_user1.wait(5)
+            time.sleep(2)
+            # this should fire a deadlock
+            session.execute(User.__table__.update().where(User.username == 'user1').values(email='user1@t1'))
+            session.commit()
+
+        def _t2():
+            with get_db_connection() as db:
+                c = db.cursor()
+                lock_user0.wait(5)
+                # acquire lock on user1
+                c.execute("UPDATE users SET email = 'user1@t2' WHERE username = 'user1'")
+                lock_user1.set()
+                # this will block waiting for lock on user0
+                c.execute("UPDATE users SET email = 'user0@t2' WHERE username = 'user0'")
+                db.commit()
+
+        t1 = threading.Thread(target=retry_function_on_deadlock, args=(_t1,))
+        t1.start()
+        t2 = threading.Thread(target=_t2)
+        t2.start()
+
+        t1.join(5)
+        t2.join(5)
+
+        self.assertEquals(log_count('DEADLOCK STATEMENT'), 1)
+        self.assertIsNotNone(saq.db.query(User).filter(User.email == 'user0@t1', 
+                                                       User.username == 'user0').first())
+        self.assertIsNotNone(saq.db.query(User).filter(User.email == 'user1@t1', 
+                                                       User.username == 'user1').first())
+
+    def test_retry_sql_on_deadlock(self):
+
+        from saq.database import User, retry_sql_on_deadlock
+
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("INSERT INTO users ( username, email ) VALUES ( 'user0', 'user0@localhost' )")
+            c.execute("INSERT INTO users ( username, email ) VALUES ( 'user1', 'user1@localhost' )")
+            db.commit()
+
+        lock_user0 = threading.Event()
+        lock_user1 = threading.Event()
+
+        def _t1():
+            session = saq.db()
+            # acquire lock on user0
+            retry_sql_on_deadlock(User.__table__.update().where(User.username == 'user0')
+                                                         .values(email='user0@_t1'),
+                                  session=session)
+            lock_user0.set()
+            # wait for lock on user1
+            lock_user1.wait(5)
+            time.sleep(2)
+            # this should fire a deadlock
+            retry_sql_on_deadlock(User.__table__.update().where(User.username == 'user1')
+                                                         .values(email='user1@_t1'),
+                                  session=session,
+                                  commit=True)
+
+        def _t2():
+            with get_db_connection() as db:
+                c = db.cursor()
+                lock_user0.wait(5)
+                # acquire lock on user1
+                c.execute("UPDATE users SET email = 'user1@_t2' WHERE username = 'user1'")
+                lock_user1.set()
+                # this will block waiting for lock on user0
+                c.execute("UPDATE users SET email = 'user0@_t2' WHERE username = 'user0'")
+                db.commit()
+
+        t1 = threading.Thread(target=_t1)
+        t1.start()
+        t2 = threading.Thread(target=_t2)
+        t2.start()
+
+        t1.join(5)
+        t2.join(5)
+
+        self.assertEquals(log_count('DEADLOCK STATEMENT'), 1)
+        self.assertIsNotNone(saq.db.query(User).filter(User.email == 'user0@_t2', 
+                                                       User.username == 'user0').first())
+        self.assertIsNotNone(saq.db.query(User).filter(User.email == 'user1@_t1', 
+                                                       User.username == 'user1').first())

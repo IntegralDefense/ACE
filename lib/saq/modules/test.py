@@ -33,6 +33,9 @@ class BasicTestAnalysis(TestAnalysis):
     def initialize_details(self):
         self.details = { KEY_TEST_RESULT: True }
 
+    def generate_summary(self):
+        return "This is a summary."
+
 class BasicTestAnalyzer(AnalysisModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -135,14 +138,14 @@ class BasicTestAnalyzer(AnalysisModule):
         with open(path, 'w') as fp:
             fp.write("hello, world")
 
-        analysis.add_observable(F_FILE, path) # already relative
+        analysis.add_observable(F_FILE, 'test.txt') # already relative
 
         os.mkdir(os.path.join(self.root.storage_dir, 'subdir'))
         path = os.path.join(self.root.storage_dir, 'subdir', 'test2.txt')
         with open(path, 'w') as fp:
             fp.write("Hello, world, 2!")
     
-        analysis.add_observable(F_FILE, path)
+        analysis.add_observable(F_FILE, 'subdir/test2.txt')
         return True
 
     def execute_test_watched_file(self, test):
