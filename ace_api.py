@@ -609,12 +609,51 @@ class Analysis(object):
 
         return None
 
+    @property
+    def status(self):
+        """Return the human readable status of this Analysis."""
+        if self.uuid is None:
+            return "UNKNOWN: UUID is None. Not submitted?"
+        result = None
+        try:
+            result = get_analysis_status(self.uuid, remote_host=self.remote_host, ssl_verification=self.ssl_verification)
+        except requests.exceptions.HTTPError as e:
+            # UUID is not none, so ACE had to have received this analysis and then delete it after finding no detections
+            return "COMPLETE: No detections"
+        if 'result' not in result:
+            logging.error("Unexpected result when getting analysis status: {}".format(result))
+            return result
+        result = result['result']
+        if 'locks' in result and result['locks'] is not None:
+            return "ANALYZING"
+        if 'delayed_analysis' in result:
+            assert isinstance(result['delayed_analysis'], list)
+        if len(result['delayed_analysis']) > 0:
+            return "DELAYED"
+        if 'workload' in result and result['workload'] is not None:
+            return "NEW"
+        if 'alert' in result and result['alert'] is not None:
+            a = result['alert']
+            return "COMPLETE (Alerted with {} detections)".format(a['detection_count'])
+
+        return "UNKNOWN"
+
     def set_discription(self, description):
         self.submit_kwargs['description'] = description
+        return self
+
+    def set_remote_host(self, remote_host):
+        self.remote_host = remote_host
+        return self
+
+    def set_ssl_verification(self, ssl_verification):
+        self.ssl_verification = ssl_verification
+        return self
 
     def add_tag(self, value):
         """Add a tag to this Analysis."""
         self.submit_kwargs['tags'].append(value)
+        return self
 
     def add_observable(self, o_type, o_value, o_time=None, directives=[], limited_analysis=[], tags=[]):
         """Add an observable to this analysis.
@@ -641,27 +680,28 @@ class Analysis(object):
             o['tags'] = tags
 
         self.submit_kwargs['observables'].append(o)
+        return self
 
     def add_asset(self, value, *args, **kwargs):
         """Add a F_IPV4 identified to be a managed asset.
 
         :param str value: The value of the asset.
         """
-        self.add_observable('asset', value, *args, **kwargs)
+        return self.add_observable('asset', value, *args, **kwargs)
 
     def add_email_address(self, value, *args, **kwargs):
         """Add an email address observable.
 
         :param str value: An email address
         """
-        self.add_observable('email_address', value, *args, **kwargs) 
+        return self.add_observable('email_address', value, *args, **kwargs) 
 
     def add_email_conversation(self, value, *args, **kwargs):
         """Add a conversation between a source email address (MAIL FROM) and a destination email address (RCPT TO).
 
         :param str value: Email conversation formated like 'source_email_address|destination_email_address'
         """
-        self.add_observable('email_conversation', value, *args, **kwargs)
+        return self.add_observable('email_conversation', value, *args, **kwargs)
 
     def add_file(self, filename, data_or_fp=None, *args, **kwargs):
         """Add a file to this analysis.
@@ -673,43 +713,43 @@ class Analysis(object):
         if data_or_fp is None:
             if not os.path.exists(filename):
                 logging.error("'{}' does not exist.".format(filename))
-                return False
+                return self
             _name = filename[filename.rfind('/')+1:]
             self.submit_kwargs['files'].append((_name, open(filename, 'rb')))
             self.add_observable('file', _name, *args, **kwargs)
-            return True
+            return self
         else:
             self.submit_kwargs['files'].append((filename, data_or_fp))
             self.add_observable('file', filename, *args, **kwargs)
-            return True
+            return self
 
     def add_file_location(self, file_location, *args, **kwargs):
         """Add a file location observable. This is the path to a file on a specific hostname.
 
         :param str file_locaiton: The location of file with format hostname@full_path
         """
-        self.add_observable('file_location', file_location, *args, **kwargs)
+        return self.add_observable('file_location', file_location, *args, **kwargs)
 
     def add_file_name(self, file_name, *args, **kwargs):
         """A the name of a file as an observable. See add_file to add the file itself.
 
         :param str file_name: a file name (no directory path)
         """
-        self.add_observable('file_name', file_name, *args, **kwargs)
+        return self.add_observable('file_name', file_name, *args, **kwargs)
 
     def add_file_path(self, file_path, *args, **kwargs):
         """Add a file path.
 
         :param str file_path: The file path.
         """
-        self.add_observable('file_path', file_path, *args, **kwargs)
+        return self.add_observable('file_path', file_path, *args, **kwargs)
 
     def add_fqdn(self, fqdn, *args, **kwargs):
         """Add a fully qualified domain name observable.
 
         :param str fqdn: fully qualified domain name
         """
-        self.add_observable('fqdn', fqdn, *args, **kwargs)
+        return self.add_observable('fqdn', fqdn, *args, **kwargs)
 
 
     def add_hostname(self, hostname, *args, **kwargs):
@@ -717,7 +757,7 @@ class Analysis(object):
 
         :param str hostname: host or workstation name
         """
-        self.add_observable('hostname', hostname, *args, **kwargs)
+        return self.add_observable('hostname', hostname, *args, **kwargs)
 
 
     def add_indicator(self, indicator, *args, **kwargs):
@@ -725,14 +765,14 @@ class Analysis(object):
 
         :param str indicator: crits indicator object id
         """
-        self.add_observable('indicator', indicator, *args, **kwargs)
+        return self.add_observable('indicator', indicator, *args, **kwargs)
 
     def add_ipv4(self, ipv4, *args, **kwargs):
         """Add an IP address (version 4).
 
         :param str ipv4: IP address (version 4)
         """
-        self.add_observable('ipv4', ipv4, *args, **kwargs)
+        return self.add_observable('ipv4', ipv4, *args, **kwargs)
 
     def add_ipv4_conversation(self, ipv4_conversation, *args, **kwargs):
         """Add two IPV4 that were communicating.
@@ -740,77 +780,78 @@ class Analysis(object):
 
         :param str ipv4_conversation: Two IPV4 that were communicating. Formatted as 'aaa.bbb.ccc.ddd_aaa.bbb.ccc.ddd'
         """
-        self.add_observable('ipv4_conversation', ipv4_conversation, *args, **kwargs)
+        return self.add_observable('ipv4_conversation', ipv4_conversation, *args, **kwargs)
 
     def add_md5(self, md5_value, *args, **kwargs):
         """Add an MD5 hash.
 
         :param str md5_value: MD5 hash
         """
-        self.add_observable('md5', md5_value, *args, **kwargs)
+        return self.add_observable('md5', md5_value, *args, **kwargs)
 
     def add_message_id(self, message_id, *args, **kwargs):
         """Add an email Message-ID.
 
         :param str message_id: The email Message-ID
         """
-        self.add_observable('message_id', message_id, *args, **kwargs)
+        return self.add_observable('message_id', message_id, *args, **kwargs)
 
     def add_process_guid(self, guid, *args, **kwargs):
         """Add a CarbonBlack Response global process identifier.
 
         :param str guid: The Cb Response global process identifier
         """
-        self.add_observable('process_guid', guid, *args, **kwargs)
+        return self.add_observable('process_guid', guid, *args, **kwargs)
 
     def add_sha1(self, sha1, *args, **kwargs):
         """Add a SHA1 hash.
 
         :param str sha1: SHA1 hash
         """
-        self.add_observable('sha1', sha1, *args, **kwargs)
+        return self.add_observable('sha1', sha1, *args, **kwargs)
 
     def add_sha256(self, sha256, *args, **kwargs):
         """Add a SHA256 hash.
 
         :param str sha256: SHA256 hash
         """
-        self.add_observable('sha256', sha256, *args, **kwargs)
+        return self.add_observable('sha256', sha256, *args, **kwargs)
 
     def add_snort_sig(self, snort_sig, *args, **kwargs):
         """Add snort signature ID.
 
         :param str snort_sig: A snort signature ID
         """
-        self.add_observable('snort_sig', snort_sig, *args, **kwargs)
+        return self.add_observable('snort_sig', snort_sig, *args, **kwargs)
 
     def add_test(self, test, *args, **kwargs):
         # unittesting observable #
-        self.add_observable('test', test, *args, **kwargs)
+        return self.add_observable('test', test, *args, **kwargs)
 
     def add_url(self, url, *args, **kwargs):
         """Add a URL
 
         :param str url: The URL
         """
-        self.add_observable('url', url, *args, **kwargs)
+        return self.add_observable('url', url, *args, **kwargs)
 
     def add_user(self, user, *args, **kwargs):
         """Add a user observable to this analysis. Most support is arount NT an user ID. 
 
         :param str user: The user ID/name to add.
         """
-        self.add_observable('user', user, *args, **kwargs)
+        return self.add_observable('user', user, *args, **kwargs)
 
     def add_yara_rule(self, yara_rule, *args, **kwargs):
         """Add the name of a yara rule.
 
         :param str yara_rule: The name of the rule
         """
-        self.add_observable('yara_rule', yara_rule, *args, **kwargs)
+        return self.add_observable('yara_rule', yara_rule, *args, **kwargs)
 
     def add_attachment_link(self, source_path, relative_storage_path):
         self.submit_kwargs['files'].append((source_path, relative_storage_path))
+        return self
 
     def submit(self, remote_host=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
         """Submit this Analysis object to ACE.
@@ -836,7 +877,7 @@ class Analysis(object):
                 if 'uuid' in result['result']:
                     self.uuid = result['result']['uuid']
 
-            return self.uuid
+            return self
 
         except Exception as submission_error:
             logging.warning("unable to submit alert {}: {} (attempting to save alert to {})".format(
