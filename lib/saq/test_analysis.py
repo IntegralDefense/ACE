@@ -39,7 +39,7 @@ class JSONSeralizerTestCase(ACEBasicTestCase):
 
 
 class RootAnalysisTestCase(ACEBasicTestCase):
-    def test_analysis_000_create(self):
+    def test_create(self):
         root = create_root_analysis()
         root.initialize_storage()
         # make sure the defaults are what we expect them to be
@@ -51,19 +51,19 @@ class RootAnalysisTestCase(ACEBasicTestCase):
         self.assertEquals(root.company_id, saq.CONFIG['global'].getint('company_id'))
         self.assertEquals(root.company_name, saq.CONFIG['global']['company_name'])
 
-    def test_analysis_001_save(self):
+    def test_save(self):
         root = create_root_analysis()
         root.initialize_storage()
         root.save()
 
-    def test_analysis_002_load(self):
+    def test_load(self):
         root = create_root_analysis()
         root.initialize_storage()
         root.save()
         root.load()
 
     @track_io
-    def test_analysis_003_io_count(self):
+    def test_io_count(self):
         root = create_root_analysis()
         root.initialize_storage()
         root.save()
@@ -74,7 +74,7 @@ class RootAnalysisTestCase(ACEBasicTestCase):
         # and then one read
         self.assertEquals(_get_io_read_count(), 1)
 
-    def test_analysis_004_has_observable(self):
+    def test_has_observable(self):
         root = create_root_analysis()
         root.initialize_storage()
         o_uuid = root.add_observable(F_TEST, 'test').id
@@ -83,3 +83,20 @@ class RootAnalysisTestCase(ACEBasicTestCase):
         self.assertTrue(root.has_observable(create_observable(F_TEST, 'test')))
         self.assertFalse(root.has_observable(create_observable(F_TEST, 't3st')))
 
+    def test_find_observables(self):
+        root = create_root_analysis()
+        root.initialize_storage()
+
+        o1 = root.add_observable(F_TEST, 'test_1')
+        o2 = root.add_observable(F_TEST, 'test_2')
+        o_all = sorted([o1, o2])
+
+        # search by type, single observable
+        self.assertTrue(root.find_observable(F_TEST).id in [ o.id for o in o_all])
+        # search by type, multi observable
+        self.assertEquals(sorted(root.find_observables(F_TEST)), o_all)
+
+        # search by lambda, single observable
+        self.assertTrue(root.find_observable(lambda o: o.type == F_TEST).id in [ o.id for o in o_all])
+        # search by lambda, multi observable
+        self.assertEquals(sorted(root.find_observables(lambda o: o.type == F_TEST)), o_all)
