@@ -1686,41 +1686,37 @@ def archive_alerts(args):
             logging.error("storage directory {} does not exist".format(storage_dir))
             continue
 
-        session = None
-
-        # try to load it from the database first
-        try:
-            session = DatabaseSession()
-            root = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
-            logging.info("loaded {} from database".format(storage_dir))
-        except:
-            root = RootAnalysis()
-            root.storage_dir = storage_dir
-        finally:
-            if session:
-                session.close()
+        alert = saq.db.session.query(Alert).filter(Alert.storage_dir==storage_dir).first()
+        if alert is None:
+            logging.warning(f"cannot find alert with storage_dir {storage_dir}")
+            continue
 
         try:
-            root.load()
+            alert.load()
         except Exception as e:
             logging.error("unable to load {}: {}".format(root.storage_dir, e))
             continue
 
-        root.archive()
-        root.save()
+        alert.archive()
+        alert.save()
 
         # mark the alert as archived
-        try:
-            session = DatabaseSession()
-            root = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
-            root.archived = True
-            session.add(root)
-            session.commit()
-        except Exception as e:
-            logging.error("unable to mark alert {} as archived: {}".format(root, e))
-        finally:
-            if session:
-                session.close()
+        #try:
+            #saq.db.session.execute(Alert.__table__.update().where(Alert.storage_dir==storage_dir).values(
+                #Alert.archived = True))
+            #saq.db.session.commit()
+
+            #session = DatabaseSession()
+            #root = saq.db.session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
+            #root.archived = True
+            #saq.db.session.add(root)
+            #saq.db.session.commit()
+
+        #except Exception as e:
+            #logging.error("unable to mark alert {} as archived: {}".format(root, e))
+        #finally:
+            #if session:
+                #session.close()
 
 # reset-alerts
 reset_alert_parser = subparsers.add_parser('archive-alerts',
