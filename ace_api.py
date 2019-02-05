@@ -726,13 +726,6 @@ class Analysis(object):
         """
         self.add_observable('hostname', hostname, *args, **kwargs)
 
-    #def add_http_request(self, http_request, *args, **kwargs):
-        """Add a single HTTP request.
-
-        :param str http_request: XXX NOTE XXX
-        """
-        #self.add_observable('http_request', http_request, *args, **kwargs)
-
 
     def add_indicator(self, indicator, *args, **kwargs):
         """Add a CRITS indicator object id.
