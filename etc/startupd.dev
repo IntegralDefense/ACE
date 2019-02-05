@@ -1,0 +1,14 @@
+# the services will be started in the following order
+# (and then stopped in reverse order)
+# comment out the services you don't want to use
+# engine		logging config
+
+carbon-black		carbon_black_logging.ini
+cb-binary-collector	cb_collector_logging.ini
+correlation-engine	ace_logging.ini
+email-collector		email_collection_logging.ini
+bro-http-collector	http_collector_logging.ini
+network-semaphore	network_semaphore_logging.ini
+bro-smtp-collector	smtp_collector_logging.ini
+start-gui		gui_logging.ini
+start-api		api_logging.ini

@@ -1,6 +1,16 @@
 ACE API
 =======
 
+Python Library
+--------------
+
+A python library exits for intereacting with the ACE API. You can install it wil pip: ``pip3 install ace_api``.
+
+.. automodule:: ace_api 
+    :members:
+    :inherited-members:
+
+
 Common API
 ----------
 
@@ -8,7 +18,7 @@ Alert API
 ---------
 
 submit
-~~~~~
+~~~~~~
 Submits a new alert to ACE. These go directly into the correlation engine for
 analysis and show up to analysts as alerts.
 
