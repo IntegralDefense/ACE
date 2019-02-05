@@ -649,13 +649,6 @@ class Analysis(object):
         """
         self.add_observable('asset', value, *args, **kwargs)
 
-    def add_cidr(self, value, *args, **kwargs):
-        """Add a IPv4 range in CIDR notation.
-
-        :param str value: IPv4 in CIDR notation
-        """
-        self.add_observable('cidr', value, *args, **kwargs)
-
     def add_email_address(self, value, *args, **kwargs):
         """Add an email address observable.
 
@@ -818,25 +811,6 @@ class Analysis(object):
 
     def add_attachment_link(self, source_path, relative_storage_path):
         self.submit_kwargs['files'].append((source_path, relative_storage_path))
-
-    def add_file(self, filename, data_or_fp=None):
-        """Add a file to this analysis.
-
-        :param str filename: The name of the file. Assumed to be a valid path to the file if data_or_fp is None.
-        :param data_or_fp: (optional) A string or file pointer. 
-        :type data_or_fp: str or None or _io.TextIOWrapper or _io.BufferedReader 
-        """
-        if data_or_fp is None:
-            if not os.path.exists(filename):
-                logging.error("'{}' does not exist.".format(filename))
-                return False
-            _name = filename[filename.rfind('/')+1:]
-            print(_name)
-            self.submit_kwargs['files'].append((_name, open(filename, 'rb')))
-            return True
-        else:
-            self.submit_kwargs['files'].append((filename, data_or_fp))
-            return True
 
     def submit(self, remote_host=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
         """Submit this Analysis object to ACE.
