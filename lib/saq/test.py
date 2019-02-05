@@ -298,7 +298,7 @@ def initialize_test_environment():
     import saq
     saq.initialize(saq_home=saq_home, config_paths=[], 
                    logging_config_path=os.path.join(saq_home, 'etc', 'unittest_logging.ini'), 
-                   args=None, relative_dir=None)
+                   args=None, relative_dir=None, unittest=True)
 
     if saq.CONFIG['global']['instance_type'] not in [ 'PRODUCTION', 'QA', 'DEV' ]:
         sys.stderr.write('\n\n *** CRITICAL ERROR *** \n\ninvalid instance_type setting in configuration\n')

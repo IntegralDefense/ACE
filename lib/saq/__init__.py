@@ -153,7 +153,7 @@ def set_node(name):
         SAQ_NODE_ID = None
         initialize_node()
 
-def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=None, relative_dir=None):
+def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=None, relative_dir=None, unittest=False):
 
     from saq.database import initialize_database, initialize_node
 
@@ -312,6 +312,11 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     # if $SAQ_HOME/etc/saq.ini exists then we use that as the last config if it's not already specified
     default_config_path = os.path.join(SAQ_HOME, 'etc', 'saq.ini')
+
+    # use unit test config if we are running a unit test
+    if unittest:
+        default_config_path = os.path.join(SAQ_HOME, 'etc', 'saq.unittest.ini')
+
     if os.path.exists(default_config_path):
         if default_config_path not in CONFIG_PATHS:
             CONFIG_PATHS.append(default_config_path)
