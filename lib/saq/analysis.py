@@ -918,17 +918,39 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
 
         return result[0]
 
-    def find_observable(self, func):
-        """Returns the first observable where func(observable) returns True, or None if none are found."""
-        for observable in self.observables:
-            if func(observable):
-                return observable
+    def find_observable(self, criteria):
+        """Returns the first observable that matches the criteria, or None if nothing is found.
 
-        return None
+           param:criteria Must be one of the following:
+           * a callable that takes a single :class:`Observable` as a parameter and returns a boolean
+           * an indicator type (str)
 
-    def find_observables(self, func):
-        """Returns all observables where func(observable) returns True."""
-        return [o for o in self.observables if func(o)]
+           return: the first observable that matches the criteria, or None if nothing is found."""
+
+        return self._find_observables(criteria, self.observables, single=True)
+
+    def find_observables(self, criteria):
+        """Same as :meth:`find_observable` but returns all observables found that match the criteria."""
+        return self._find_observables(criteria, self.observables, single=False)
+
+    def _find_observables(self, criteria, target_list, single=False):
+        result = []
+        for observable in target_list:
+            if callable(criteria):
+                if criteria(observable):
+                    if single:
+                        return observable
+                    result.append(observable)
+            else:
+                if observable.type == criteria:
+                    if single:
+                        return observable
+                    result.append(observable)
+
+        if single:
+            return None
+
+        return result
 
     @property
     def files(self):
@@ -1693,7 +1715,16 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
 
     def get_analysis(self, analysis_type):
         """Returns the Analysis object for the given type of analysis, or None if it does not exist (yet).
-           analysis_type can either be the type of the Analysis to get or str(type(Analysis))"""
+           :param analysis_type: Can be any of the following types of values.
+           * (type) a literal :class:`Analysis` based type
+           * (str) a string format of the Analysis based type (example: "<class 'saq.modules.email.EmailAnalysis'>")
+           * (str) a string of the name of the Analysis class (example: EmailAnalysis)
+    
+           :return: 
+           * The :class:`Analysis` that was added for this :class:`Observable` or
+           * False if the analysis was not performed (or was skipped) or
+           * None if the analysis is not available (was not loaded at the time of analysis.)
+        """
         assert isinstance(analysis_type, type) or isinstance(analysis_type, str)
 
         if isinstance(analysis_type, type):
@@ -1701,16 +1732,13 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
                 return self.analysis[MODULE_PATH(analysis_type)]
             except KeyError:
                 return None
-        else:
-            # str(type(Analysis)) will end up looking like this: <class 'saq.modules.test.BasicTestAnalysis'>
-            # where the keys in self.analysis look like this: saq.modules.test:BasicTestAnalysis
-            # (I do not remember why it's like that)
-            # so we translate the first into the second
-            m = CLASS_STRING_REGEX.match(analysis_type)
-            if m is None:
-                raise ValueError("invalid value {} passed to get_analysis (expecting str(type(Analysis)))".format(
-                                 analysis_type))
 
+        # str(type(Analysis)) will end up looking like this: <class 'saq.modules.test.BasicTestAnalysis'>
+        # where the keys in self.analysis look like this: saq.modules.test:BasicTestAnalysis
+        # (I do not remember why it's like that)
+        # so we translate the first into the second
+        m = CLASS_STRING_REGEX.match(analysis_type)
+        if m:
             class_path = m.group(1)
             class_path_rw = list(class_path)
             
@@ -1721,11 +1749,13 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
                 return self.analysis[class_path]
             except KeyError:
                 return None
-            
-            #for a in self.analysis.values():
-                #if str(type(a)) == analysis_type:
-                    #return a
 
+        # otherwise we passed the name of the class
+        for analysis_key in self.analysis.keys():
+            if analysis_key.endswith(f':{analysis_type}'):
+                return self.analysis[analysis_key]
+
+        logging.debug(f"request for unknown analysis_type {analysis_type} for {self}")
         return None
 
     def analysis_exists(self, analysis_type):
@@ -3081,13 +3111,11 @@ class RootAnalysis(Analysis):
 
     def archive(self):
         """Removes the details of analysis and external files.  Keeps observables and tags."""
-
         from subprocess import Popen
 
         logging.info("archiving {}".format(self))
 
         # NOTE that we do not clear the details that came with Alert
-
         # clear external details storage for all analysis (except self)
         for _analysis in self.all_analysis:
             if _analysis is self:
@@ -3205,17 +3233,11 @@ class RootAnalysis(Analysis):
         """Returns the list of Observables that match the given type."""
         return [o for o in self.all_observables if o.type == o_type]
 
-    def find_observable(self, func):
-        """Returns the first observable where func(observable) returns True, or None if none are found."""
-        for observable in self.all_observables:
-            if func(observable):
-                return observable
+    def find_observable(self, criteria):
+        return self._find_observables(criteria, self.all_observables, single=True)
 
-        return None
-
-    def find_observables(self, func):
-        """Returns all observables where func(observable) returns True."""
-        return [o for o in self.all_observables if func(o)]
+    def find_observables(self, criteria):
+        return self._find_observables(criteria, self.all_observables, single=False)
 
     @property
     def all(self):

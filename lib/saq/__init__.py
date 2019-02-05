@@ -31,6 +31,11 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 # local timezone
 LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
 
+# the global sqlalchemy.orm.scoped_session object
+# this object is used to get Session objects by ACE throughout the application
+# except for the WSGI app which uses Flask
+db = None # (see saq.database.initialize_database)
+
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -276,7 +281,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     # so we specify what directory we'd *want* to be running out of here (even if we're not actually)
     # this only matters when loading alerts
     # this defaults to the current working directory
-    SAQ_RELATIVE_DIR = os.getcwd()
+    SAQ_RELATIVE_DIR = os.path.relpath(os.getcwd(), start=SAQ_HOME)
     if relative_dir:
         SAQ_RELATIVE_DIR = relative_dir
 
@@ -425,7 +430,10 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
 
     # log all SQL commands if we are running in debug mode
     if CONFIG['global'].getboolean('log_sql'):
-        logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+        logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+        #logging.getLogger('sqlalchemy.dialects').setLevel(logging.DEBUG)
+        #logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
+        #logging.getLogger('sqlalchemy.orm').setLevel(logging.DEBUG)
 
     # some settings can be set to PROMPT
     for section in CONFIG.sections():
