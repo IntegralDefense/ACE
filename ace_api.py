@@ -640,10 +640,10 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
             kwargs = {}
             if remote_host is not None:
                 kwargs['uri'] = 'https://{}'.format(remote_host)
+                logging.info("submitting {} to {}".format(target_path, kwargs['uri']))
             if ssl_verification is not None:
                 kwargs['ssl_verification'] = ssl_verification
 
-            #logging.info("submitting {} to {}".format(target_path, kwargs['uri']))
             alert.submit(save_on_fail=False, **kwargs)
 
             if delete_on_success:

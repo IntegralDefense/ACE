@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#
+
+# this script is to be executed when the systems start up
+if [ -z "$SAQ_HOME" ]
+then
+    export SAQ_HOME=/opt/ace
+fi
+
+# when services run, daemon files are created that store their pid
+# when the system reboots we need to make sure these files are deleted
+find "$SAQ_HOME/data/var/daemon" -type f -delete
