@@ -2546,82 +2546,31 @@ crits_activity_sync_parsers.add_argument('-d','--number-days-to-sync',dest='numd
     help="Number of days in the past to sync activity to CRITS, default is previous day")
 crits_activity_sync_parsers.set_defaults(func=crits_activity_sync)
 
+def interactive_console(args):
+    import pdb
+    pdb.set_trace()
+    sys.exit(0)
+
+interactive_console_parser = subparsers.add_parser('interactive-console',
+    help="Drop into the REPL after initialization of ACE.")
+interactive_console_parser.set_defaults(func=interactive_console)
 
 def cleanup_alerts(args):
     """Performs system maintenance.  This is meant to be called from a cron job."""
-    import saq
-    from saq.constants import DISPOSITION_FALSE_POSITIVE, DISPOSITION_IGNORE
-    from saq.database import Alert, DatabaseSession
-
-    ignore_days = saq.CONFIG['global'].getint('ignore_days')
-    fp_days = saq.CONFIG['global'].getint('fp_days')
-    if args.days_old:
-        ignore_days = fp_days = int(args.days_old)
-
-    # delete alerts dispositioned as IGNORE and older than N days
-    session = DatabaseSession()
-    alerts = session.query(Alert).filter(
-        Alert.location == saq.CONFIG['global']['node'],
-        Alert.disposition == DISPOSITION_IGNORE,
-        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=ignore_days)).all()
-
-    session.commit()
-
-    if args.dry_run:
-        logging.info("{} ignored alerts would be deleted".format(len(alerts)))
-    else:
-        for alert in alerts:
-            # delete the files backing the alert
-            try:
-                target_path = os.path.join(saq.SAQ_HOME, alert.storage_dir)
-                logging.info("deleting files {}".format(target_path))
-                shutil.rmtree(target_path)
-            except Exception as e:
-                logging.error("unable to delete alert storage directory {0}: {1}".format(alert.storage_dir, str(e)))
-
-            # delete the alert from the database
-            logging.info("deleting database entry {}".format(alert))
-            query = Alert.__table__.delete().where(Alert.id == alert.id)
-            session.execute(query)
-
-        session.commit()
-
-    # reset alerts dispositioned as False Positive older than N days
-    session = DatabaseSession()
-    alerts = session.query(Alert).filter(
-        Alert.location == saq.CONFIG['global']['node'],
-        Alert.archived == False,
-        Alert.disposition == DISPOSITION_FALSE_POSITIVE,
-        Alert.disposition_time < datetime.datetime.now() - datetime.timedelta(days=fp_days)).all()
-    
-    if args.dry_run:
-        logging.info("{} fp alerts would be archived".format(len(alerts)))
-    else:
-        for alert in alerts:
-            logging.info("resetting false positive {}".format(alert))
-            try:
-                alert.load()
-            except Exception as e:
-                logging.error("unable to load {}: {}".format(alert, e))
-                continue
-
-            alert.archive()
-            alert.save()
-
-            # mark the alert as "archived"
-            alert.archived = True
-            session.add(alert)
-            
-        session.commit()
-
+    from saq.util.maintenance import cleanup_alerts
+    cleanup_alerts(fp_days_old=args.fp_days_old, 
+                   ignore_days_old=args.ignore_days_old,
+                   dry_run=args.dry_run)
     sys.exit(0)
 
 cleanup_alerts_parsers = subparsers.add_parser('cleanup-alerts',
     help="Removes alerts dispositioned as ignore or false positive and older than some amount of time.")
 cleanup_alerts_parsers.add_argument('--dry-run', required=False, dest='dry_run', default=False, action='store_true',
     help="Just report how many would be deleted and archived.")
-cleanup_alerts_parsers.add_argument('-d', '--days-old', required=False, dest='days_old', default=None, action='store',
-    help='specify how many days old an alert should be for it to be deleted')
+cleanup_alerts_parsers.add_argument('--fp-days-old', type=int, required=False, dest='fp_days_old', default=None, action='store',
+    help='Specify how many days old an alert dispositioned as FALSE_POSITIVE should be for it to be archived.')
+cleanup_alerts_parsers.add_argument('--ignore-days-old', type=int, required=False, dest='ignore_days_old', default=None, action='store',
+    help='Specify how many days old an alert dispositioned as IGNORE should be for it to be deleted.')
 #cleanup_alerts_parsers.add_argument('--force-delete', required=False, dest='force_delete', default=None, action='store_true',
     #help='force delete fp alerts instead of archiving them')
 cleanup_alerts_parsers.set_defaults(func=cleanup_alerts)

@@ -2331,3 +2331,59 @@ class TestCase(ACEEngineTestCase):
         additional_file_observable = alert.get_observable(additional_file_observable.id)
         # but the one that was added during analysis should NOT be there
         self.assertFalse(additional_file_observable.exists)
+
+    def test_cleanup(self):
+        
+        from saq.constants import DISPOSITION_FALSE_POSITIVE
+        from saq.database import Alert
+        from saq.util.maintenance import cleanup_alerts
+        
+        fp_root = create_root_analysis(analysis_mode='test_single', uuid=str(uuid.uuid4()))
+        fp_root.initialize_storage()
+        test_observable = fp_root.add_observable(F_TEST, 'test_detection')
+        fp_root.save()
+        fp_root.schedule()
+
+        ignore_root = create_root_analysis(analysis_mode='test_single', uuid=str(uuid.uuid4()))
+        ignore_root.initialize_storage()
+        test_observable = ignore_root.add_observable(F_TEST, 'test_detection')
+        ignore_root.save()
+        ignore_root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_basic_test', 'test_single')
+        engine.enable_module('analysis_module_detection', 'test_single')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        alert = saq.db.query(Alert).filter(Alert.uuid==fp_root.uuid).one()
+        alert.load()
+
+        # we'll set the time of the disposition to one day past the configured limit
+        alert.disposition = DISPOSITION_FALSE_POSITIVE
+        alert.disposition_time = datetime.datetime.now() - datetime.timedelta(days=saq.CONFIG['global'].getint('fp_days') + 1)
+        alert.sync()
+
+        alert = saq.db.query(Alert).filter(Alert.uuid==ignore_root.uuid).one()
+        alert.load()
+
+        # we'll set the time of the disposition to one day past the configured limit
+        alert.disposition = DISPOSITION_IGNORE
+        alert.disposition_time = datetime.datetime.now() - datetime.timedelta(days=saq.CONFIG['global'].getint('ignore_days') + 1)
+        alert.sync()
+    
+        saq.db.close()
+
+        # calling cleanup will cause the alert to get archived
+        cleanup_alerts()
+
+        saq.db.close()
+        
+        # now this alert should be archived
+        alert = saq.db.query(Alert).filter(Alert.uuid == fp_root.uuid).one()
+        self.assertTrue(alert.archived)
+
+        # and this alert should be gone
+        self.assertIsNone(saq.db.query(Alert).filter(Alert.uuid == ignore_root.uuid).first())
+        self.assertFalse(os.path.exists(ignore_root.storage_dir))
