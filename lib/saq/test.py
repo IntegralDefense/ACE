@@ -562,6 +562,20 @@ class ACEBasicTestCase(TestCase):
         self.reset_correlation()
         self.reset_email_archive()
         self.reset_crawlphish()
+        self.reset_log_exports()
+
+    def reset_log_exports(self):
+        # reset splunk export logs
+        splunk_log_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['splunk_logging']['splunk_log_dir'])
+        if os.path.isdir(splunk_log_dir):
+            shutil.rmtree(splunk_log_dir)
+            os.mkdir(splunk_log_dir)
+
+        # reset es export logs
+        es_log_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['elk_logging']['elk_log_dir'])
+        if os.path.isdir(es_log_dir):
+            shutil.rmtree(es_log_dir)
+            os.mkdir(es_log_dir)
 
     def reset_crawlphish(self):
         self.whitelist_path = saq.CONFIG['analysis_module_crawlphish']['whitelist_path'] \
