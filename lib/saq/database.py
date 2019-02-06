@@ -1292,8 +1292,12 @@ WHERE
         self.detection_count = len(self.all_detection_points)
 
         # save the alert to the database
-        saq.db.add(self)
-        retry_on_deadlock(saq.db.commit, session=saq.db())
+        session = Session.object_session(self)
+        if session is None:
+            session = saq.db()
+        
+        session.add(self)
+        retry_on_deadlock(session.commit, session=session)
         self.build_index()
 
         #try:

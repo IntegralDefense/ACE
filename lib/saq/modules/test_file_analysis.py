@@ -722,7 +722,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
     def test_file_analysis_005_office_file_archiver_000_archive(self):
 
         # clear existing archive dir
-        target_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_office_file_archiver']['office_archive_dir'])
+        target_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['analysis_module_office_file_archiver']['office_archive_dir'])
         try:
             if os.path.isdir(target_dir):
                 shutil.rmtree(target_dir)
