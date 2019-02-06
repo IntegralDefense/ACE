@@ -3953,7 +3953,7 @@ def remediate_emails():
 
                 # use body_to field as recipient if there is no env_to field
                 if field == 'body_to' and targets[archive_id].recipient is None:
-                    targets[archive_id].recipient = value
+                    targets[archive_id].recipient = value.decode(errors='ignore')
 
     # targets acquired -- perform the remediation or restoration
     params = [ ] # of tuples of ( message-id, email_address )
@@ -4005,6 +4005,7 @@ def remediate_emails():
     for key in targets.keys():
         targets[key] = targets[key].json
     
-    response = make_response(json.dumps(targets))
+    from saq.analysis import _JSONEncoder
+    response = make_response(json.dumps(targets, cls=_JSONEncoder))
     response.mimetype = 'application/json'
     return response
