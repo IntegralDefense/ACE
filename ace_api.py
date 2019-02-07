@@ -881,7 +881,7 @@ class Analysis(object):
             if remote_host.startswith('http'):
                 from urllib.parse import urlparse
                 parsed_url = urlparse(remote_host)
-                logging.warn(f"remote_host in legacy format. Attempting to correct from '{remote_host}' to '{parsed_url.netloc}'")
+                logging.warn("remote_host in legacy format. Attempting to correct from '{}' to '{}'".format(remote_host, parsed_url.netloc))
                 remote_host = parsed_url.netloc
         else:
             remote_host = self.remote_host
