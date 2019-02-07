@@ -361,6 +361,8 @@ class TestCase(ACEEngineTestCase):
         self.assertTrue('workload' in result)
         self.assertTrue('delayed_analysis' in result)
         self.assertTrue('locks' in result)
+        self.assertTrue('alert' in result)
+        self.assertEquals(result['alert'], None)
         self.assertEquals(result['delayed_analysis'], [])
         self.assertIsNone(result['locks'])
         self.assertTrue(isinstance(result['workload']['id'], int))
