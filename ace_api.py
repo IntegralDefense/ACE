@@ -604,7 +604,6 @@ class Analysis(object):
         for file_name, fp in self.submit_kwargs['files']:
             try:
                 fp.close()
-                logging.debug(f'Closed {fp}')
             except:
                 pass
 
@@ -1028,11 +1027,13 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
             if ssl_verification is not None:
                 kwargs['ssl_verification'] = ssl_verification
 
-            # we need to open file handles for the Analysis class
-            # because they are saved a tuple of (source_path, relative_storage_path) on fail
-            if isinstance(alert, Analysis):
+            if isinstance(alert, Alert):
+                alert.submit(save_on_fail=False, **kwargs)
+            elif isinstance(alert, Analysis):
+                # we need to open file handles for the Analysis class
+                # because they are saved a tuple of (source_path, relative_storage_path) on fail
                 alert.submit_kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in alert.submit_kwargs['files']]
-            alert.submit(save_on_fail=False, **kwargs)
+                alert.submit(save_on_fail=False, **kwargs)
 
             if delete_on_success:
                 try:
