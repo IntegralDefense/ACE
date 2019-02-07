@@ -1538,9 +1538,6 @@ class EmailAnalyzer(AnalysisModule):
 
                 if extracted_file: 
                     extracted_file.add_directive(DIRECTIVE_EXTRACT_URLS)
-                    # if the extracted file is a user submitted email from phish me
-                    if file_name == "email.rfc822.email.rfc822" and KEY_SUBJECT in email_details and email_details[KEY_SUBJECT].startswith("[POTENTIAL PHISH]"):
-                        extracted_file.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
 
                 # XXX I can't remember why we are still doing the attachment thing
                 attachments.append((len(payload), target.get_content_type(), 
