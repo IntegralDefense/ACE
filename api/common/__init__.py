@@ -31,7 +31,8 @@ def get_valid_companies():
 @common.route('/get_valid_observables', methods=['GET'])
 def get_valid_observables():
     result = []
-    for o_type in VALID_OBSERVABLE_TYPES:
+    active_observable_types = [o_type for o_type in VALID_OBSERVABLE_TYPES if o_type not in DEPRECATED_OBSERVABLES]
+    for o_type in active_observable_types:
         result.append({'name': o_type, 'description': OBSERVABLE_DESCRIPTIONS[o_type]})
 
     return json_result({'result': result})
