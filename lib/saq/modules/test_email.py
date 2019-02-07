@@ -161,54 +161,6 @@ class TestCase(ACEModuleTestCase):
         # these should be the same
         self.assertEquals(analysis.details, root.details)
 
-    def test_phish_me_submission(self):
-        from flask import url_for
-        from saq.analysis import _JSONEncoder
-        from saq.modules.email import EmailAnalysis
-
-        t = saq.LOCAL_TIMEZONE.localize(datetime.datetime.now()).astimezone(pytz.UTC).strftime(event_time_format_json_tz)
-        with open(os.path.join('test_data', 'emails', 'phish_me.email.rfc822'), 'rb') as fp:
-            result = self.client.post(url_for('analysis.submit'), data={
-                'analysis': json.dumps({
-                    'analysis_mode': 'email',
-                    'tool': 'unittest',
-                    'tool_instance': 'unittest_instance',
-                    'type': 'mailbox',
-                    'description': 'testing',
-                    'event_time': t,
-                    'details': { },
-                    'observables': [
-                        { 'type': F_FILE, 'value': 'email.rfc822', 'time': t, 'tags': [], 'directives': [ DIRECTIVE_ORIGINAL_EMAIL ], 'limited_analysis': [] },
-                    ],
-                    'tags': [ ],
-                }, cls=_JSONEncoder),
-                'file': (fp, 'email.rfc822'),
-            }, content_type='multipart/form-data')
-
-        result = result.get_json()
-        self.assertIsNotNone(result)
-
-        self.assertTrue('result' in result)
-        result = result['result']
-        self.assertIsNotNone(result['uuid'])
-        uuid = result['uuid']
-
-        # make sure we don't clean up the anaysis so we can check it
-        saq.CONFIG['analysis_mode_email']['cleanup'] = 'no'
-
-        engine = TestEngine(local_analysis_modes=['email'])
-        engine.enable_module('analysis_module_file_type', 'email')
-        engine.enable_module('analysis_module_email_analyzer', 'email')
-        engine.enable_module('analysis_module_mailbox_email_analyzer', 'email')
-        engine.controlled_stop()
-        engine.start()
-        engine.wait()
-
-        root = RootAnalysis(storage_dir=workload_storage_dir(uuid))
-        root.load()
-
-        self.assertEquals(root.details['email']['subject'], "Testing 1-2- 3")
-
     def test_bro_smtp_stream_analysis(self):
         import saq
         import saq.modules.email
