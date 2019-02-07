@@ -28,7 +28,7 @@ The submit (ace_api.submit_) method can be used to submit, files, data, and obse
 
 
 Submit a File
-+++++++++++++
+~~~~~~~~~~~~~
 
 Say we have a suspect file in our current working director named "Business.doc" that we want to submit to ACE.
 We only need to pass the name of the file with a file description to ace_api.submit_, but we will also include some tags and add a note in the details.
@@ -59,13 +59,13 @@ The results of this submission can be viewed here: https://ace.integraldefense.c
 
 
 Submit a URL
-++++++++++++
+~~~~~~~~~~~~
 
 Two examples of submitting a URL to ACE follows. The purpose of the first example is to demonstrate the use of directives and to open the door to the ``ace_api`` Cloudphish calls.
 The second example shows how simple it is to submit a URL for analysis directly to Cloudphish.
 
 As an observable
-~~~~~~~~~~~~~~~~
+++++++++++++++++
 
 You can submit as many :ref:`observables <observable>` as you desire in a submission to ACE, but they won't neccessarily get analyzed by default. This is the case for URL observables, which, require the crawl directive to tell ACE you want to analyze the URL.
 
@@ -90,7 +90,7 @@ Submititing a request for a suspicious URL to be analyzed, note the use of the c
 Here is the alert that was made from this analysis request: https://ace.integraldefense.com/ace/analysis?direct=ddb651eb-e861-41d2-8451-31b1a40fbc7e
 
 Using Cloudphish
-~~~~~~~~~~~~~~~~
+++++++++++++++++
 
 If you just want ACE to analyze a single URL, it's best to submit directly to Cloudphish. In this example, a URL is submitted to cloudphish that cloudphish has never seen before and a 'NEW' status is returned.
 After cloudphish has finished analyzing the URL, the status changes to 'ANALYZED' and the analysis_result tells us at least one detection was found (as we alerted).
@@ -212,10 +212,11 @@ Python Library
 
 A python library exits for intereacting with the ACE API. You can install it wil pip: ``pip3 install ace_api``.
 
+.. autoclass:: ace_api.Analysis
+    :members:
+
 .. automodule:: ace_api 
     :members:
-    :inherited-members:
-
 
 Common API
 ----------
