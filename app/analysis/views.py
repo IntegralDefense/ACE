@@ -983,7 +983,7 @@ def new_alert(db, c):
 
     tool = "gui"
     tool_instance = saq.CONFIG['global']['instance_name']
-    alert_type = "manual"
+    alert_type = request.form.get('new_alert_type', 'manual')
     description = request.form.get('new_alert_description', 'Manual Alert')
     event_time = event_time
     details = {'user': current_user.username, 'comment': comment}
@@ -1044,7 +1044,7 @@ def new_alert(db, c):
                 analysis_mode = ANALYSIS_MODE_CORRELATION,
                 tool = tool,
                 tool_instance = tool_instance,
-                type = ANALYSIS_TYPE_MANUAL,
+                type = alert_type,
                 event_time = event_time,
                 details = details,
                 observables = observables,
