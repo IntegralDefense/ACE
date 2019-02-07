@@ -61,7 +61,7 @@ def cleanup_alerts(fp_days_old=None, ignore_days_old=None, dry_run=False):
         retry_sql_on_deadlock(delete(Alert).where(Alert.id == alert_id), session=saq.db(), commit=True)
 
     if dry_run:
-        logging.info("{} ignored alerts would be deleted".format(len(alerts)))
+        logging.info(f"{dry_run_count} ignored alerts would be deleted")
 
     # archive alerts dispositioned as False Positive older than N days
     dry_run_count = 0
