@@ -299,6 +299,21 @@ DIRECTIVE_EXCLUDE_ALL = 'exclude_all'
 # indicates this observable was whitelisted, causing the entire analysis to also become whitelisted
 DIRECTIVE_WHITELISTED = 'whitelisted'
 
+DIRECTIVE_DESCRIPTIONS = {
+    DIRECTIVE_ARCHIVE: 'Archive the file',
+    DIRECTIVE_COLLECT_FILE: 'collect the file from the remote endpoint',
+    DIRECTIVE_CRAWL: 'crawl the URL',
+    DIRECTIVE_FORCE_DOWNLOAD: 'download the content of the URL no matter what',
+    DIRECTIVE_EXTRACT_URLS: 'extract URLs from the given file',
+    DIRECTIVE_SANDBOX: 'run the observable through a sandbox',
+    DIRECTIVE_ORIGINAL_EMAIL: 'treat this file as the original email file',
+    DIRECTIVE_ORIGINAL_SMTP: 'treat this file as the original smtp stream',
+    DIRECTIVE_NO_SCAN: 'do not scan this file with yara',
+    DIRECTIVE_DELAY: 'instructs various analysis modules to delay the analysis',
+    DIRECTIVE_EXCLUDE_ALL: 'instructs ACE to NOT analyze this observable at all',
+    DIRECTIVE_WHITELISTED: 'indicates this observable was whitelisted, causing the entire analysis to also become whitelisted'
+}
+
 VALID_DIRECTIVES = [
     DIRECTIVE_ARCHIVE,
     DIRECTIVE_COLLECT_FILE,

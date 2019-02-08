@@ -78,6 +78,33 @@ class TestCase(ACEEngineTestCase):
         active_observables = set(VALID_OBSERVABLE_TYPES) - set(DEPRECATED_OBSERVABLES)
         self.assertEquals(len(active_observables), len(result['result']))
 
+    def test_get_valid_directives(self):
+        from saq.constants import VALID_DIRECTIVES, DIRECTIVE_DESCRIPTIONS
+        result = ace_api.get_valid_directives()
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        self.assertTrue(isinstance(result['result'], list))
+
+        for r in result['result']:
+            self.assertTrue(r['name'] in VALID_DIRECTIVES)
+            self.assertEquals(DIRECTIVE_DESCRIPTIONS[r['name']], r['description'])
+
+    # TODO: complete this test module
+    def test_load_analysis(self):
+        a1 = ace_api.Analysis('This is a test')
+        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
+        with open(temp_path, 'w') as fp:
+            fp.write('test')
+        a1.add_file(temp_path)
+        a1.add_tag('test tag')
+        a1.add_test('test observable')
+        a1.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+
+        a2 = ace_api.load_analysis(a1.uuid, remote_host=f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertEquals(a1.uuid, a2.uuid)
+        a2.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertNotEqual(a1.uuid, a2.uuid)
+
     def _get_submit_time(self):
         return datetime.datetime(2017, 11, 11, hour=7, minute=36, second=1, microsecond=1)
 

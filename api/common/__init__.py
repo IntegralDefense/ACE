@@ -36,3 +36,11 @@ def get_valid_observables():
         result.append({'name': o_type, 'description': OBSERVABLE_DESCRIPTIONS[o_type]})
 
     return json_result({'result': result})
+
+@common.route('/get_valid_directives', methods=['GET'])
+def get_directives():
+    result = []
+    for directive in VALID_DIRECTIVES:
+        result.append({'name': directive, 'description': DIRECTIVE_DESCRIPTIONS[directive]})
+
+    return json_result({'result': result})

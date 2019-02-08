@@ -14,7 +14,7 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 description = "Analysis Correlation Engine (ACE) API Python Bindings."
 
 here = path.abspath(path.dirname(__file__))
