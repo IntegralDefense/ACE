@@ -52,7 +52,7 @@
     {% if alert.disposition %}
     <tr>
         <td class="col-md-2">Disposition</td>
-        <td class="col-md-10"><b>{{alert.disposition}}</b> by {{alert.disposition_user.username}} @ {{alert.disposition_time}}</td>
+	<td class="col-md-10"><b>{{alert.disposition}}</b> by {{alert.disposition_user.username}} @ {{alert.display_disposition_time}} ({{alert.disposition_time}} UTC)</td>
     </tr>
     {% endif %}
     {% if alert.owner %}
@@ -83,8 +83,9 @@
 </table>
 {% endblock %}
 
-<div class="row">
-    <div class="col-md-12">
+<div class="panel panel-default">
+    <div class="panel-heading">Alert Details <a role="button" data-toggle="collapse" data-target="#collapse_alert_details" aria-expanded="true" aria-controls="collapse_alert_details">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_alert_details">
         <!-- by default we just pretty-print the json -->
         {% block alert_details %} <pre>{{ analysis.details | pprint }}</pre> {% endblock %}
     </div>

@@ -2,8 +2,8 @@
 {% block alert_details %}
 
 <div class="panel panel-default">
-    <div class="panel-heading">Request Details</div>
-    <div class="panel-body">
+    <div class="panel-heading">Request Details <a role="button" data-toggle="collapse" data-target="#collapse_request_details" aria-expanded="true" aria-controls="collapse_request_details">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_request_details">
         {# the context is mostly freeform #}
         <pre>{{ analysis.jinja_details | pprint }}</pre>
         {% if 'context' in analysis.details and 'c' in analysis.details['context'] %}
