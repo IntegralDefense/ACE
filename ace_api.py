@@ -173,6 +173,10 @@ def get_valid_observables(*args, **kwargs):
     return _execute_api_call('common/get_valid_observables', *args, **kwargs).json()
 
 @api_command
+def get_valid_directives(*args, **kwargs):
+    return _execute_api_call('common/get_valid_directives', *args, **kwargs).json()
+
+@api_command
 def ping(*args, **kwargs):
     """Connectivity check to the ACE ecosystem."""
     return _execute_api_call('common/ping', *args, **kwargs).json()
@@ -360,6 +364,66 @@ def get_analysis(uuid, *args, **kwargs):
     :rtype: dict
     """
     return _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
+
+@api_command
+def load_analysis(uuid_or_datapath, download_everything=None, target_dir=None, *args, **kwargs):
+    """Load an analysis by it's uuid OR it's analysis result data.json file.
+    This loads an Analysis object with the basic contextual data. If download_everything is True, assumes uuid_or_datapath is a valid UUID.
+
+    :param str uuid_or_datapath: An alert UUID or path to an alert/analysis data.json file.
+    :param bool download_everything: (optional) If true, download EVERYTHING and load file handles.
+    :param str target_dir: (optional) Directory name to write the data. Default: UUID
+    :return: Analysis object
+    """
+    uuid = uuid_or_datapath
+    data = None
+    data_dir = None
+
+    if download_everything:
+        if target_dir is None:
+            target_dir = uuid
+        data_dir = target_dir
+        download(uuid, data_dir)
+        uuid_or_datapath = os.path.join(uuid, 'data.json')
+
+    if os.path.exists(uuid_or_datapath):
+        with open(uuid_or_datapath, 'r') as fp:
+            data = json.loads(fp.read())
+    if not data:
+        result = _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
+        data = result['result']
+
+    files = []
+    observables = []
+    details = data['details']
+    for o_key in data['observables']:
+        o = data['observable_store'][o_key]
+        observables.append({'type': o['type'], 'value': o['value'], 'directives': o['directives']})
+        if o['type'] == 'file':
+            files.append((o['value'], "This analysis has undergone load-shock-therapy.\n"\
+                                      "Use the download_everything flag to actually load file data" ))
+
+    # if we downloaded everything, load the things
+    if data_dir is not None:
+        details_file = details['file_path']
+        with open(os.path.join(data_dir, '.ace', details_file), 'r') as fp:
+            details = json.loads(fp.read())
+        # open file handles
+        files = [(f[0], open(f[0], 'rb')) for f in files] 
+
+    a = Analysis(data['description'],
+                analysis_mode=data['analysis_mode'],
+                tool=data['tool'],
+                tool_instance=data['tool_instance'],
+                type=data['type'],
+                event_time=data['event_time'],
+                details=details,
+                observables=observables,
+                tags=data['tags'],
+                files=files
+                )
+    a.uuid = data['uuid']
+    return a
 
 @api_command
 def get_analysis_details(uuid, name, *args, **kwargs):
@@ -611,6 +675,18 @@ class Analysis(object):
         return 'Analysis({})'.format(self.submit_kwargs)
 
     @property
+    def validate_files(self):
+        # make sure each file is a tuple of (something, str)
+        _error_message = "Can not submit Analysis, file {} invalid: each element of the file parameter "\
+                         "must be a tuple of (file_name, file_descriptor)"
+
+        for index, f in enumerate(self.submit_kwargs['files']):
+            assert isinstance(f, tuple), _error_message.format(index)
+            assert len(f) == 2, _error_message.format(index)
+            assert f[1], _error_message.format(index)
+            assert isinstance(f[0], str), _error_message.format(index)
+
+    @property
     def description(self):
         if 'description' in self.submit_kwargs:
             return self.submit_kwargs['description']
@@ -619,7 +695,14 @@ class Analysis(object):
 
     @property
     def status(self):
-        """Return the human readable status of this Analysis."""
+        """Return the human readable status of this Analysis.
+        If this Analysis does not have a uuid, the status is 'UNKNOWN: UUID is None'.
+        A status of 'COMPLETE: No detections' is returned if this Analysis has a uuid but ACE returned a 404 for it (ACE deletes any analysis that didn't become an Alert).
+        'ANALYZING' means ACE is working on the root analysis.
+        'DELAYED' means ACE is waiting for one or more Analysis Modules to complete it's work.
+        'NEW' means ACE has received the Analysis but hasn't started working on it yet. Analysis shouldn't stay in the NEW state long.
+        'COMPLETE (Alerted with # detections)' means the Analysis became an Alert and has # detection points.
+        """
         if self.uuid is None:
             return "UNKNOWN: UUID is None. Not submitted?"
         result = None
@@ -646,7 +729,7 @@ class Analysis(object):
 
         return "UNKNOWN"
 
-    def set_discription(self, description):
+    def set_description(self, description):
         self.submit_kwargs['description'] = description
         return self
 
@@ -888,6 +971,8 @@ class Analysis(object):
 
         if ssl_verification is None:
             ssl_verification = self.ssl_verification
+
+        self.validate_files
 
         try:
             result = submit(remote_host=remote_host, 

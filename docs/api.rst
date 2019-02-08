@@ -20,74 +20,107 @@ Note that, by default, ``ace_api`` uses the OS's certificate store to validate t
         >>> ace_api.ping()
         {'result': 'pong'}
 
+You can over-ride this default in the :func:`ace_api.Analysis` class with the :func:`ace_api.Analysis.set_remote_host` method and you can also manually specify a remote host with any submit.
+
+::
+
+        >>> analysis = ace_api.Analysis('this is the analysis description')
+
+        >>> analysis.remote_host
+        'ace.integraldefense.com'
+
+        >>> analysis.set_remote_host('something.else.com').remote_host
+        'something.else.com' 
+
+        >>> ace_api.default_remote_host
+        'ace.integraldefense.com'
+
+If your ACE instance is listening on a port other than 443, specify it like so::
+
+        >>> ace_api.set_default_remote_host('ace.integraldefense.com:24443')
+
+        >>> ace_api.default_remote_host
+        'ace.integraldefense.com:24443'
 
 Submitting data to ACE
 ----------------------
 
-The submit (ace_api.submit_) method can be used to submit, files, data, and observables to ACE for analyis and/or correlation.
+You should submit data to ace by first creating an Analysis_ object and loading it with the data you want to submit for analysis and/or correlation.
+The below examples show how to perform some common submissions.
 
 
 Submit a File
 ~~~~~~~~~~~~~
 
 Say we have a suspect file in our current working director named "Business.doc" that we want to submit to ACE.
-We only need to pass the name of the file with a file description to ace_api.submit_, but we will also include some tags and add a note in the details.
+First, we create an analysis object and then we pass the path to the file to the :func:`ace_api.Analysis.add_file` method.
+We will also include some tags and add check the status :func:`ace_api.Analysis.status` of the analysis as ACE works on the submission.
 
 ::
 
-        >>> suspect_file = 'Business.doc'
-        >>> import os
-        >>> os.path.exists(suspect_file)
-        True
-        >>> suspect_file = (suspect_file, open(suspect_file, 'rb'))
-            
-        >>> files = []
-        >>> files.append(suspect_file)
-        >>> tags = ['suspect doc', 'api example']
-        >>> details = {'What': 'This is an example of submitting a file for ACE to analyze, with ace_api'}
-           
-        >>> result = ace_api.submit('API Example: Submitting "{}" via ace_api'.format(suspect_file[0]), tags=tags, files=files, details=details)
-        >>> result
-        {'result': {'uuid': '8ef1bb16-934a-4419-a8fe-74380653f8c9'}}
-            
-        >>> uuid = result['result']['uuid']
-           
-        >>> result_url = 'https://{}/ace/analysis?direct={}'.format(ace_api.default_remote_host, uuid)
+        >>> path_to_file = 'Business.doc'
+        
+        >>> analysis.add_file(path_to_file)
+        <ace_api.Analysis object at 0x7f23d57e74e0>
+        
+        >>> analysis.add_tag('Business.doc').add_tag('suspicious doc')
+        <ace_api.Analysis object at 0x7f23d57e74e0>
+
+        >>> analysis.submit()
+        <ace_api.Analysis object at 0x7f23d57e74e0>
+
+        >>> analysis.status
+        'NEW'
+
+        >>> analysis.status
+        'ANALYZING'
+
+        >>> analysis.status
+        'COMPLETE (Alerted with 8 detections)'
+
+        >>> result_url = 'https://{}/ace/analysis?direct={}'.format(analysis.remote_host, analysis.uuid)
+
         >>> print("\nThe results of this submission can be viewed here: {}".format(result_url))
 
-The results of this submission can be viewed here: https://ace.integraldefense.com/ace/analysis?direct=8ef1bb16-934a-4419-a8fe-74380653f8c9
-
+The results of this submission can be viewed here: https://ace.integraldefense.com/ace/analysis?direct=137842ac-9d53-4a25-8066-ad2a1f6cfa17
 
 Submit a URL
 ~~~~~~~~~~~~
 
-Two examples of submitting a URL to ACE follows. The purpose of the first example is to demonstrate the use of directives and to open the door to the ``ace_api`` Cloudphish calls.
+Two examples of submitting a URL to ACE follows. The first example shows how to submit a URL by adding the URL as an observable to an Analysis_ object. This also allows us to demontrate the use of directives.
 The second example shows how simple it is to submit a URL for analysis directly to Cloudphish.
 
 As an observable
 ++++++++++++++++
 
-You can submit as many :ref:`observables <observable>` as you desire in a submission to ACE, but they won't neccessarily get analyzed by default. This is the case for URL observables, which, require the crawl directive to tell ACE you want to analyze the URL.
+You can submit as many :ref:`observables <observable>` as you desire in a submission to ACE, but they won't neccessarily get passed to every analysis module that can work on them by default. This is the case for URL observables, which by themselves, require the crawl directive to tell ACE you want to download the conent from the URL and add any valid content as a file observable.
 
-Submititing a request for a suspicious URL to be analyzed, note the use of the crawl directive.::
+Submititing a request for a suspicious URL to be analyzed, note the use of the crawl directive and how to get a list of the valid directives.::
 
         >>> suspicious_url = 'http://davidcizek.cz/Invoice/ifKgg-jrzA_PvC-a7'
-           
-        >>> tags = ['suspicious_url']
-           
-        >>> observables = []
-        >>> observables.append({'type': 'url', 'value': suspicious_url, 'directives': ['crawl']})
-           
-        >>> result = ace_api.submit('Suspicious URL', tags=tags, observables=observables)
-           
-        >>> result
-        {'result': {'uuid': 'ddb651eb-e861-41d2-8451-31b1a40fbc7e'}}
-           
-        >>> result_url = 'https://{}/ace/analysis?direct={}'.format(ace_api.default_remote_host, result['result']['uuid'])
-        >>> print("\nHere is the alert that was made from this analysis request: {}".format(result_url))
 
+        >>> analysis = ace_api.Analysis('Suspicious URL')
 
-Here is the alert that was made from this analysis request: https://ace.integraldefense.com/ace/analysis?direct=ddb651eb-e861-41d2-8451-31b1a40fbc7e
+        >>> analysis.add_tag('suspicious_url')
+        <ace_api.Analysis object at 0x7f23d57e7588>
+         
+        >>> for d in ace_api.get_valid_directives()['result']:
+        ...     if d['name'] == 'crawl':
+        ...         print(d['description'])
+        ... 
+        crawl the URL
+
+        >>> analysis.add_url(suspicious_url, directives=['crawl']).submit()
+        <ace_api.Analysis object at 0x7f23d57e7588>
+
+        >>> analysis.status
+        'COMPLETE (Alerted with 9 detections)'
+
+        >>> result_url = 'https://{}/ace/analysis?direct={}'.format(analysis.remote_host, analysis.uuid)
+         
+        >>> print("\nThe results of this submission can be viewed here: {}".format(result_url))
+
+The results of this submission can be viewed here: https://ace.integraldefense.com/ace/analysis?direct=de66b2d3-f273-4bdd-a05b-771ecf5c8a76
 
 Using Cloudphish
 ++++++++++++++++
@@ -212,11 +245,14 @@ Python Library
 
 A python library exits for intereacting with the ACE API. You can install it wil pip: ``pip3 install ace_api``.
 
+.. _Analysis:
+
 .. autoclass:: ace_api.Analysis
     :members:
 
-.. automodule:: ace_api 
-    :members:
+.. autofunction:: ace_api.set_default_remote_host
+
+.. autofunction:: ace_api.set_default_ssl_ca_path
 
 Common API
 ----------
