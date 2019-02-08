@@ -892,7 +892,7 @@ class Alert(RootAnalysis, Base):
 
         # XXX this kind of sucks -- find a different way to do this
         if self.removal_time is not None:
-            return 'Completed (Removed)'.format(status)
+            return 'Completed (Removed)'
 
         return 'Completed'
 
@@ -1181,6 +1181,10 @@ WHERE
 
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""UPDATE alerts SET detection_count = %s WHERE id = %s""", ( self.detection_count, self.id, ))
+            db.commit()
 
         if self.id is None:
             self.insert()
