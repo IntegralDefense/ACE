@@ -1,24 +1,27 @@
 {% extends "analysis/alert.html" %}
 {% block alert_details %}
 <div class="panel panel-default">
-    <div class="panel-heading">Summary Details</div>
-    <ul class="list-group">
-        {% if analysis.details %}
-            {% for e in analysis.details %}
-                {% if 'yara_results' not in e %}
-                    <li class="list-group-item">#{{e['message_number']}} <font color="red">{{e['source_ip']}}</font> <b>{{e['method']}}</b> <font color="blue">{{e['dest_ip']}}:{{e['dest_port']}}</font> <font color="orange">{{e['host']}}</font><font color="green">{{e['uri']}}</font> - HTTP Response Code <b>{{e['status_code']}}</b></li>
-                {% endif %}
-            {% endfor %}
-        {% endif %}
-    </ul>
+    <div class="panel-heading">Summary Details <a role="button" data-toggle="collapse" data-target="#collapse_summary_details" aria-expanded="true" aria-controls="collapse_summary_details">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_summary_details">
+        <ul class="list-group">
+            {% if analysis.details %}
+                {% for e in analysis.details %}
+                    {% if 'yara_results' not in e %}
+                        <li class="list-group-item">#{{e['message_number']}} <font color="red">{{e['source_ip']}}</font> <b>{{e['method']}}</b> <font color="blue">{{e['dest_ip']}}:{{e['dest_port']}}</font> <font color="orange">{{e['host']}}</font><font color="green">{{e['uri']}}</font> - HTTP Response Code <b>{{e['status_code']}}</b></li>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        </ul>
+    </div>
 </div>
 
+{% set count = 0 %}
 {% if analysis.details %}
     {% for d in analysis.details %}
         {% if 'yara_results' in d %}
     <div class="panel panel-default">
-        <div class="panel-heading">Yara Scan Results</div>
-        <div class="panel-body">
+	    <div class="panel-heading">Yara Scan Results <a role="button" data-toggle="collapse" data-target="#collapse_yara_scan_results_{{count}}" aria-expanded="true" aria-controls="collapse_yara_scan_results_{{count}}">(hide/show)</a></div>
+	    <div class="panel-body collapse" id="collapse_yara_scan_results_{{count}}">
             <ul>
             {% for file_path in d['yara_results'] %}
                 <li>{{file_path}}</li>
@@ -36,13 +39,14 @@
             </ul>
         </div>
     </div>
+	{% set count = count + 1 %}
         {% endif %}
     {% endfor %}
 {% endif %}
 
 <div class="panel panel-default">
-    <div class="panel-heading">Raw Details</div>
-    <div class="panel-body">
+    <div class="panel-heading">Raw Details <a role="button" data-toggle="collapse" data-target="#collapse_raw_details" aria-expanded="true" aria-controls="collapse_raw_details">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_raw_details">
         <pre>{{ analysis.details | pprint }}</pre>
     </div>
 </div>

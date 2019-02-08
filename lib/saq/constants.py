@@ -298,6 +298,8 @@ DIRECTIVE_DELAY = 'delay'
 DIRECTIVE_EXCLUDE_ALL = 'exclude_all'
 # indicates this observable was whitelisted, causing the entire analysis to also become whitelisted
 DIRECTIVE_WHITELISTED = 'whitelisted'
+# indicates this observable should be tracked across different analysis requests
+DIRECTIVE_TRACKED = 'tracked'
 
 DIRECTIVE_DESCRIPTIONS = {
     DIRECTIVE_ARCHIVE: 'Archive the file',
@@ -327,6 +329,7 @@ VALID_DIRECTIVES = [
     DIRECTIVE_DELAY,
     DIRECTIVE_EXCLUDE_ALL,
     DIRECTIVE_WHITELISTED,
+    DIRECTIVE_TRACKED,
 ]
 
 def is_valid_directive(directive):
