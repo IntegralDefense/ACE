@@ -3,6 +3,7 @@
 # ACE API common routines
 
 import json
+import logging
 
 from .. import db, json_result
 
@@ -41,6 +42,9 @@ def get_valid_observables():
 def get_directives():
     result = []
     for directive in VALID_DIRECTIVES:
-        result.append({'name': directive, 'description': DIRECTIVE_DESCRIPTIONS[directive]})
+        try:
+            result.append({'name': directive, 'description': DIRECTIVE_DESCRIPTIONS[directive]})
+        except KeyError as e:
+            logging.warn('Missing directive description for the "{}" directive.'.format(directive))
 
     return json_result({'result': result})

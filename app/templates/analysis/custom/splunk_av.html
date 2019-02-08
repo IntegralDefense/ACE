@@ -1,16 +1,16 @@
 {% extends "analysis/alert.html" %}
 {% block alert_details %}
 <div class="panel panel-default">
-    <div class="panel-heading">AV Alert Summary</div>
-    <div class="panel-body">
+    <div class="panel-heading">AV Alert Summary <a role="button" data-toggle="collapse" data-target="#collapse_av_summary" aria-expanded="true" aria-controls="collapse_av_summary">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_av_summary">
         {% for row in analysis.details %}
         <div class="well">{{row['Event_Time']}} <b>{{row['signature']}}</b> <span style="color: #0000FF">host <b>{{row['Computer_Name']}}</b></span> <span style="color: #FF0000">file <b>{{row['file_path']}}</b></div>
         {% endfor %}
     </div>
 </div>
 <div class="panel panel-default">
-    <div class="panel-heading">AV Alert Raw Details</div>
-    <div class="panel-body">
+    <div class="panel-heading">AV Alert Raw Details <a role="button" data-toggle="collapse" data-target="#collapse_av_details" aria-expanded="true" aria-controls="collapse_av_details">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_av_details">
         {% for row in analysis.details %}
         <div class="well">{{row['_raw'] }}</div>
         {% endfor %}

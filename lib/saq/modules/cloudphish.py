@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 import ace_api
 import saq
-from saq.analysis import Analysis, RootAnalysis
+from saq.analysis import Analysis, RootAnalysis, _JSONEncoder
 from saq.cloudphish import *
 from saq.constants import *
 from saq.database import use_db, execute_with_retry
@@ -281,6 +281,10 @@ class CloudphishAnalyzer(AnalysisModule):
         return result
 
     def execute_analysis(self, url):
+        # don't run cloudphish on cloudphish alerts
+        if self.root.alert_type == ANALYSIS_TYPE_CLOUDPHISH:
+            return False
+    
         # we keep track of what URLs we've given to cloudphish to process
         if self.state is None:
             self.state = {}
@@ -340,9 +344,18 @@ class CloudphishAnalyzer(AnalysisModule):
         try:
             context = {
                 'c': self.root.uuid, # context
-                't': {} # tracking information XXX fix this
+                't': None, # tracking (see below)
             }
 
+            tracking = []
+            for o in self.root.all_observables:
+                if o.has_directive(DIRECTIVE_TRACKED):
+                    tracking.append({'type': o.type, 
+                                     'value': o.value, 
+                                     'time': None if o.time is None 
+                                             else o.time.strftime(event_time_format_json_tz)})
+
+            context['t'] = json.dumps(tracking, cls=_JSONEncoder)
             response = ace_api.cloudphish_submit(url.value, 
                                                  context=context, 
                                                  remote_host=cloudphish_server,
