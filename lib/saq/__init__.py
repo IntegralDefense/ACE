@@ -137,10 +137,17 @@ def load_configuration():
 
 def initialize_logging(logging_config_path):
     try:
-        logging.config.fileConfig(logging_config_path)
+        logging.config.fileConfig(logging_config_path, disable_existing_loggers=False)
     except Exception as e:
         sys.stderr.write("unable to load logging configuration: {}".format(e))
         raise e
+
+    # log all SQL commands if we are running in debug mode
+    if CONFIG['global'].getboolean('log_sql'):
+        logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+        #logging.getLogger('sqlalchemy.dialects').setLevel(logging.DEBUG)
+        #logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
+        #logging.getLogger('sqlalchemy.orm').setLevel(logging.DEBUG)
 
 def set_node(name):
     """Sets the value for saq.SAQ_NODE. Typically this is auto-set using the local fqdn."""
@@ -153,7 +160,13 @@ def set_node(name):
         SAQ_NODE_ID = None
         initialize_node()
 
-def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=None, relative_dir=None, unittest=False):
+def initialize(saq_home=None, 
+               config_paths=None, 
+               logging_config_path=None, 
+               args=None, 
+               relative_dir=None, 
+               unittest=False, 
+               use_flask=False):
 
     from saq.database import initialize_database, initialize_node
 
@@ -178,7 +191,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     global LOG_LEVEL
     global MANAGED_NETWORKS
     global MODULE_STATS_DIR
-    global OTHER_PROXIES
+    global OTHER_PROXIES 
     global OTHER_SLA_SETTINGS
     global PROXIES
     global SAQ_HOME
@@ -428,13 +441,6 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     # we can globally disable semaphores with this flag
     SEMAPHORES_ENABLED = CONFIG.getboolean('global', 'enable_semaphores')
 
-    # log all SQL commands if we are running in debug mode
-    if CONFIG['global'].getboolean('log_sql'):
-        logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
-        #logging.getLogger('sqlalchemy.dialects').setLevel(logging.DEBUG)
-        #logging.getLogger('sqlalchemy.pool').setLevel(logging.DEBUG)
-        #logging.getLogger('sqlalchemy.orm').setLevel(logging.DEBUG)
-
     # some settings can be set to PROMPT
     for section in CONFIG.sections():
         for (name, value) in CONFIG.items(section):
@@ -454,10 +460,7 @@ def initialize(saq_home=None, config_paths=None, logging_config_path=None, args=
     YSS_SOCKET_DIR = os.path.join(YSS_BASE_DIR, CONFIG['yara']['yss_socket_dir'])
 
     # initialize the database connection
-    initialize_database()
-    
-    # make sure our node is in the database (at this point it defaults to local if it's new)
-    #initialize_node()
+    initialize_database(use_flask=use_flask)
 
     # initialize fallback semaphores
     initialize_fallback_semaphores()
