@@ -6,8 +6,8 @@ Let's go through a few examples using the ACE API. We will specifically use the 
 Connect to a Server
 -------------------
 
-By default, the ``ace_api`` library will attempt to connect to `localhost`. Use the ``set_default_remote_host`` sepecify the server you want to work with.
-Note that, by default, ``ace_api`` uses the OS's certificate store to validate the server. See ace_api.set_default_ssl_ca_path_ to change this behavior. 
+By default, the ``ace_api`` library will attempt to connect to `localhost`. Use the :func:`ace_api.set_default_remote_host` function to have the library connect to a different server.
+The OS's certificate store is used to validate the server. See :func:`ace_api.set_default_ssl_ca_path` to change this behavior. 
 
 ::
 
@@ -54,7 +54,7 @@ Submit a File
 
 Say we have a suspect file in our current working director named "Business.doc" that we want to submit to ACE.
 First, we create an analysis object and then we pass the path to the file to the :func:`ace_api.Analysis.add_file` method.
-We will also include some tags and add check the status :func:`ace_api.Analysis.status` of the analysis as ACE works on the submission.
+We will also include some tags and check the status (:func:`ace_api.Analysis.status`) of the analysis as ACE works on the submission.
 
 ::
 
@@ -87,15 +87,17 @@ The results of this submission can be viewed here: https://ace.integraldefense.c
 Submit a URL
 ~~~~~~~~~~~~
 
-Two examples of submitting a URL to ACE follows. The first example shows how to submit a URL by adding the URL as an observable to an Analysis_ object. This also allows us to demontrate the use of directives.
+Two examples of submitting a URL to ACE follow. The first example shows how to submit a URL by adding the URL as an observable to an Analysis_ object. This also allows us to demontrate the use of directives.
 The second example shows how simple it is to submit a URL for analysis directly to Cloudphish.
 
 As an observable
 ++++++++++++++++
 
-You can submit as many :ref:`observables <observable>` as you desire in a submission to ACE, but they won't neccessarily get passed to every analysis module that can work on them by default. This is the case for URL observables, which by themselves, require the crawl directive to tell ACE you want to download the conent from the URL and add any valid content as a file observable.
+You can submit as many :ref:`observables <observable>` as you desire in a submission to ACE, but they won't neccessarily get passed to every analysis module that can work on them by default. This is the case for URL observables, which by themselves, require the crawl directive to tell ACE you want to download the conent from the URL for further analysis.
 
-Submititing a request for a suspicious URL to be analyzed, note the use of the crawl directive and how to get a list of the valid directives.::
+Submititing a request for a suspicious URL to be analyzed, note the use of the crawl directive and how to get a list of the valid directives.
+
+::
 
         >>> suspicious_url = 'http://davidcizek.cz/Invoice/ifKgg-jrzA_PvC-a7'
 
@@ -131,6 +133,7 @@ After cloudphish has finished analyzing the URL, the status changes to 'ANALYZED
 ::
 
         >>> another_url = 'http://medicci.ru/myATT/tu8794_QcbkoEsv_Xw20pYh7ij'
+
         >>> cp_result = ace_api.cloudphish_submit(another_url)
            
         >>> cp_result['status']
@@ -139,12 +142,15 @@ After cloudphish has finished analyzing the URL, the status changes to 'ANALYZED
         >>>  # Query again, a moment later:
         ...
         >>> cp_result = ace_api.cloudphish_submit(another_url)
+
         >>> cp_result['status']
         'ANALYZED'
+
         >>> cp_result['analysis_result']
         'ALERT'
            
         >>> result_url = 'https://{}/ace/analysis?direct={}'.format(ace_api.default_remote_host, cp_result['uuid'])
+
         >>> print("\nThe results of this submission can be viewed here: {}".format(result_url))
 
 The results of this submission can be viewed here: https://ace.integraldefense.com/ace/analysis?direct=732ec396-ce20-463f-82b0-6b043b07f941
@@ -153,7 +159,7 @@ The results of this submission can be viewed here: https://ace.integraldefense.c
 Downloading Cloudphish Results
 ------------------------------
 
-Cloudphish keeps a cache URL contents that can be downloaded. In this example we will download the results of the URL submitted in the previous `:ref:Using Cloudphish` example, which in this case is a malicious word document.
+Cloudphish keeps a cache of the URL content it downloads. In this example we will download the results of the URL submitted in the previous example, which in this case is a malicious word document.
 
 ::
 
@@ -162,80 +168,20 @@ Cloudphish keeps a cache URL contents that can be downloaded. In this example we
         >>> os.path.exists('cp_result.raw')
         True
 
+Downloading an Alert
+--------------------
 
-Get the status of an Analysis Request
--------------------------------------
+You can use the :func:`ace_api.download` function to download an entire Alert. Below, we download an entire Alert and have it written to a directory named by the Alert's UUID.::
 
-Now, we check the status of the analysis we submitted::
+        >>> uuid = cp_result['uuid']
 
-        >>> result
-        {'result': {'uuid': 'ddb651eb-e861-41d2-8451-31b1a40fbc7e'}}
-        >>> uuid = result['result']['uuid']
-            
-        >>> import pprint
-           
-        >>> pprint.pprint(ace_api.get_analysis_status(uuid))
-        {'result': {'delayed_analysis': [{'analysis_module': 'analysis_module_cloudphish',
-                                  'delayed_until': '2019-01-31T21:50:57.000000',
-                                  'id': 22,
-                                  'insert_date': '2019-01-31T21:50:52.000000',
-                                  'node_id': 1,
-                                  'observable_uuid': '7de0c92b-e7ff-4099-929a-70e87b64fa56',
-                                  'uuid': 'ddb651eb-e861-41d2-8451-31b1a40fbc7e'}],
-            'locks': None,
-            'workload': None}}
-           
-           
-  
-The above analysis status tells us that ACE is waiting on the analysis_module_cloudphish to complete its analysis.
-We check again a moment later and the result tells us that ACE isn't waiting on a module to complete, there are no locks on the analysis, and nothing in the workload; hence, the analysis is complete.
+        >>> >>> uuid
+        '732ec396-ce20-463f-82b0-6b043b07f941'
 
-:: 
+        >>> ace_api.download(uuid, target_dir=uuid)
 
-        >>> pprint.pprint(ace_api.get_analysis_status(uuid))
-        {'result': {'locks': None, 'delayed_analysis': [], 'workload': None}}
+Now, there is a new directory named '732ec396-ce20-463f-82b0-6b043b07f941' in our current working directory that contians all of the files and data from the alert with uuid 732ec396-ce20-463f-82b0-6b043b07f941. Use the :func:`ace_api.load_analysis` function to load an alert into a new Analysis_ object.
 
-
-Get An Analysis Result
-----------------------
-
-You can get the raw ACE document showing the entire analysis (and correlation) available for a UUID.
-Note, these documents can be *extremely* large. A very small part of the the document is displayed in the following example.
-
-::
-
-        >>> analysis = ace_api.get_analysis(uuid)
-        >>> pprint.pprint(analysis)
-        {'result': {'action_counters': {},
-            'alerted': False,
-            'analysis_mode': 'correlation',
-            'company_id': 1,
-            'company_name': 'default',
-            'completed': True,
-            'delayed': False,
-            'delayed_analysis_tracking': {'analysis_module_cloudphish:7de0c92b-e7ff-4099-929a-70e87b64fa56': '2019-01-31T21:50:46.072026',
-                                          'analysis_module_cloudphish:f259acb5-3835-4acd-9aba-6e2dfe177b8a': '2019-01-31T21:50:58.786645'},
-            'description': 'Suspicious URL',
-            'details': {'file_path': 'RootAnalysis_4baffc51-8486-4ce7-87c5-9fd6b7de9b3a.json'},
-            'detections': [{'description': 'RootAnalysis(ddb651eb-e861-41d2-8451-31b1a40fbc7e) '
-                                           'was tagged with suspicious_url',
-                            'details': None}],
-            'event_time': '2019-01-31T21:47:06.460607+0000',
-            'location': 'localhost.localdomain',
-            'name': None,
-            'observable_store': {'0724362b-154a-4f64-b7a8-5017201b1cef': {'analysis': {'saq.modules.advanced:AdvancedLinkAnalysis': False,
-                                                                                       'saq.modules.advanced:EmailLinkAnalysis': False,
-                                                                                       'saq.modules.alerts:ACEAlertsAnalysis': {'alerted': False,
-                                                                                                                                'completed': True,
-                                                                                                                                'delayed': False,
-                                                                                                                                'details': {'file_path': 'ACEAlertsAnalysis_6642399b-6026-4ac1-8242-8f0df8862e9c.json'},
-                                                                                                                                'detections': [],
-                                                                                                                                'observables': [],
-                    ... <truncated> ...
-
-
-
- 
 
 ACE API
 =======
@@ -253,6 +199,24 @@ A python library exits for intereacting with the ACE API. You can install it wil
 .. autofunction:: ace_api.set_default_remote_host
 
 .. autofunction:: ace_api.set_default_ssl_ca_path
+
+.. autofunction:: ace_api.get_supported_api_version
+
+.. autofunction:: ace_api.get_valid_observables
+
+.. autofunction:: ace_api.get_valid_directives
+
+.. autofunction:: ace_api.get_analysis
+
+.. autofunction:: ace_api.load_analysis
+
+.. autofunction:: ace_api.download
+
+.. autofunction:: ace_api.upload
+
+.. autofunction:: ace_api.cloudphish_download
+
+.. autofunction:: ace_api.cloudphish_submit
 
 Common API
 ----------
