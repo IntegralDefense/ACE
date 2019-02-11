@@ -111,7 +111,7 @@ class AnalysisModule(object):
             return
 
         self.threaded_execution_stop_event = threading.Event()
-        self.threaded_execution_thread = threading.Thread(target=self.execute_threaded_loop,
+        self.threaded_execution_thread = threading.Thread(target=self.execute_threaded_loop_wrapper,
                                                           name="Threaded Module {}".format(self))
         self.threaded_execution_thread.start()
         logging.info("started thread {}".format(self.threaded_execution_thread))
@@ -658,6 +658,13 @@ class AnalysisModule(object):
     def execute_threaded(self):
         """This is called on a thread if the module is configured as threaded."""
         pass
+
+    def execute_threaded_loop_wrapper(self):
+        try:
+            self.execute_threaded_loop()
+        finally:
+            # make sure we remove the session if we created one
+            saq.db.remove()
 
     def execute_threaded_loop(self):
         # continue to execute until analysis has completed

@@ -6,6 +6,7 @@ import os, os.path
 import shutil
 import tempfile
 import threading
+import unittest
 import uuid
 
 from subprocess import Popen, PIPE
@@ -535,6 +536,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         # the yara rule should have detections
         self.assertTrue(yara_rule.detections)
 
+    @unittest.skip
     def test_file_analysis_004_yara_001_local_scan(self):
         
         # we do not initalize the local yss scanner so it should not be available for scanning

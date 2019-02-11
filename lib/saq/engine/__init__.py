@@ -153,6 +153,9 @@ class Worker(object):
             self.next_auto_refresh_time = datetime.datetime.now() + datetime.timedelta(
                                           seconds=self.auto_refresh_frequency)
             logging.debug(f"next auto refresh time for {os.getpid()} set to {self.next_auto_refresh_time}")
+
+        # each process gets it's own SQLAlchemy session scope
+        saq.database.initialize_database()
         
         while True:
             # is the engine shutting down?
@@ -183,8 +186,12 @@ class Worker(object):
 
                 # if execute returns True it means it discovered and processed a work_item
                 # in that case we assume there is more work to do and we check again immediately
-                if CURRENT_ENGINE.execute():  
-                    continue
+                try:
+                    if CURRENT_ENGINE.execute():  
+                        continue
+                finally:
+                    # if we allocated a database session then we release it here
+                    saq.db.remove()
 
                 # otherwise we wait a second until we go again
                 if self.worker_shutdown_event is not None:
