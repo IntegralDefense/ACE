@@ -374,6 +374,9 @@ def _create_analysis(url, reprocess, details, db, c):
         for o_dict in tracking:
             o = root.add_observable(o_dict['type'], o_dict['value'], o_time=o_dict['time'])
             o.add_tag("tracked")
+            # allow delayed analysis on this observable
+            # this currently matters for MessageIDAnalyzer
+            o.add_directive(DIRECTIVE_DELAY)
 
     url_observable = root.add_observable(F_URL, url)
     if url_observable:

@@ -20,7 +20,7 @@ UNITTEST_SOCKET_DIR = 'socket_unittest'
 def get_yara_rules_dir():
     return os.path.join(saq.SAQ_HOME, 'test_data', 'yara_rules')
 
-class FileAnalysisModuleTestCase(ACEModuleTestCase):
+class TestCase(ACEModuleTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.yss_process = None
@@ -722,7 +722,7 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
     def test_file_analysis_005_office_file_archiver_000_archive(self):
 
         # clear existing archive dir
-        target_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_office_file_archiver']['office_archive_dir'])
+        target_dir = os.path.join(saq.DATA_DIR, saq.CONFIG['analysis_module_office_file_archiver']['office_archive_dir'])
         try:
             if os.path.isdir(target_dir):
                 shutil.rmtree(target_dir)
@@ -809,3 +809,28 @@ class FileAnalysisModuleTestCase(ACEModuleTestCase):
         _file = root.get_observable(_file.id)
         self.assertIsNotNone(_file)
         self.assertTrue(any([d for d in root.all_detection_points if 'compiles as JavaScript' in d.description]))
+
+    def test_open_office_extraction(self):
+
+        root = create_root_analysis()
+        root.initialize_storage()
+        shutil.copy('test_data/openoffice/demo.odt', root.storage_dir)
+        _file = root.add_observable(F_FILE, 'demo.odt')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_archive', 'test_groups')
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        _file = root.get_observable(_file.id)
+        self.assertIsNotNone(_file)
+
+        analysis = _file.get_analysis('ArchiveAnalysis')
+        self.assertIsNotNone(analysis)
+        self.assertEquals(len(analysis.find_observables(F_FILE)), 12)

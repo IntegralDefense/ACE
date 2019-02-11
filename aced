@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+
+import os
+import os.path
+import psutil
+import signal
+import subprocess
+import time
+import traceback
+
+# stop service by raising a keyboard interrupt
+def stop_service(signum, frame):
+    raise KeyboardInterrupt()
+
+# setup shutdown handler
+signal.signal(signal.SIGTERM, stop_service)
+
+# list containing all subprocesses store in reverse start order
+subprocesses = []
+
+try:
+    # get installation directory
+    saq_home = '/opt/ace'
+    if 'SAQ_HOME' in os.environ:
+        saq_home = os.environ['SAQ_HOME']
+
+    # read list of commands to start from SAQ_HOME/etc/startupd
+    startup_path = os.path.join(saq_home, "etc", "startupd")
+    with open(startup_path, 'r') as f:
+        commands = f.readlines()
+
+    # get path to ace executable
+    ace_path = os.path.join(saq_home, "ace")
+
+    # start all listed commands
+    for command in commands:
+        # skip empty lines and comments
+        command = command.strip()
+        if command is None or command == "" or command.startswith("#"):
+            continue
+
+        engine, log_config = command.split()
+        log_config_path = os.path.join("etc", log_config)
+
+        # start the engine
+        print("Starting {}".format(engine))
+        p = subprocess.Popen(["python3", ace_path, "--start", "-L", log_config_path, engine])
+        subprocesses.insert(0, psutil.Process(p.pid))
+
+    # wait until told to stop by keyboard interrupt/sigterm
+    while True:
+        time.sleep(0.1)
+
+# use keyboard interrupt as signal for shutdown
+except KeyboardInterrupt:
+    pass
+
+# stop all subprocesses
+for p in subprocesses:
+    try:
+        # ask process to stop gracefully
+        p.terminate()
+
+        # give the process some time to shutdown gracefully
+        try:
+            p.wait(timeout=60)
+
+        # if the process did not shutdown gracefully in a reasonable amount of time then kill process tree
+        except Exception:
+            # kill all children
+            for child in p.children(recursive=True):
+                child.kill()
+
+            # kill main process
+            p.kill()
+
+    except Exception as e:
+        print("unable to stop process {}: {}".format(p, e))
