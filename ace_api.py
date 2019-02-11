@@ -633,7 +633,7 @@ class Analysis(object):
         # default submission
         self.submit_kwargs = {
             'description': description,
-            'analysis_mode': 'correlation',
+            'analysis_mode': 'analysis',
             'tool': 'ace_api',
             'tool_instance': 'ace_api:{}'.format(socket.getfqdn()),
             'type': 'generic',
@@ -1058,17 +1058,38 @@ class Analysis(object):
 
 
 class Alert(Analysis):
-    """To support backwards compatibility with old client lib. Do NOT use this class."""
+    """This class primarily supports backwards compatibility with the old client lib.
+    
+        - SSL verification default behavior is different.
+        - Analysis mode default is correlation, forcing alert creation without detection.
+        - Files are handles differently.
+
+    There is no reason to use this class rather than the Analysis class.
+    If you want to force an analysis submission to become an alert, you should declare your Analysis with the analysis_mode set to 'correlation'.
+    """
     def __init__(self, description, *args, **kwargs):
         super().__init__(description, *args, **kwargs)
-        # support pickle load too
-        #if 'legacy_files' in self.submit_kwargs:
-            # the 'files' list should always be empty here but try to support mixing old/new functionality
-        #    self.submit_kwargs['files'].extend(self.submit_kwargs['legacy_files'])
-        #self.submit_kwargs['legacy_files'] = self.submit_kwargs['files']
+        # default mode for legacy api is correlation
+        self.submit_kwargs['analysis_mode'] = 'correlation'
 
     def add_attachment_link(self, source_path, relative_storage_path):
         self.submit_kwargs['files'].append((source_path, relative_storage_path))
+        return self
+
+    def add_file(self, source_path, relative_storage_path=None, *args, **kwargs):
+        """Add a file to this Alert.
+
+        :param str source_path: The path to the file.
+        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis directory. Default is the root of the analysis.
+        """
+        file_name = os.path.basename(source_path)
+        if relative_storage_path is None:
+            relative_storage_path = file_name
+        if not os.path.exists(source_path):
+            logging.error("'{}' does not exist.".format(source_path))
+            return self
+        self.submit_kwargs['files'].append((source_path, relative_storage_path))
+        self.add_observable('file', file_name, *args, **kwargs)
         return self
 
     # support legacy submit function

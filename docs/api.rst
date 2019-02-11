@@ -155,6 +155,20 @@ After cloudphish has finished analyzing the URL, the status changes to 'ANALYZED
 
 The results of this submission can be viewed here: https://ace.integraldefense.com/ace/analysis?direct=732ec396-ce20-463f-82b0-6b043b07f941
 
+Forcing Alert Creation
+----------------------
+
+By default, ACE alerts are only created if an detection is made in the initially submitted analysis. You can force alert creation by changing the default analysis mode from *analysis* to *correlation*. This is accomplished like so::
+
+
+        >>> analysis = ace_api.Analysis('This is an analysis with no detections', analysis_mode='correlation')
+        
+        >>> analysis.submit()
+        <ace_api.Analysis object at 0x7fbe81af66a0>
+        
+        >>> analysis.status
+        'COMPLETE (Alerted with 0 detections)'
+
 
 Downloading Cloudphish Results
 ------------------------------
