@@ -73,9 +73,9 @@ def set_default_ssl_ca_path(ssl_verification):
        - If set to False, then SSL verification is disabled.
        - Else, it is assumed to be a file that contains the CAs to be used to verify the SSL certificates.
 
-       :param ssl_verification: see behavior above.
-       :type ssl_verification: str or None or False
-       """
+    :param ssl_verification: see behavior above.
+    :type ssl_verification: str or None or False
+    """
     global default_ssl_verification
     default_ssl_verification = ssl_verification
 
@@ -696,12 +696,13 @@ class Analysis(object):
     @property
     def status(self):
         """Return the human readable status of this Analysis.
-        If this Analysis does not have a uuid, the status is 'UNKNOWN: UUID is None'.
-        A status of 'COMPLETE: No detections' is returned if this Analysis has a uuid but ACE returned a 404 for it (ACE deletes any analysis that didn't become an Alert).
-        'ANALYZING' means ACE is working on the root analysis.
-        'DELAYED' means ACE is waiting for one or more Analysis Modules to complete it's work.
-        'NEW' means ACE has received the Analysis but hasn't started working on it yet. Analysis shouldn't stay in the NEW state long.
-        'COMPLETE (Alerted with # detections)' means the Analysis became an Alert and has # detection points.
+
+            - If this Analysis does not have a uuid, the status is 'UNKNOWN: UUID is None'.
+            - A status of 'COMPLETE: No detections' is returned if this Analysis has a uuid but ACE returned a 404 for it (ACE deletes any analysis that didn't become an Alert).
+            - 'ANALYZING' means ACE is working on the root analysis.
+            - 'DELAYED' means ACE is waiting for one or more Analysis Modules to complete it's work.
+            - 'NEW' means ACE has received the Analysis but hasn't started working on it yet. Analysis shouldn't stay in the NEW state long.
+            - 'COMPLETE (Alerted with # detections)' means the Analysis became an Alert and has # detection points.
         """
         if self.uuid is None:
             return "UNKNOWN: UUID is None. Not submitted?"
@@ -734,10 +735,20 @@ class Analysis(object):
         return self
 
     def set_remote_host(self, remote_host):
+        """Set the remote host."""
         self.remote_host = remote_host
         return self
 
     def set_ssl_verification(self, ssl_verification):
+        """Set the ssl verification behavior.
+
+           - If set to None (the default) then the system installed CAs are used.
+           - If set to False, then SSL verification is disabled.
+           - Else, it is assumed to be a file that contains the CAs to be used to verify the SSL certificates.
+
+        :param ssl_verification: see behavior above.
+        :type ssl_verification: str or None or False
+        """        
         self.ssl_verification = ssl_verification
         return self
 
