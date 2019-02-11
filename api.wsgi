@@ -28,11 +28,11 @@ sys.path.append(os.path.join(saq_home))
 # if no logging is specified then how we log depends on what mode we're in
 logging_config_path = os.path.join(saq_home, 'etc', 'api_logging.ini')
 
-# initialize flask
-from api import create_app
-application = create_app()
-
 # initialize saq
 # note that config paths are determined by the env vars we dug out above
 import saq
 saq.initialize(saq_home=saq_home, config_paths=None, logging_config_path=logging_config_path, relative_dir=saq_home, use_flask=True)
+
+# initialize flask
+from api import create_app
+application = create_app()
