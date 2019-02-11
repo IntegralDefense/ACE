@@ -1640,6 +1640,11 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
     
             return
 
+        # if self.root is not set at this point then something went wrong
+        if self.root is None:
+            logging.warning(f"unless to process work item {work_item} (self.root was None)")
+            return 
+
         # at this point self.root is set and loaded
         # remember what the analysis mode was before we started analysis
         current_analysis_mode = self.root.analysis_mode
