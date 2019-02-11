@@ -1080,6 +1080,7 @@ PROTECTION_TYPE_DROPBOX = 'dropbox'
 PROTECTION_TYPE_ONE_DRIVE = 'one drive'
 PROTECTION_TYPE_GOOGLE_DRIVE = 'google drive'
 PROTECTION_TYPE_SHAREPOINT = 'sharepoint'
+PROTECTION_TYPE_EGNYTE = 'egnyte'
 
 REGEX_GOOGLE_DRIVE = re.compile(r'drive\.google\.com/file/d/([^/]+)/view')
 REGEX_SHAREPOINT = re.compile(r'^/:b:/g/(.+)/([^/]+)$')
@@ -1105,6 +1106,13 @@ class ProtectedURLAnalyzer(AnalysisModule):
         except Exception as e:
             logging.error("unable to parse url {}: {}".format(url.value, e))
             return False
+
+        # egnyte links
+        if parsed_url.netloc.lower().endswith('egnyte.com'):
+            if parsed_url.path.startswith('/dl/'):
+                extracted_url = url.value.replace('/dl/', '/dd/')
+                protection_type = PROTECTION_TYPE_EGNYTE
+                logging.info("translated egnyte.com url {} to {}".format(url.value, extracted_url))
 
         # "safelinks" by outlook
         if parsed_url.netloc.lower().endswith('safelinks.protection.outlook.com'):
