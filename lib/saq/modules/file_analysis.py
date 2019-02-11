@@ -109,6 +109,8 @@ KNOWN_OFFICE_EXTENSIONS = [ '.{}'.format(ext) for ext in [
     'sldm',
     'sldx',
     'thmx',
+    # OpenOffice
+    'odt',
 ]]
 
     #'mso',
@@ -134,6 +136,7 @@ def is_office_file(_file):
     result |= 'microsoft excel' in file_type_analysis.file_type.lower()
     result |= 'microsoft word' in file_type_analysis.file_type.lower()
     result |= 'microsoft ooxml' in file_type_analysis.file_type.lower()
+    result |= 'opendocument' in file_type_analysis.file_type.lower()
     return result
 
 def is_macro_ext(path):
