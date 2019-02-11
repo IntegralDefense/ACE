@@ -11,6 +11,7 @@
         <option value="{{timezone}}" {% if timezone == 'UTC' %}SELECTED{% endif %}>{{timezone}}</option>
       {% endfor %}
       </select></td></tr>
+      <tr><th style="padding-right:10px;">Alert Type</th><td style="width:100%;"><input type="text" class="form-control" name="new_alert_type" value="manual"/></td></tr>
       <tr><th style="padding-right:10px;">Description</th><td style="width:100%;"><input type="text" class="form-control" name="new_alert_description" value="Manual Correlation"/></td></tr>
       <tr><th style="padding-right:10px;">Target ACE Node</th><td style="width:100%;"><select class="form-control" name="target_node_id">
       {% for node_id, node_name, node_location, company_id, company_name in available_nodes %}

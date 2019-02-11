@@ -377,6 +377,11 @@ class CrawlphishURLFilter(object):
                       result.parsed_url.query,
                       result.parsed_url.fragment))
 
+        if self.is_whitelisted(result.parsed_url.hostname):
+            result.reason = REASON_WHITELISTED
+            result.filtered = False
+            return result
+
         if self.is_blacklisted(result.parsed_url.hostname):
             result.reason = REASON_BLACKLISTED
             result.filtered = True
@@ -385,11 +390,6 @@ class CrawlphishURLFilter(object):
         # if the URL is just to an IP address then we crawl that no matter what
         if is_ipv4(result.parsed_url.hostname):
             result.reason = REASON_DIRECT_IPV4
-            result.filtered = False
-            return result
-
-        if self.is_whitelisted(result.parsed_url.hostname):
-            result.reason = REASON_WHITELISTED
             result.filtered = False
             return result
 

@@ -135,6 +135,7 @@ etc/api_logging.ini
 etc/blacklist.yar
 etc/remote_assignments.yar
 etc/saq.ini.saved
+etc/startupd
 
 # java decompiler
 bin/procyon-decompiler*

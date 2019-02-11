@@ -983,7 +983,7 @@ def new_alert(db, c):
 
     tool = "gui"
     tool_instance = saq.CONFIG['global']['instance_name']
-    alert_type = "manual"
+    alert_type = request.form.get('new_alert_type', 'manual')
     description = request.form.get('new_alert_description', 'Manual Alert')
     event_time = event_time
     details = {'user': current_user.username, 'comment': comment}
@@ -1044,7 +1044,7 @@ def new_alert(db, c):
                 analysis_mode = ANALYSIS_MODE_CORRELATION,
                 tool = tool,
                 tool_instance = tool_instance,
-                type = ANALYSIS_TYPE_MANUAL,
+                type = alert_type,
                 event_time = event_time,
                 details = details,
                 observables = observables,
@@ -3953,7 +3953,7 @@ def remediate_emails():
 
                 # use body_to field as recipient if there is no env_to field
                 if field == 'body_to' and targets[archive_id].recipient is None:
-                    targets[archive_id].recipient = value
+                    targets[archive_id].recipient = value.decode(errors='ignore')
 
     # targets acquired -- perform the remediation or restoration
     params = [ ] # of tuples of ( message-id, email_address )
@@ -4005,6 +4005,7 @@ def remediate_emails():
     for key in targets.keys():
         targets[key] = targets[key].json
     
-    response = make_response(json.dumps(targets))
+    from saq.analysis import _JSONEncoder
+    response = make_response(json.dumps(targets, cls=_JSONEncoder))
     response.mimetype = 'application/json'
     return response

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+cd /opt/ace || exit 1
+source load_environment
+
+if [ -d data/$(ace config -v elk_logging.elk_log_dir) ]
+then
+    find data/$(ace config -v elk_logging.elk_log_dir) -type f -name '*.json' -mmin +480 -delete
+fi
