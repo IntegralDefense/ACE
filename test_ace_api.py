@@ -89,22 +89,6 @@ class TestCase(ACEEngineTestCase):
             self.assertTrue(r['name'] in VALID_DIRECTIVES)
             self.assertEquals(DIRECTIVE_DESCRIPTIONS[r['name']], r['description'])
 
-    # TODO: complete this test module
-    def test_load_analysis(self):
-        a1 = ace_api.Analysis('This is a test')
-        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
-        with open(temp_path, 'w') as fp:
-            fp.write('test')
-        a1.add_file(temp_path)
-        a1.add_tag('test tag')
-        a1.add_test('test observable')
-        a1.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
-
-        a2 = ace_api.load_analysis(a1.uuid, remote_host=f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
-        self.assertEquals(a1.uuid, a2.uuid)
-        a2.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
-        self.assertNotEqual(a1.uuid, a2.uuid)
-
     def _get_submit_time(self):
         return datetime.datetime(2017, 11, 11, hour=7, minute=36, second=1, microsecond=1)
 
@@ -523,26 +507,6 @@ class TestCase(ACEEngineTestCase):
 
         self.assertEquals(new_alert.submit_kwargs, alert.submit_kwargs)
 
-        # try to submit it
-        self.start_api_server()
-        alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
-        self.assertTrue(validate_uuid(alert.uuid))
-
-        #root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
-        #root.load()
-
-        #self.assertEquals(root.description, 'Test Alert')
-        #ipv4_observable = root.find_observable(lambda o: o.type == F_IPV4)
-        #self.assertIsNotNone(ipv4_observable)
-        #self.assertEquals(ipv4_observable.value, '1.2.3.4')
-        #self.assertTrue(ipv4_observable.has_directive(DIRECTIVE_NO_SCAN))
-        
-        #file_observable = root.find_observable(lambda o: o.type == F_FILE)
-        #self.assertIsNotNone(file_observable)
-        #self.assertEquals(file_observable.value, 'dest/test.txt')
-        #with open(os.path.join(root.storage_dir, file_observable.value), 'r') as fp:
-            #self.assertEquals(fp.read(), 'test')
-
     def test_failed_submit(self):
 
         self.stop_api_server()
@@ -565,17 +529,12 @@ class TestCase(ACEEngineTestCase):
         dir_list = os.listdir('.saq_alerts')
         self.assertEquals(len(dir_list), 1)
 
-        # load the alert
+        # load the analysis object
         target_path = os.path.join('.saq_alerts', dir_list[0], 'alert')
         with open(target_path, 'rb') as fp:
             new_analysis = pickle.load(fp)
 
         self.assertEquals(new_analysis.submit_kwargs, analysis.submit_kwargs)
-
-        # try to submit it
-        self.start_api_server()
-        analysis.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
-        self.assertTrue(validate_uuid(analysis.uuid))
 
     def test_submit_failed_alerts(self):
 
@@ -655,6 +614,49 @@ class TestCase(ACEEngineTestCase):
         dir_list = os.listdir('.saq_alerts')
         self.assertEquals(len(dir_list), 0)
 
+    def test_analysis_file_handling(self):
+
+        analysis = ace_api.Analysis(description='Test Analysis')
+        # add a normal file
+        normal_file_path = self.create_test_file('normal.txt')
+        analysis.add_file(normal_file_path)
+        # add a normal file, passing in the file pointer
+        fp_file_path = self.create_test_file('fp.txt')
+        fp = open(fp_file_path, 'rb')
+        analysis.add_file(fp_file_path, fp)
+        # add a normal file but tell it to go into a subdirectory
+        subdir_file_path = self.create_test_file('subdir.txt')
+        analysis.add_file(subdir_file_path, relative_storage_path='subdir/subdir.txt')
+        # add a file passing the contents as a string
+        analysis.add_file('str.txt', 'This is a string.')
+        # add a file passing the contents as a bytes
+        analysis.add_file('bytes.txt', b'This is a bytes.')
+
+        result = analysis.submit()
+
+        # make sure it got our files
+        io_buffer = io.BytesIO()
+        ace_api.get_analysis_file(result.uuid, 'normal.txt', output_fp=io_buffer)
+        with open(normal_file_path, 'rb') as fp:
+            self.assertEquals(fp.read(), io_buffer.getvalue())
+
+        io_buffer = io.BytesIO()
+        ace_api.get_analysis_file(result.uuid, 'fp.txt', output_fp=io_buffer)
+        with open(fp_file_path, 'rb') as fp:
+            self.assertEquals(fp.read(), io_buffer.getvalue())
+
+        #io_buffer = io.BytesIO()
+        #ace_api.get_analysis_file(result.uuid, 'subdir/subdir.txt', output_fp=io_buffer)
+        #with open(subdir_file_path, 'rb') as fp:
+            #self.assertEquals(fp.read(), io_buffer.getvalue())
+
+        io_buffer = io.BytesIO()
+        ace_api.get_analysis_file(result.uuid, 'str.txt', output_fp=io_buffer)
+        self.assertEquals(b'This is a string.', io_buffer.getvalue())
+
+        io_buffer = io.BytesIO()
+        ace_api.get_analysis_file(result.uuid, 'bytes.txt', output_fp=io_buffer)
+        self.assertEquals(b'This is a bytes.', io_buffer.getvalue())
 
 class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 

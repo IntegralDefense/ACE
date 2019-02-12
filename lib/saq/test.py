@@ -54,7 +54,7 @@ from saq.analysis import RootAnalysis, _enable_io_tracker, _disable_io_tracker
 from saq.database import initialize_database, get_db_connection, use_db
 from saq.engine import Engine
 from saq.error import report_exception
-from saq.util import storage_dir_from_uuid, workload_storage_dir
+from saq.util import storage_dir_from_uuid, workload_storage_dir, abs_path
 
 from splunklib import SplunkQueryObject
 
