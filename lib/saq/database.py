@@ -1290,10 +1290,6 @@ WHERE
 
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""UPDATE alerts SET detection_count = %s WHERE id = %s""", ( self.detection_count, self.id, ))
-            db.commit()
 
         # save the alert to the database
         session = Session.object_session(self)
@@ -2005,7 +2001,10 @@ def clear_delayed_analysis_requests(root, db, c):
     """Clears all delayed analysis requests for the given RootAnalysis object."""
     execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE uuid = %s", (root.uuid,), commit=True)
     
-def initialize_database():
+def initialize_database(use_flask=False):
+    """Initializes database connections by creating the SQLAlchemy engine and session objects.
+       :param bool use_flask: If this flag is set to True then we use configure database session to be in sync with
+       Flask's request objects. Otherwise the default "thread local" session_scope is used. """
 
     global DatabaseSession
     from config import config
@@ -2015,7 +2014,13 @@ def initialize_database():
         **config[saq.CONFIG['global']['instance_type']].SQLALCHEMY_DATABASE_OPTIONS)
 
     DatabaseSession = sessionmaker(bind=engine)
-    saq.db = scoped_session(DatabaseSession)
+
+    if use_flask:
+        import flask
+        saq.db = scoped_session(DatabaseSession, scopefunc=flask._app_ctx_stack.__ident_func__)
+        logging.debug("using flask for session scoping")
+    else:
+        saq.db = scoped_session(DatabaseSession)
 
 @use_db
 def initialize_node(db, c):

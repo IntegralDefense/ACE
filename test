@@ -8,7 +8,7 @@ fi
 
 cd "${SAQ_HOME}" || { echo "cannot cd to ${SAQ_HOME}"; exit 1; }
 
-rm -rf error_reports/* 2> /dev/null
+#rm -rf error_reports/* 2> /dev/null
 
 # clear logs
 if [ -e logs/unittest.log ]
