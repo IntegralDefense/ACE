@@ -257,7 +257,8 @@ def get_status(uuid):
     result = {
         'workload': None,
         'delayed_analysis': [],
-        'locks': None
+        'locks': None,
+        'alert': None
     }
 
     with get_db_connection() as db:
@@ -284,6 +285,35 @@ WHERE
                 'node_id': row[2],
                 'analysis_mode': row[3],
                 'insert_date': row[4]
+            }
+
+        # is this an alert?
+        c.execute("""
+SELECT 
+    id, 
+    uuid,
+    location,
+    insert_date,
+    storage_dir,
+    disposition,
+    disposition_time,
+    detection_count
+FROM
+    alerts
+WHERE
+    uuid = %s
+""", (uuid,))
+        row = c.fetchone()
+        if row is not None:
+            result['alert'] = {
+                'id': row[0],
+                'uuid': row[1],
+                'location': row[2],
+                'insert_date': row[3],
+                'storage_dir': row[4],
+                'disposition': row[5],
+                'disposition_time': row[6],
+                'detection_count': row[7]
             }
 
         # is there any delayed analysis scheduled for it?
