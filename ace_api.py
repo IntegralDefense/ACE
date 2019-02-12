@@ -1000,7 +1000,7 @@ class Analysis(object):
             return self
 
         except Exception as submission_error:
-            logging.warning("unable to submit alert {}: {} (attempting to save alert to {})".format(
+            logging.warning("unable to submit {}: {} (attempting to save to {})".format(
                             self, submission_error, fail_dir))
 
             if not save_on_fail:
@@ -1016,8 +1016,7 @@ class Analysis(object):
                 try:
                     os.makedirs(dest_dir)
                 except Exception as e:
-                    logging.error("unable to create directory {} to save alert {}: {}".format(
-                                  dest_dir, self, e))
+                    logging.error("unable to create directory {} to save {}: {}".format(dest_dir, self, e))
                     raise e
 
             # copy any files we wanted to submit to the directory
