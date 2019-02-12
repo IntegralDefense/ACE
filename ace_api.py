@@ -24,7 +24,6 @@ except ImportError:
     print("You need to install the tzlocal library (see https://pypi.org/project/tzlocal/)")
     sys.exit(1)
 
-import atexit
 import copy
 import datetime
 import inspect
@@ -318,7 +317,7 @@ def submit(
     #if isinstance(details, str):
         #details = json.loads(details)
 
-    # make sure each file is a tuple of (something, str)
+    # make sure each file is a tuple of (str, fp)
     _error_message = "file parameter {} invalid: each element of the file parameter must be a tuple of " \
                      "(file_name, file_descriptor)"
 
@@ -364,66 +363,6 @@ def get_analysis(uuid, *args, **kwargs):
     :rtype: dict
     """
     return _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
-
-@api_command
-def load_analysis(uuid_or_datapath, download_everything=None, target_dir=None, *args, **kwargs):
-    """Load an analysis by it's uuid OR it's analysis result data.json file.
-    This loads an Analysis object with the basic contextual data. If download_everything is True, assumes uuid_or_datapath is a valid UUID.
-
-    :param str uuid_or_datapath: An alert UUID or path to an alert/analysis data.json file.
-    :param bool download_everything: (optional) If true, download EVERYTHING and load file handles.
-    :param str target_dir: (optional) Directory name to write the data. Default: UUID
-    :return: Analysis object
-    """
-    uuid = uuid_or_datapath
-    data = None
-    data_dir = None
-
-    if download_everything:
-        if target_dir is None:
-            target_dir = uuid
-        data_dir = target_dir
-        download(uuid, data_dir)
-        uuid_or_datapath = os.path.join(uuid, 'data.json')
-
-    if os.path.exists(uuid_or_datapath):
-        with open(uuid_or_datapath, 'r') as fp:
-            data = json.loads(fp.read())
-    if not data:
-        result = _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
-        data = result['result']
-
-    files = []
-    observables = []
-    details = data['details']
-    for o_key in data['observables']:
-        o = data['observable_store'][o_key]
-        observables.append({'type': o['type'], 'value': o['value'], 'directives': o['directives']})
-        if o['type'] == 'file':
-            files.append((o['value'], "This analysis has undergone load-shock-therapy.\n"\
-                                      "Use the download_everything flag to actually load file data" ))
-
-    # if we downloaded everything, load the things
-    if data_dir is not None:
-        details_file = details['file_path']
-        with open(os.path.join(data_dir, '.ace', details_file), 'r') as fp:
-            details = json.loads(fp.read())
-        # open file handles
-        files = [(f[0], open(f[0], 'rb')) for f in files] 
-
-    a = Analysis(data['description'],
-                analysis_mode=data['analysis_mode'],
-                tool=data['tool'],
-                tool_instance=data['tool_instance'],
-                type=data['type'],
-                event_time=data['event_time'],
-                details=details,
-                observables=observables,
-                tags=data['tags'],
-                files=files
-                )
-    a.uuid = data['uuid']
-    return a
 
 @api_command
 def get_analysis_details(uuid, name, *args, **kwargs):
@@ -609,15 +548,20 @@ class AlertSubmitException(Exception):
     pass
 
 class Analysis(object):
-    """A ACE Analysis object.
+    """An ACE Analysis object.
 
     :param str discription: (optional) A brief description of this analysis data (Why? What? How?).
-    :param str analysis_mode: (optional) The ACE mode this analysis should be put into. 'correlation' will force an alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
-    :param str tool: (optional) The "tool" that is submitting this analysis. Meant for distinguishing your custom hunters and detection tools. Default: 'ace_api'.
+    :param str analysis_mode: (optional) The ACE mode this analysis should be put into. 'correlation' will force an
+    alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
+    :param str tool: (optional) The "tool" that is submitting this analysis. Meant for distinguishing your custom
+    hunters and detection tools. Default: 'ace_api'.
     :param str tool_instance: (optional) The instance of the tool that is submitting this analysis.
-    :param str type: (optional) The type of analysis this is, kinda like the focus of the alert. Mainly used internally by some ACE modules. Default: 'generic'
-    :param datetime event_time: (optional) Assign a time to this analysis. Usually, the time associated to what ever event triggered this analysis creation. Default: now()
-    :param dict details: (optional) A dictionary of additional details to get added to the alert, think notes and comments.
+    :param str type: (optional) The type of analysis this is, kinda like the focus of the alert. Mainly used internally
+    by some ACE modules. Default: 'generic'
+    :param datetime event_time: (optional) Assign a time to this analysis. Usually, the time associated to what ever
+    event triggered this analysis creation. Default: now()
+    :param dict details: (optional) A dictionary of additional details to get added to the alert, think notes and
+    comments.
     :param list observables: (optional) A list of observables to add to the request.
     :param list tags: (optional) If this request becomes an Alert, these tags will get added to it.
     :param list files: (optional) A list of (file_name, file_descriptor) tuples to be included in this ACE request.
@@ -656,20 +600,6 @@ class Analysis(object):
 
         # this gets set after a successful call to submit
         self.uuid = None
-
-        # and this gets set after an unsuccessful call to subit
-        #self.uri = None
-        #self.key = None
-
-        # always try and close file pointers
-        atexit.register(self._cleanup)
-
-    def _cleanup(self):
-        for file_name, fp in self.submit_kwargs['files']:
-            try:
-                fp.close()
-            except:
-                pass
 
     def __str__(self):
         return 'Analysis({})'.format(self.submit_kwargs)
@@ -813,8 +743,9 @@ class Analysis(object):
 
         :param str filename: The name of the file. Assumed to be a valid path to the file if data_or_fp is None.
         :param data_or_fp: (optional) A string or file pointer.
-        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis directory. Default is the root of the analysis.
-        :type data_or_fp: str or None or _io.TextIOWrapper or _io.BufferedReader 
+        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis 
+        directory. Default is the root of the analysis.
+        :type data_or_fp: str or bytes or None or _io.TextIOWrapper or _io.BufferedReader 
         """
         # get just the file name
         file_name = None
@@ -822,18 +753,22 @@ class Analysis(object):
             file_name = relative_storage_path
         else:
             file_name = os.path.relpath(file_name_or_path)
-        if data_or_fp is None:
+
+        # convert whatever we passed as content into some kind of a file pointer
+        if isinstance(data_or_fp, str):
+            data_or_fp = io.StringIO(data_or_fp)
+        elif isinstance(data_or_fp, bytes):
+            data_or_fp = io.BytesIO(data_or_fp)
+        elif data_or_fp is None:
             if not os.path.exists(file_name_or_path):
                 logging.error("'{}' does not exist.".format(file_name_or_path))
                 return self
-            fp = open(file_name_or_path, 'rb')
-            self.submit_kwargs['files'].append((file_name, fp))
-            self.add_observable('file', file_name, *args, **kwargs)
-            return self
-        else:
-            self.submit_kwargs['files'].append((file_name, data_or_fp))
-            self.add_observable('file', file_name, *args, **kwargs)
-            return self
+
+            data_or_fp = open(file_name_or_path, 'rb')
+
+        self.submit_kwargs['files'].append((file_name, data_or_fp))
+        self.add_observable('file', file_name, *args, **kwargs)
+        return self
 
     def add_file_location(self, file_location, *args, **kwargs):
         """Add a file location observable. This is the path to a file on a specific hostname.
@@ -974,6 +909,7 @@ class Analysis(object):
         :param ssl_verificaiton: (optional) Change the SSL verificaiton behavior.
         :type ssl_verification: str or False or None
         """
+
         if remote_host:
             if remote_host.startswith('http'):
                 from urllib.parse import urlparse
@@ -987,6 +923,11 @@ class Analysis(object):
             ssl_verification = self.ssl_verification
 
         self.validate_files()
+
+        # we'll keep a list of the file pointers we need to make sure we close
+        # we do this here because if the submission fails and we save it to disk
+        # then submit_kwargs changes 
+        open_files = self.submit_kwargs['files'][:]
 
         try:
             result = submit(remote_host=remote_host, 
@@ -1031,7 +972,6 @@ class Analysis(object):
                     fp.seek(0)
                     with open(destination_path, 'wb') as _f:
                         _f.write(fp.read())
-                    fp.close()
                 except Exception as e:
                     logging.error("unable to copy file data from {} to {}: {}".format(fp, destination_path, e))
 
@@ -1051,21 +991,17 @@ class Analysis(object):
 
         finally:
             # we make sure we close our file descriptors
-            for file_name, fp in self.submit_kwargs['files']:
-                if not isinstance(fp, str):
-                    if not fp.closed:
-                        try:
-                            fp.close()
-                        except Exception as e:
-                            logging.error("unable to close file descriptor for {}".format(file_name))
-
+            for file_name, fp in open_files:
+                try:
+                    fp.close()
+                except Exception as e:
+                    logging.error("unable to close file descriptor for {}".format(file_name))
 
 class Alert(Analysis):
     """This class primarily supports backwards compatibility with the old client lib.
     
         - SSL verification default behavior is different.
         - Analysis mode default is correlation, forcing alert creation without detection.
-        - Files are handles differently.
 
     There is no reason to use this class rather than the Analysis class.
     If you want to force an analysis submission to become an alert, you should declare your Analysis with the analysis_mode set to 'correlation'.
@@ -1074,26 +1010,6 @@ class Alert(Analysis):
         super().__init__(description, *args, **kwargs)
         # default mode for legacy api is correlation
         self.submit_kwargs['analysis_mode'] = 'correlation'
-
-    def add_attachment_link(self, source_path, relative_storage_path):
-        self.submit_kwargs['files'].append((source_path, relative_storage_path))
-        return self
-
-    def add_file(self, source_path, relative_storage_path=None, *args, **kwargs):
-        """Add a file to this Alert.
-
-        :param str source_path: The path to the file.
-        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis directory. Default is the root of the analysis.
-        """
-        file_name = os.path.basename(source_path)
-        if relative_storage_path is None:
-            relative_storage_path = file_name
-        if not os.path.exists(source_path):
-            logging.error("'{}' does not exist.".format(source_path))
-            return self
-        self.submit_kwargs['files'].append((source_path, relative_storage_path))
-        self.add_observable('file', file_name, *args, **kwargs)
-        return self
 
     # support legacy submit function
     def submit(self, uri=None, key=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
@@ -1106,26 +1022,16 @@ class Alert(Analysis):
             parsed_url = urlparse(uri)
             remote_host = parsed_url.netloc
 
-        kwargs = {}
-        kwargs.update(self.submit_kwargs)
-        # originally kwargs['files'] was a tuple of (source_path, relative_storage_path)
-        # the file params should be a tuple of (relative_storage_path, file descriptor)
-        # NOTE: The assuption is that this Alert.submit funciton will only be used by legacy code
-        # where kwargs['files'] is a tuple of (source_path, relative_storage_path)
-        self.submit_kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in kwargs['files']]
-        # the old "api" didn't even use SSL so if this Alert class is used to submit the
-        # ACE default SSL cert location should be used rather than the OS's trusted certs
-        # basically, this is changing the default behavior of ace_api for ssl_verifcation
         if ssl_verification is None:
             if self.ssl_verification is not None:
                 ssl_verification = self.ssl_verification
             else:
                 ssl_verification = '/opt/ace/ssl/ca-chain.cert.pem'
 
-        return super(Alert, self).submit(remote_host=remote_host, 
-                                         fail_dir=fail_dir, 
-                                         save_on_fail=save_on_fail, 
-                                         ssl_verification=ssl_verification)
+        return Analysis.submit(self, remote_host=remote_host, 
+                                     fail_dir=fail_dir, 
+                                     save_on_fail=save_on_fail, 
+                                     ssl_verification=ssl_verification)
 
 @support_command
 def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq_alerts', delete_on_success=True, *args, **kwargs):
@@ -1163,13 +1069,11 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
 
             logging.info("submitting {}".format(alert))
 
-            if isinstance(alert, Alert):
-                alert.submit(save_on_fail=False)
-            elif isinstance(alert, Analysis):
-                # we need to open file handles for the Analysis class
-                # because they are saved a tuple of (source_path, relative_storage_path) on fail
-                alert.submit_kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in alert.submit_kwargs['files']]
-                alert.submit(save_on_fail=False)
+            # we need to open file handles for the Analysis class
+            # because they are saved as a tuple of (source_path, relative_storage_path) on fail
+
+            alert.submit_kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in alert.submit_kwargs['files']]
+            alert.submit(save_on_fail=False)
 
             if delete_on_success:
                 try:
@@ -1177,6 +1081,7 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
                     shutil.rmtree(target_dir)
                 except Exception as e:
                     logging.error("unable to delete directory {}: {}".format(target_dir, e))
+
         except Exception as e:
             logging.error("unable to submit {}: {}".format(target_path, e))
 
