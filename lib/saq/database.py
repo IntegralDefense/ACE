@@ -1290,6 +1290,10 @@ WHERE
 
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""UPDATE alerts SET detection_count = %s WHERE id = %s""", ( self.detection_count, self.id, ))
+            db.commit()
 
         # save the alert to the database
         session = Session.object_session(self)

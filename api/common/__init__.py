@@ -3,6 +3,7 @@
 # ACE API common routines
 
 import json
+import logging
 
 from .. import db, json_result
 
@@ -31,7 +32,19 @@ def get_valid_companies():
 @common.route('/get_valid_observables', methods=['GET'])
 def get_valid_observables():
     result = []
-    for o_type in VALID_OBSERVABLE_TYPES:
+    active_observable_types = [o_type for o_type in VALID_OBSERVABLE_TYPES if o_type not in DEPRECATED_OBSERVABLES]
+    for o_type in active_observable_types:
         result.append({'name': o_type, 'description': OBSERVABLE_DESCRIPTIONS[o_type]})
+
+    return json_result({'result': result})
+
+@common.route('/get_valid_directives', methods=['GET'])
+def get_directives():
+    result = []
+    for directive in VALID_DIRECTIVES:
+        try:
+            result.append({'name': directive, 'description': DIRECTIVE_DESCRIPTIONS[directive]})
+        except KeyError as e:
+            logging.warn('Missing directive description for the "{}" directive.'.format(directive))
 
     return json_result({'result': result})
