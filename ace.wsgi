@@ -29,6 +29,7 @@ logging_config_path = os.path.join(saq_home, 'etc', 'apache_logging.ini')
 
 # initialize saq
 # note that config paths are determined by the env vars we dug out above
+# NOTE that we do NOT set use_flask here YET since we're still using the Flask-SQLAlchemy extension
 import saq
 saq.initialize(saq_home=saq_home, config_paths=None, logging_config_path=logging_config_path, relative_dir=saq_home)
 
