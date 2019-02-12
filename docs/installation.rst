@@ -49,7 +49,7 @@ Cloning ACE
 As the ace user you previously created, cd into /opt and git clone the IntegralDefense ACE master branch: https://github.com/IntegralDefense/ACE.git::
 
   $ cd /opt
-  $ git clone https://github.com/IntegralDefense/ACE.git
+  $ git clone https://github.com/IntegralDefense/ACE.git && mv ACE ace
 
 .. _source.list:
 
@@ -95,6 +95,25 @@ Troubleshooting & Help
 
 There are a couple snags and gotchas that you can run into when installing ACE. This section will detail a few, but it's still a work in process. So, please send any issues or questions to ace-support@integraldefense.com. Please include as much detail as possible and we will get back to you as soon as we can. Thanks!
 
+No Web GUI?
++++++++++++
+
+Make sure apache2 is running and the ``/etc/apache2/sites-enabled/ace.conf`` configuration is loaded. The ``ace.conf`` should be a symlink in ``/etc/apache2/sites-available`` that points to ``/opt/ace/etc/saq_apache.conf``.
+
+Alerts staying in 'NEW' status?
++++++++++++++++++++++++++++++++
+
+Make sure the ACE engine is running. You can do this by running the following::
+
+    cd /opt/ace && bin/start-correlation-engine 
+
+Start ACE
++++++++++
+
+You should now have a working installation, but you need to start ACE's core (the correlation engine) this is accomplished with the ``bin/start-correlation-engine`` command. You can also use the ``bin/start-ace`` command, which start the correlation engine and attempt to start some other ACE collectors/services. You will get some errors if you don't have those other services configured (which you probably won't at this point). Those errors are nothing to be concerned about, however, if you do not want to see those errors you can explicitly start the correlation engine you need like so::
+
+    cd /opt/ace && bin/start-correlation-engine
+
 .. _get-data-in:
 
 Getting Data into ACE
@@ -117,3 +136,8 @@ By default, the Insert Date is set to the current time, and the Description is s
 Select the type of observable you wish to correlate and then provide the value. Click the Add button to correlate more than one observable type and/or value at a time.
 
 Shortly after you've submitted your observable(s) for correlation, you will see your alert appear on the Manage Alerts page with the description you provided. The alert status will change to 'Complete' once ACE is finished performing its analysis. You must currently refresh the Manage Alerts page to see the alert status updates.
+
+Using the API
++++++++++++++
+
+ACE has an API that makes it simple to submit data to ACE for analysis and/or correlation. Check out the :ref:`ACE API Examples` and :ref:`ACE API` section for more information. 
