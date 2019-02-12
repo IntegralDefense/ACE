@@ -1039,6 +1039,7 @@ class Analysis(object):
             self.submit_kwargs['files'] = [(os.path.join(dest_dir, f[0]), f[0]) for f in self.submit_kwargs['files']]
 
             # remember these values for submit_failed_alerts()
+            self.remote_host = remote_host
             self.ssl_verification = ssl_verification
 
             # to write it out to the filesystem
@@ -1116,10 +1117,15 @@ class Alert(Analysis):
         # ACE default SSL cert location should be used rather than the OS's trusted certs
         # basically, this is changing the default behavior of ace_api for ssl_verifcation
         if ssl_verification is None:
-            ssl_verification = '/opt/ace/ssl/ca-chain.cert.pem'
+            if self.ssl_verification is not None:
+                ssl_verification = self.ssl_verification
+            else:
+                ssl_verification = '/opt/ace/ssl/ca-chain.cert.pem'
 
-        return super(Alert, self).submit(remote_host=remote_host, fail_dir=fail_dir, save_on_fail=save_on_fail, ssl_verification=ssl_verification)
-
+        return super(Alert, self).submit(remote_host=remote_host, 
+                                         fail_dir=fail_dir, 
+                                         save_on_fail=save_on_fail, 
+                                         ssl_verification=ssl_verification)
 
 @support_command
 def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq_alerts', delete_on_success=True, *args, **kwargs):
@@ -1138,22 +1144,32 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
             continue
 
         try:
-            # we allow the user to change what server we're sending to
-            # otherwise
             kwargs = {}
-            if remote_host is not None:
-                kwargs['uri'] = 'https://{}'.format(remote_host)
-                logging.info("submitting {} to {}".format(target_path, kwargs['uri']))
-            if ssl_verification is not None:
-                kwargs['ssl_verification'] = ssl_verification
+            # if we didn't pass a value for remote_host then we default to whatever it was when it failed
+            if remote_host is None:
+                remote_host = alert.remote_host
+            # if it's still None we we use the default
+            if remote_host is None:
+                remote_host = default_remote_host
+
+            # same for ssl_verification
+            if ssl_verification is None:
+                ssl_verification = alert.ssl_verification
+            if ssl_verification is None:
+                ssl_verification = default_ssl_verification
+
+            alert.remote_host = remote_host
+            alert.ssl_verification = ssl_verification
+
+            logging.info("submitting {}".format(alert))
 
             if isinstance(alert, Alert):
-                alert.submit(save_on_fail=False, **kwargs)
+                alert.submit(save_on_fail=False)
             elif isinstance(alert, Analysis):
                 # we need to open file handles for the Analysis class
                 # because they are saved a tuple of (source_path, relative_storage_path) on fail
                 alert.submit_kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in alert.submit_kwargs['files']]
-                alert.submit(save_on_fail=False, **kwargs)
+                alert.submit(save_on_fail=False)
 
             if delete_on_success:
                 try:
@@ -1163,7 +1179,6 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
                     logging.error("unable to delete directory {}: {}".format(target_dir, e))
         except Exception as e:
             logging.error("unable to submit {}: {}".format(target_path, e))
-
 
 def main():
     import argparse
