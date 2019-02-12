@@ -152,6 +152,14 @@ VALID_OBSERVABLE_TYPES = sorted([
     F_TEST,
 ])
 
+DEPRECATED_OBSERVABLES = sorted([
+    F_CIDR,
+    F_PCAP,
+    F_HTTP_REQUEST,
+    F_SUSPECT_FILE,
+    F_YARA
+])
+
 # utility functions to work with F_IPV4_CONVERSATION types
 def parse_ipv4_conversation(f_ipv4_c):
     return f_ipv4_c.split('_', 2)
@@ -292,6 +300,22 @@ DIRECTIVE_EXCLUDE_ALL = 'exclude_all'
 DIRECTIVE_WHITELISTED = 'whitelisted'
 # indicates this observable should be tracked across different analysis requests
 DIRECTIVE_TRACKED = 'tracked'
+
+DIRECTIVE_DESCRIPTIONS = {
+    DIRECTIVE_ARCHIVE: 'Archive the file',
+    DIRECTIVE_COLLECT_FILE: 'collect the file from the remote endpoint',
+    DIRECTIVE_CRAWL: 'crawl the URL',
+    DIRECTIVE_FORCE_DOWNLOAD: 'download the content of the URL no matter what',
+    DIRECTIVE_EXTRACT_URLS: 'extract URLs from the given file',
+    DIRECTIVE_SANDBOX: 'run the observable through a sandbox',
+    DIRECTIVE_ORIGINAL_EMAIL: 'treat this file as the original email file',
+    DIRECTIVE_ORIGINAL_SMTP: 'treat this file as the original smtp stream',
+    DIRECTIVE_NO_SCAN: 'do not scan this file with yara',
+    DIRECTIVE_DELAY: 'instructs various analysis modules to delay the analysis',
+    DIRECTIVE_EXCLUDE_ALL: 'instructs ACE to NOT analyze this observable at all',
+    DIRECTIVE_WHITELISTED: 'indicates this observable was whitelisted, causing the entire analysis to also become whitelisted',
+    DIRECTIVE_TRACKED: 'indicates this observable should be tracked across different analysis requests'
+}
 
 VALID_DIRECTIVES = [
     DIRECTIVE_ARCHIVE,

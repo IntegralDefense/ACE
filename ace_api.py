@@ -24,6 +24,7 @@ except ImportError:
     print("You need to install the tzlocal library (see https://pypi.org/project/tzlocal/)")
     sys.exit(1)
 
+import atexit
 import copy
 import datetime
 import inspect
@@ -72,9 +73,9 @@ def set_default_ssl_ca_path(ssl_verification):
        - If set to False, then SSL verification is disabled.
        - Else, it is assumed to be a file that contains the CAs to be used to verify the SSL certificates.
 
-       :param ssl_verification: see behavior above.
-       :type ssl_verification: str or None or False
-       """
+    :param ssl_verification: see behavior above.
+    :type ssl_verification: str or None or False
+    """
     global default_ssl_verification
     default_ssl_verification = ssl_verification
 
@@ -170,6 +171,10 @@ def get_valid_observables(*args, **kwargs):
     :rtype: dict
     """
     return _execute_api_call('common/get_valid_observables', *args, **kwargs).json()
+
+@api_command
+def get_valid_directives(*args, **kwargs):
+    return _execute_api_call('common/get_valid_directives', *args, **kwargs).json()
 
 @api_command
 def ping(*args, **kwargs):
@@ -361,6 +366,66 @@ def get_analysis(uuid, *args, **kwargs):
     return _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
 
 @api_command
+def load_analysis(uuid_or_datapath, download_everything=None, target_dir=None, *args, **kwargs):
+    """Load an analysis by it's uuid OR it's analysis result data.json file.
+    This loads an Analysis object with the basic contextual data. If download_everything is True, assumes uuid_or_datapath is a valid UUID.
+
+    :param str uuid_or_datapath: An alert UUID or path to an alert/analysis data.json file.
+    :param bool download_everything: (optional) If true, download EVERYTHING and load file handles.
+    :param str target_dir: (optional) Directory name to write the data. Default: UUID
+    :return: Analysis object
+    """
+    uuid = uuid_or_datapath
+    data = None
+    data_dir = None
+
+    if download_everything:
+        if target_dir is None:
+            target_dir = uuid
+        data_dir = target_dir
+        download(uuid, data_dir)
+        uuid_or_datapath = os.path.join(uuid, 'data.json')
+
+    if os.path.exists(uuid_or_datapath):
+        with open(uuid_or_datapath, 'r') as fp:
+            data = json.loads(fp.read())
+    if not data:
+        result = _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
+        data = result['result']
+
+    files = []
+    observables = []
+    details = data['details']
+    for o_key in data['observables']:
+        o = data['observable_store'][o_key]
+        observables.append({'type': o['type'], 'value': o['value'], 'directives': o['directives']})
+        if o['type'] == 'file':
+            files.append((o['value'], "This analysis has undergone load-shock-therapy.\n"\
+                                      "Use the download_everything flag to actually load file data" ))
+
+    # if we downloaded everything, load the things
+    if data_dir is not None:
+        details_file = details['file_path']
+        with open(os.path.join(data_dir, '.ace', details_file), 'r') as fp:
+            details = json.loads(fp.read())
+        # open file handles
+        files = [(f[0], open(f[0], 'rb')) for f in files] 
+
+    a = Analysis(data['description'],
+                analysis_mode=data['analysis_mode'],
+                tool=data['tool'],
+                tool_instance=data['tool_instance'],
+                type=data['type'],
+                event_time=data['event_time'],
+                details=details,
+                observables=observables,
+                tags=data['tags'],
+                files=files
+                )
+    a.uuid = data['uuid']
+    return a
+
+@api_command
 def get_analysis_details(uuid, name, *args, **kwargs):
     # Get external details.
     return _execute_api_call('analysis/details/{}/{}'.format(uuid, name), *args, **kwargs).json()
@@ -543,18 +608,32 @@ def cloudphish_clear_alert(url=None, sha256=None, *args, **kwargs):
 class AlertSubmitException(Exception):
     pass
 
-class Alert(object):
-    def __init__(self, *args, **kwargs):
+class Analysis(object):
+    """A ACE Analysis object.
+
+    :param str discription: (optional) A brief description of this analysis data (Why? What? How?).
+    :param str analysis_mode: (optional) The ACE mode this analysis should be put into. 'correlation' will force an alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
+    :param str tool: (optional) The "tool" that is submitting this analysis. Meant for distinguishing your custom hunters and detection tools. Default: 'ace_api'.
+    :param str tool_instance: (optional) The instance of the tool that is submitting this analysis.
+    :param str type: (optional) The type of analysis this is, kinda like the focus of the alert. Mainly used internally by some ACE modules. Default: 'generic'
+    :param datetime event_time: (optional) Assign a time to this analysis. Usually, the time associated to what ever event triggered this analysis creation. Default: now()
+    :param dict details: (optional) A dictionary of additional details to get added to the alert, think notes and comments.
+    :param list observables: (optional) A list of observables to add to the request.
+    :param list tags: (optional) If this request becomes an Alert, these tags will get added to it.
+    :param list files: (optional) A list of (file_name, file_descriptor) tuples to be included in this ACE request.
+    """
+    def __init__(self, description, *args, **kwargs):
         # these just get passed to ace_api.submit function
         self.submit_args = args
         self.submit_kwargs = kwargs
 
-        # we only use this (now) when we save a failed submission
+        self.remote_host = default_remote_host
+        self.ssl_verification = default_ssl_verification
 
         # default submission
         self.submit_kwargs = {
-            'description': None,
-            'analysis_mode': 'correlation',
+            'description': description,
+            'analysis_mode': 'analysis',
             'tool': 'ace_api',
             'tool_instance': 'ace_api:{}'.format(socket.getfqdn()),
             'type': 'generic',
@@ -574,17 +653,38 @@ class Alert(object):
                 self.submit_kwargs['type'] = value
             else:
                 logging.debug("ignoring parameter {}".format(key))
-        
+
         # this gets set after a successful call to submit
         self.uuid = None
 
         # and this gets set after an unsuccessful call to subit
-        self.url = None
-        self.key = None
-        self.ssl_verification = None
+        #self.uri = None
+        #self.key = None
+
+        # always try and close file pointers
+        atexit.register(self._cleanup)
+
+    def _cleanup(self):
+        for file_name, fp in self.submit_kwargs['files']:
+            try:
+                fp.close()
+            except:
+                pass
 
     def __str__(self):
-        return 'Alert({})'.format(self.submit_kwargs)
+        return 'Analysis({})'.format(self.submit_kwargs)
+
+    @property
+    def validate_files(self):
+        # make sure each file is a tuple of (something, str)
+        _error_message = "Can not submit Analysis, file {} invalid: each element of the file parameter "\
+                         "must be a tuple of (file_name, file_descriptor)"
+
+        for index, f in enumerate(self.submit_kwargs['files']):
+            assert isinstance(f, tuple), _error_message.format(index)
+            assert len(f) == 2, _error_message.format(index)
+            assert f[1], _error_message.format(index)
+            assert isinstance(f[0], str), _error_message.format(index)
 
     @property
     def description(self):
@@ -593,10 +693,77 @@ class Alert(object):
 
         return None
 
-    def add_tag(self, value):
-        self.submit_kwargs['tags'].append(value)
+    @property
+    def status(self):
+        """Return the human readable status of this Analysis.
 
-    def add_observable(self, o_type, o_value, o_time=None, is_suspect=False, directives=[]):
+            - If this Analysis does not have a uuid, the status is 'UNKNOWN: UUID is None'.
+            - A status of 'COMPLETE: No detections' is returned if this Analysis has a uuid but ACE returned a 404 for it (ACE deletes any analysis that didn't become an Alert).
+            - 'ANALYZING' means ACE is working on the root analysis.
+            - 'DELAYED' means ACE is waiting for one or more Analysis Modules to complete it's work.
+            - 'NEW' means ACE has received the Analysis but hasn't started working on it yet. Analysis shouldn't stay in the NEW state long.
+            - 'COMPLETE (Alerted with # detections)' means the Analysis became an Alert and has # detection points.
+        """
+        if self.uuid is None:
+            return "UNKNOWN: UUID is None. Not submitted?"
+        result = None
+        try:
+            result = get_analysis_status(self.uuid, remote_host=self.remote_host, ssl_verification=self.ssl_verification)
+        except requests.exceptions.HTTPError as e:
+            # UUID is not none, so ACE had to have received this analysis and then delete it after finding no detections
+            return "COMPLETE: No detections"
+        if 'result' not in result:
+            logging.error("Unexpected result when getting analysis status: {}".format(result))
+            return result
+        result = result['result']
+        if 'locks' in result and result['locks'] is not None:
+            return "ANALYZING"
+        if 'delayed_analysis' in result:
+            assert isinstance(result['delayed_analysis'], list)
+        if len(result['delayed_analysis']) > 0:
+            return "DELAYED"
+        if 'workload' in result and result['workload'] is not None:
+            return "NEW"
+        if 'alert' in result and result['alert'] is not None:
+            a = result['alert']
+            return "COMPLETE (Alerted with {} detections)".format(a['detection_count'])
+
+        return "UNKNOWN"
+
+    def set_description(self, description):
+        self.submit_kwargs['description'] = description
+        return self
+
+    def set_remote_host(self, remote_host):
+        """Set the remote host."""
+        self.remote_host = remote_host
+        return self
+
+    def set_ssl_verification(self, ssl_verification):
+        """Set the ssl verification behavior.
+
+           - If set to None (the default) then the system installed CAs are used.
+           - If set to False, then SSL verification is disabled.
+           - Else, it is assumed to be a file that contains the CAs to be used to verify the SSL certificates.
+
+        :param ssl_verification: see behavior above.
+        :type ssl_verification: str or None or False
+        """        
+        self.ssl_verification = ssl_verification
+        return self
+
+    def add_tag(self, value):
+        """Add a tag to this Analysis."""
+        self.submit_kwargs['tags'].append(value)
+        return self
+
+    def add_observable(self, o_type, o_value, o_time=None, directives=[], limited_analysis=[], tags=[]):
+        """Add an observable to this analysis.
+        To all of the observable types and discriptions supported by the ACE instance you're working with, use ace_api.get_valid_observables().
+
+        :param str o_type: The type of observable.
+        :param str o_value: The value of the observable.
+        """
         o = {
             'type': o_type,
             'value': o_value
@@ -608,43 +775,226 @@ class Alert(object):
         if directives:
             o['directives'] = directives
 
+        if limited_analysis:
+            o['limited_analysis'] = limited_analysis
+
+        if tags:
+            o['tags'] = tags
+
         self.submit_kwargs['observables'].append(o)
+        return self
+
+    def add_asset(self, value, *args, **kwargs):
+        """Add a F_IPV4 identified to be a managed asset.
+
+        :param str value: The value of the asset.
+        """
+        return self.add_observable('asset', value, *args, **kwargs)
+
+    def add_email_address(self, value, *args, **kwargs):
+        """Add an email address observable.
+
+        :param str value: An email address
+        """
+        return self.add_observable('email_address', value, *args, **kwargs) 
+
+    def add_email_conversation(self, value, *args, **kwargs):
+        """Add a conversation between a source email address (MAIL FROM) and a destination email address (RCPT TO).
+
+        :param str value: Email conversation formated like 'source_email_address|destination_email_address'
+        """
+        return self.add_observable('email_conversation', value, *args, **kwargs)
+
+    def add_file(self, file_name_or_path, data_or_fp=None, relative_storage_path=None, *args, **kwargs):
+        """Add a file to this analysis.
+
+        :param str filename: The name of the file. Assumed to be a valid path to the file if data_or_fp is None.
+        :param data_or_fp: (optional) A string or file pointer.
+        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis directory. Default is the root of the analysis.
+        :type data_or_fp: str or None or _io.TextIOWrapper or _io.BufferedReader 
+        """
+        # get just the file name
+        file_name = None
+        if relative_storage_path is not None:
+            file_name = relative_storage_path
+        else:
+            file_name = os.path.relpath(file_name_or_path)
+        if data_or_fp is None:
+            if not os.path.exists(file_name_or_path):
+                logging.error("'{}' does not exist.".format(file_name_or_path))
+                return self
+            fp = open(file_name_or_path, 'rb')
+            self.submit_kwargs['files'].append((file_name, fp))
+            self.add_observable('file', file_name, *args, **kwargs)
+            return self
+        else:
+            self.submit_kwargs['files'].append((file_name, data_or_fp))
+            self.add_observable('file', file_name, *args, **kwargs)
+            return self
+
+    def add_file_location(self, file_location, *args, **kwargs):
+        """Add a file location observable. This is the path to a file on a specific hostname.
+
+        :param str file_locaiton: The location of file with format hostname@full_path
+        """
+        return self.add_observable('file_location', file_location, *args, **kwargs)
+
+    def add_file_name(self, file_name, *args, **kwargs):
+        """A the name of a file as an observable. See add_file to add the file itself.
+
+        :param str file_name: a file name (no directory path)
+        """
+        return self.add_observable('file_name', file_name, *args, **kwargs)
+
+    def add_file_path(self, file_path, *args, **kwargs):
+        """Add a file path.
+
+        :param str file_path: The file path.
+        """
+        return self.add_observable('file_path', file_path, *args, **kwargs)
+
+    def add_fqdn(self, fqdn, *args, **kwargs):
+        """Add a fully qualified domain name observable.
+
+        :param str fqdn: fully qualified domain name
+        """
+        return self.add_observable('fqdn', fqdn, *args, **kwargs)
+
+
+    def add_hostname(self, hostname, *args, **kwargs):
+        """Add a host or workstation name.
+
+        :param str hostname: host or workstation name
+        """
+        return self.add_observable('hostname', hostname, *args, **kwargs)
+
+
+    def add_indicator(self, indicator, *args, **kwargs):
+        """Add a CRITS indicator object id.
+
+        :param str indicator: crits indicator object id
+        """
+        return self.add_observable('indicator', indicator, *args, **kwargs)
+
+    def add_ipv4(self, ipv4, *args, **kwargs):
+        """Add an IP address (version 4).
+
+        :param str ipv4: IP address (version 4)
+        """
+        return self.add_observable('ipv4', ipv4, *args, **kwargs)
+
+    def add_ipv4_conversation(self, ipv4_conversation, *args, **kwargs):
+        """Add two IPV4 that were communicating.
+        Formatted as 'aaa.bbb.ccc.ddd_aaa.bbb.ccc.ddd'
+
+        :param str ipv4_conversation: Two IPV4 that were communicating. Formatted as 'aaa.bbb.ccc.ddd_aaa.bbb.ccc.ddd'
+        """
+        return self.add_observable('ipv4_conversation', ipv4_conversation, *args, **kwargs)
+
+    def add_md5(self, md5_value, *args, **kwargs):
+        """Add an MD5 hash.
+
+        :param str md5_value: MD5 hash
+        """
+        return self.add_observable('md5', md5_value, *args, **kwargs)
+
+    def add_message_id(self, message_id, *args, **kwargs):
+        """Add an email Message-ID.
+
+        :param str message_id: The email Message-ID
+        """
+        return self.add_observable('message_id', message_id, *args, **kwargs)
+
+    def add_process_guid(self, guid, *args, **kwargs):
+        """Add a CarbonBlack Response global process identifier.
+
+        :param str guid: The Cb Response global process identifier
+        """
+        return self.add_observable('process_guid', guid, *args, **kwargs)
+
+    def add_sha1(self, sha1, *args, **kwargs):
+        """Add a SHA1 hash.
+
+        :param str sha1: SHA1 hash
+        """
+        return self.add_observable('sha1', sha1, *args, **kwargs)
+
+    def add_sha256(self, sha256, *args, **kwargs):
+        """Add a SHA256 hash.
+
+        :param str sha256: SHA256 hash
+        """
+        return self.add_observable('sha256', sha256, *args, **kwargs)
+
+    def add_snort_sig(self, snort_sig, *args, **kwargs):
+        """Add snort signature ID.
+
+        :param str snort_sig: A snort signature ID
+        """
+        return self.add_observable('snort_sig', snort_sig, *args, **kwargs)
+
+    def add_test(self, test, *args, **kwargs):
+        # unittesting observable #
+        return self.add_observable('test', test, *args, **kwargs)
+
+    def add_url(self, url, *args, **kwargs):
+        """Add a URL
+
+        :param str url: The URL
+        """
+        return self.add_observable('url', url, *args, **kwargs)
+
+    def add_user(self, user, *args, **kwargs):
+        """Add a user observable to this analysis. Most support is arount NT an user ID. 
+
+        :param str user: The user ID/name to add.
+        """
+        return self.add_observable('user', user, *args, **kwargs)
+
+    def add_yara_rule(self, yara_rule, *args, **kwargs):
+        """Add the name of a yara rule.
+
+        :param str yara_rule: The name of the rule
+        """
+        return self.add_observable('yara_rule', yara_rule, *args, **kwargs)
 
     def add_attachment_link(self, source_path, relative_storage_path):
-        self.submit_kwargs['files'].append((source_path, relative_storage_path))
+        self.add_file(source_path, relative_storage_path=relative_storage_path)
+        return self
 
-    def submit(self, uri=None, key=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
+    def submit(self, remote_host=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
+        """Submit this Analysis object to ACE.
 
-        if uri is None:
-            uri = self.uri
-
-        if key is None:
-            key = self.key
+        :param str remote_host: (optional) Specify the ACE host you want to submit to in 'host:port' format.
+        :param str fail_dir: (optional) Where any failed submissions are saved.
+        :param bool save_on_fail: (optional) If true, save a copy of failed submissions to fail_dir.
+        :param ssl_verificaiton: (optional) Change the SSL verificaiton behavior.
+        :type ssl_verification: str or False or None
+        """
+        if remote_host:
+            if remote_host.startswith('http'):
+                from urllib.parse import urlparse
+                parsed_url = urlparse(remote_host)
+                logging.warn("remote_host in legacy format. Attempting to correct from '{}' to '{}'".format(remote_host, parsed_url.netloc))
+                remote_host = parsed_url.netloc
+        else:
+            remote_host = self.remote_host
 
         if ssl_verification is None:
             ssl_verification = self.ssl_verification
 
-        from urllib.parse import urlparse
-        parsed_url = urlparse(uri)
-        remote_host = parsed_url.netloc
-
-        kwargs = {}
-        kwargs.update(self.submit_kwargs)
-        # currently kwargs['files'] is a tuple of (source_path, relative_storage_path)
-        # the file params should be a tuple of (remote_name, file descriptor)
-        kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in kwargs['files']]
+        self.validate_files
 
         try:
             result = submit(remote_host=remote_host, 
-                               # the old "api" didn't even use SSL so we just use the ACE default SSL cert location
-                               ssl_verification=ssl_verification if ssl_verification else '/opt/ace/ssl/ca-chain.cert.pem', 
-                               *self.submit_args, **kwargs)
+                               ssl_verification=ssl_verification, 
+                               *self.submit_args, **self.submit_kwargs)
 
             if 'result' in result:
                 if 'uuid' in result['result']:
                     self.uuid = result['result']['uuid']
 
-            return self.uuid
+            return self
 
         except Exception as submission_error:
             logging.warning("unable to submit alert {}: {} (attempting to save alert to {})".format(
@@ -668,26 +1018,27 @@ class Alert(object):
                     raise e
 
             # copy any files we wanted to submit to the directory
-            for source_path, relative_storage_path in self.submit_kwargs['files']:
+            for relative_storage_path, fp in self.submit_kwargs['files']:
                 destination_path = os.path.join(dest_dir, relative_storage_path)
                 destination_dir = os.path.dirname(destination_path)
                 if destination_dir:
                     if not os.path.isdir(destination_dir):
                         os.makedirs(destination_dir)
-
                 try:
-                    shutil.copy2(source_path, destination_path)
+                    # the call to submit caused the fp to get read. Restting with seek
+                    fp.seek(0)
+                    with open(destination_path, 'wb') as _f:
+                        _f.write(fp.read())
+                    fp.close()
                 except Exception as e:
-                    logging.error("unable to copy file from {} to {}: {}".format(source_path, destination_path, e))
+                    logging.error("unable to copy file data from {} to {}: {}".format(fp, destination_path, e))
 
-            # now we need to reference the copied files
-            self.submit_kwargs['files'] = [(os.path.join(dest_dir, f[1]), f[1]) for f in self.submit_kwargs['files']]
+            # now we need to reference the copied files 
+            self.submit_kwargs['files'] = [(os.path.join(dest_dir, f[0]), f[0]) for f in self.submit_kwargs['files']]
 
             # remember these values for submit_failed_alerts()
-            self.uri = uri
-            self.key = key
             self.ssl_verification = ssl_verification
-                
+
             # to write it out to the filesystem
             with open(os.path.join(dest_dir, 'alert'), 'wb') as fp:  
                 pickle.dump(self, fp)
@@ -697,11 +1048,76 @@ class Alert(object):
 
         finally:
             # we make sure we close our file descriptors
-            for file_name, fp in kwargs['files']:
-                try:
-                    fp.close()
-                except Exception as e:
-                    logging.error("unable to close file descriptor for {}".format(file_name))
+            for file_name, fp in self.submit_kwargs['files']:
+                if not isinstance(fp, str):
+                    if not fp.closed:
+                        try:
+                            fp.close()
+                        except Exception as e:
+                            logging.error("unable to close file descriptor for {}".format(file_name))
+
+
+class Alert(Analysis):
+    """This class primarily supports backwards compatibility with the old client lib.
+    
+        - SSL verification default behavior is different.
+        - Analysis mode default is correlation, forcing alert creation without detection.
+        - Files are handles differently.
+
+    There is no reason to use this class rather than the Analysis class.
+    If you want to force an analysis submission to become an alert, you should declare your Analysis with the analysis_mode set to 'correlation'.
+    """
+    def __init__(self, description, *args, **kwargs):
+        super().__init__(description, *args, **kwargs)
+        # default mode for legacy api is correlation
+        self.submit_kwargs['analysis_mode'] = 'correlation'
+
+    def add_attachment_link(self, source_path, relative_storage_path):
+        self.submit_kwargs['files'].append((source_path, relative_storage_path))
+        return self
+
+    def add_file(self, source_path, relative_storage_path=None, *args, **kwargs):
+        """Add a file to this Alert.
+
+        :param str source_path: The path to the file.
+        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis directory. Default is the root of the analysis.
+        """
+        file_name = os.path.basename(source_path)
+        if relative_storage_path is None:
+            relative_storage_path = file_name
+        if not os.path.exists(source_path):
+            logging.error("'{}' does not exist.".format(source_path))
+            return self
+        self.submit_kwargs['files'].append((source_path, relative_storage_path))
+        self.add_observable('file', file_name, *args, **kwargs)
+        return self
+
+    # support legacy submit function
+    def submit(self, uri=None, key=None, fail_dir=".saq_alerts", save_on_fail=True, ssl_verification=None):
+
+        self.uri = uri
+        self.key = key
+        remote_host = self.remote_host
+        if uri is not None:
+            from urllib.parse import urlparse
+            parsed_url = urlparse(uri)
+            remote_host = parsed_url.netloc
+
+        kwargs = {}
+        kwargs.update(self.submit_kwargs)
+        # originally kwargs['files'] was a tuple of (source_path, relative_storage_path)
+        # the file params should be a tuple of (relative_storage_path, file descriptor)
+        # NOTE: The assuption is that this Alert.submit funciton will only be used by legacy code
+        # where kwargs['files'] is a tuple of (source_path, relative_storage_path)
+        self.submit_kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in kwargs['files']]
+        # the old "api" didn't even use SSL so if this Alert class is used to submit the
+        # ACE default SSL cert location should be used rather than the OS's trusted certs
+        # basically, this is changing the default behavior of ace_api for ssl_verifcation
+        if ssl_verification is None:
+            ssl_verification = '/opt/ace/ssl/ca-chain.cert.pem'
+
+        return super(Alert, self).submit(remote_host=remote_host, fail_dir=fail_dir, save_on_fail=save_on_fail, ssl_verification=ssl_verification)
+
 
 @support_command
 def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq_alerts', delete_on_success=True, *args, **kwargs):
@@ -729,7 +1145,13 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
             if ssl_verification is not None:
                 kwargs['ssl_verification'] = ssl_verification
 
-            alert.submit(save_on_fail=False, **kwargs)
+            if isinstance(alert, Alert):
+                alert.submit(save_on_fail=False, **kwargs)
+            elif isinstance(alert, Analysis):
+                # we need to open file handles for the Analysis class
+                # because they are saved a tuple of (source_path, relative_storage_path) on fail
+                alert.submit_kwargs['files'] = [(f[1], open(f[0], 'rb')) for f in alert.submit_kwargs['files']]
+                alert.submit(save_on_fail=False, **kwargs)
 
             if delete_on_success:
                 try:
