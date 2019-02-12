@@ -692,6 +692,10 @@ class Analysis(object):
 
         return None
 
+    @description.setter
+    def description(self, value):
+        self.submit_kwargs['description'] = description
+
     @property
     def status(self):
         """Return the human readable status of this Analysis.
@@ -729,8 +733,8 @@ class Analysis(object):
 
         return "UNKNOWN"
 
-    def set_description(self, description):
-        self.submit_kwargs['description'] = description
+    def set_description(self, value):
+        self.description = value
         return self
 
     def set_remote_host(self, remote_host):
