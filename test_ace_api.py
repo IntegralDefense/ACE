@@ -65,7 +65,7 @@ class TestCase(ACEEngineTestCase):
         self.assertTrue(isinstance(result['result'], list))
 
     def test_get_valid_observables(self):
-        from saq.constants import VALID_OBSERVABLE_TYPES, OBSERVABLE_DESCRIPTIONS
+        from saq.constants import VALID_OBSERVABLE_TYPES, OBSERVABLE_DESCRIPTIONS, DEPRECATED_OBSERVABLES
         result = ace_api.get_valid_observables()
         self.assertIsNotNone(result)
         self.assertTrue('result' in result)
@@ -74,6 +74,36 @@ class TestCase(ACEEngineTestCase):
         for r in result['result']:
             self.assertTrue(r['name'] in VALID_OBSERVABLE_TYPES)
             self.assertEquals(OBSERVABLE_DESCRIPTIONS[r['name']], r['description'])
+
+        active_observables = set(VALID_OBSERVABLE_TYPES) - set(DEPRECATED_OBSERVABLES)
+        self.assertEquals(len(active_observables), len(result['result']))
+
+    def test_get_valid_directives(self):
+        from saq.constants import VALID_DIRECTIVES, DIRECTIVE_DESCRIPTIONS
+        result = ace_api.get_valid_directives()
+        self.assertIsNotNone(result)
+        self.assertTrue('result' in result)
+        self.assertTrue(isinstance(result['result'], list))
+
+        for r in result['result']:
+            self.assertTrue(r['name'] in VALID_DIRECTIVES)
+            self.assertEquals(DIRECTIVE_DESCRIPTIONS[r['name']], r['description'])
+
+    # TODO: complete this test module
+    def test_load_analysis(self):
+        a1 = ace_api.Analysis('This is a test')
+        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
+        with open(temp_path, 'w') as fp:
+            fp.write('test')
+        a1.add_file(temp_path)
+        a1.add_tag('test tag')
+        a1.add_test('test observable')
+        a1.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+
+        a2 = ace_api.load_analysis(a1.uuid, remote_host=f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertEquals(a1.uuid, a2.uuid)
+        a2.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertNotEqual(a1.uuid, a2.uuid)
 
     def _get_submit_time(self):
         return datetime.datetime(2017, 11, 11, hour=7, minute=36, second=1, microsecond=1)
@@ -358,6 +388,8 @@ class TestCase(ACEEngineTestCase):
         self.assertTrue('workload' in result)
         self.assertTrue('delayed_analysis' in result)
         self.assertTrue('locks' in result)
+        self.assertTrue('alert' in result)
+        self.assertEquals(result['alert'], None)
         self.assertEquals(result['delayed_analysis'], [])
         self.assertIsNone(result['locks'])
         self.assertTrue(isinstance(result['workload']['id'], int))
@@ -437,10 +469,10 @@ class TestCase(ACEEngineTestCase):
             fp.write('test')
 
         alert.add_attachment_link(temp_path, 'dest/test.txt')
-        uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
-        self.assertTrue(validate_uuid(uuid))
+        alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertTrue(validate_uuid(alert.uuid))
 
-        root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
+        root = RootAnalysis(storage_dir=storage_dir_from_uuid(alert.uuid))
         root.load()
 
         self.assertEquals(root.description, 'Test Alert')
@@ -463,7 +495,7 @@ class TestCase(ACEEngineTestCase):
         # these two should be the same thing
         self.assertTrue(Alert is Alert_2)
 
-    def test_failed_submit(self):
+    def test_legacy_failed_submit(self):
 
         self.stop_api_server()
     
@@ -476,7 +508,7 @@ class TestCase(ACEEngineTestCase):
 
         alert.add_attachment_link(temp_path, 'dest/test.txt')
         with self.assertRaises(Exception):
-            uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+            alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
 
         self.assertEquals(log_count('unable to submit alert'), 1)
 
@@ -493,8 +525,8 @@ class TestCase(ACEEngineTestCase):
 
         # try to submit it
         self.start_api_server()
-        uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
-        self.assertTrue(validate_uuid(uuid))
+        alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertTrue(validate_uuid(alert.uuid))
 
         #root = RootAnalysis(storage_dir=storage_dir_from_uuid(uuid))
         #root.load()
@@ -510,6 +542,40 @@ class TestCase(ACEEngineTestCase):
         #self.assertEquals(file_observable.value, 'dest/test.txt')
         #with open(os.path.join(root.storage_dir, file_observable.value), 'r') as fp:
             #self.assertEquals(fp.read(), 'test')
+
+    def test_failed_submit(self):
+
+        self.stop_api_server()
+
+        analysis = ace_api.Analysis(description='Test Analysis submit')
+        analysis.add_observable(F_IPV4, '1.2.3.4', local_time(), directives=[DIRECTIVE_NO_SCAN])
+        analysis.add_tag('test')
+        analysis.add_user('test_user')
+        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
+        with open(temp_path, 'w') as fp:
+            fp.write('test')
+
+        analysis.add_file(temp_path, relative_storage_path='dest/test.txt')
+        with self.assertRaises(Exception):
+            analysis.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+
+        self.assertEquals(log_count('unable to submit alert'), 1)
+
+        # the .saq_alerts directory should have a single subdirectory
+        dir_list = os.listdir('.saq_alerts')
+        self.assertEquals(len(dir_list), 1)
+
+        # load the alert
+        target_path = os.path.join('.saq_alerts', dir_list[0], 'alert')
+        with open(target_path, 'rb') as fp:
+            new_analysis = pickle.load(fp)
+
+        self.assertEquals(new_analysis.submit_kwargs, analysis.submit_kwargs)
+
+        # try to submit it
+        self.start_api_server()
+        analysis.submit(f'{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+        self.assertTrue(validate_uuid(analysis.uuid))
 
     def test_submit_failed_alerts(self):
 
@@ -546,6 +612,49 @@ class TestCase(ACEEngineTestCase):
         # this directory should be cleared out
         dir_list = os.listdir('.saq_alerts')
         self.assertEquals(len(dir_list), 0)
+
+    def test_submit_failed_analysis(self):
+
+        self.stop_api_server()
+
+        analysis = ace_api.Analysis(description='Test Analysis')
+        analysis.add_observable(F_IPV4, '1.2.3.4', local_time(), directives=[DIRECTIVE_NO_SCAN])
+        analysis.add_tag('test')
+        temp_path = os.path.join(saq.TEMP_DIR, 'test.txt')
+        with open(temp_path, 'w') as fp:
+            fp.write('test')
+
+        analysis.add_file(temp_path, relative_storage_path='dest/test.txt')
+        with self.assertRaises(Exception):
+            uuid = analysis.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
+
+        self.assertEquals(log_count('unable to submit alert'), 1)
+
+        # the .saq_alerts directory should have a single subdirectory
+        dir_list = os.listdir('.saq_alerts')
+        self.assertEquals(len(dir_list), 1)
+
+        # load the alert
+        target_path = os.path.join('.saq_alerts', dir_list[0], 'alert')
+        with open(target_path, 'rb') as fp:
+            new_analysis = pickle.load(fp)
+
+        self.assertEquals(new_analysis.submit_kwargs, analysis.submit_kwargs)
+
+        # did we actually write data to the file?
+        data_test = None
+        with open(os.path.join('.saq_alerts', new_analysis.uuid, 'dest/test.txt'), 'r') as fp:
+            data_test = fp.read()
+        self.assertEquals(data_test, 'test')
+
+        # try to submit it using submit_failed_alerts
+        self.start_api_server()
+        ace_api.submit_failed_alerts(delete_on_success=True)
+
+        # this directory should be cleared out
+        dir_list = os.listdir('.saq_alerts')
+        self.assertEquals(len(dir_list), 0)
+
 
 class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 
