@@ -752,7 +752,7 @@ class Analysis(object):
         if relative_storage_path is not None:
             file_name = relative_storage_path
         else:
-            file_name = os.path.relpath(file_name_or_path)
+            file_name = os.path.basename(file_name_or_path)
 
         # convert whatever we passed as content into some kind of a file pointer
         if isinstance(data_or_fp, str):
