@@ -674,7 +674,6 @@ class Analysis(object):
     def __str__(self):
         return 'Analysis({})'.format(self.submit_kwargs)
 
-    @property
     def validate_files(self):
         # make sure each file is a tuple of (something, str)
         _error_message = "Can not submit Analysis, file {} invalid: each element of the file parameter "\
@@ -983,7 +982,7 @@ class Analysis(object):
         if ssl_verification is None:
             ssl_verification = self.ssl_verification
 
-        self.validate_files
+        self.validate_files()
 
         try:
             result = submit(remote_host=remote_host, 
