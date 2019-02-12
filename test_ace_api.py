@@ -510,7 +510,7 @@ class TestCase(ACEEngineTestCase):
         with self.assertRaises(Exception):
             alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
 
-        self.assertEquals(log_count('unable to submit alert'), 1)
+        self.assertEquals(log_count('unable to submit '), 1)
 
         # the .saq_alerts directory should have a single subdirectory
         dir_list = os.listdir('.saq_alerts')
@@ -559,7 +559,7 @@ class TestCase(ACEEngineTestCase):
         with self.assertRaises(Exception):
             analysis.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
 
-        self.assertEquals(log_count('unable to submit alert'), 1)
+        self.assertEquals(log_count('unable to submit '), 1)
 
         # the .saq_alerts directory should have a single subdirectory
         dir_list = os.listdir('.saq_alerts')
@@ -592,7 +592,7 @@ class TestCase(ACEEngineTestCase):
         with self.assertRaises(Exception):
             uuid = alert.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
 
-        self.assertEquals(log_count('unable to submit alert'), 1)
+        self.assertEquals(log_count('unable to submit '), 1)
 
         # the .saq_alerts directory should have a single subdirectory
         dir_list = os.listdir('.saq_alerts')
@@ -628,7 +628,7 @@ class TestCase(ACEEngineTestCase):
         with self.assertRaises(Exception):
             uuid = analysis.submit(f'https://{saq.API_PREFIX}', ssl_verification=saq.CONFIG['SSL']['ca_chain_path'])
 
-        self.assertEquals(log_count('unable to submit alert'), 1)
+        self.assertEquals(log_count('unable to submit '), 1)
 
         # the .saq_alerts directory should have a single subdirectory
         dir_list = os.listdir('.saq_alerts')
