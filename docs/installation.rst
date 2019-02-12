@@ -49,7 +49,7 @@ Cloning ACE
 As the ace user you previously created, cd into /opt and git clone the IntegralDefense ACE master branch: https://github.com/IntegralDefense/ACE.git::
 
   $ cd /opt
-  $ git clone https://github.com/IntegralDefense/ACE.git && mv ACE ace
+  $ git clone https://github.com/IntegralDefense/ACE.git ace
 
 .. _source.list:
 
