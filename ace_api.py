@@ -163,7 +163,8 @@ def get_supported_api_version(*args, **kwargs):
 def _cli_get_supported_api_version(args):
     return get_supported_api_version(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
 
-get_supported_command_parser = _api_command(subparsers.add_parser('get-supported-api-version'))
+get_supported_command_parser = _api_command(subparsers.add_parser('get-supported-api-version',
+    help="""Get the API version for the ACE ecosystem you're working with."""))
 get_supported_command_parser.set_defaults(func=_cli_get_supported_api_version)
 
 def get_valid_companies(*args, **kwargs):
@@ -177,7 +178,8 @@ def get_valid_companies(*args, **kwargs):
 def _cli_get_valid_companies(args):
     return get_valid_companies(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
 
-get_valid_companies_command_parser = _api_command(subparsers.add_parser('get-valid-companies'))
+get_valid_companies_command_parser = _api_command(subparsers.add_parser('get-valid-companies',
+    help="""Get a list of the companies supported by this ACE ecosystem."""))
 get_valid_companies_command_parser.set_defaults(func=_cli_get_valid_companies)
 
 def get_valid_observables(*args, **kwargs):
@@ -191,7 +193,8 @@ def get_valid_observables(*args, **kwargs):
 def _cli_get_valid_observables(args):
     return get_valid_observables(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
 
-get_valid_observables_command_parser = _api_command(subparsers.add_parser('get-valid-observables'))
+get_valid_observables_command_parser = _api_command(subparsers.add_parser('get-valid-observables',
+    help="""Get all of the valid observable types for this ACE ecosystem."""))
 get_valid_observables_command_parser.set_defaults(func=_cli_get_valid_observables)
 
 def get_valid_directives(*args, **kwargs):
@@ -200,7 +203,8 @@ def get_valid_directives(*args, **kwargs):
 def _cli_get_valid_directives(args):
     return get_valid_directives(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
 
-get_valid_directives_command_parser = _api_command(subparsers.add_parser('get-valid-directives'))
+get_valid_directives_command_parser = _api_command(subparsers.add_parser('get-valid-directives',
+    help="""Get all of the valid observable types for this ACE ecosystem."""))
 get_valid_directives_command_parser.set_defaults(func=_cli_get_valid_directives)
 
 def ping(*args, **kwargs):
@@ -210,7 +214,8 @@ def ping(*args, **kwargs):
 def _cli_ping(args):
     return ping(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
 
-ping_command_parser = _api_command(subparsers.add_parser('ping'))
+ping_command_parser = _api_command(subparsers.add_parser('ping',
+    help="""Connectivity check to the ACE ecosystem."""))
 ping_command_parser.set_defaults(func=_cli_ping)
 
 def submit(
@@ -387,7 +392,8 @@ def _cli_submit(args):
 
     return submit(*f_args, **f_kwargs)
 
-submit_command_parser = _api_command(subparsers.add_parser('submit'))
+submit_command_parser = _api_command(subparsers.add_parser('submit',
+    help="""Submit a request to ACE for analysis and/or correlation."""))
 submit_command_parser.add_argument('description', help="The description (title) of the analysis.")
 submit_command_parser.add_argument('-m', '--mode', '--analysis_mode', dest='analysis_mode',
     help="The mode of analysis. Defaults of analysis. Set it to correlation to automatically become an alert.")
@@ -431,12 +437,13 @@ def resubmit_alert(uuid, *args, **kwargs):
 def _cli_resubmit_alert(args):
     return resubmit_alert(remote_host=args.remote_host, ssl_verification=args.ssl_verification, uuid=args.uuid)
 
-resubmit_command_parser = _api_command(subparsers.add_parser('resubmit'))
+resubmit_command_parser = _api_command(subparsers.add_parser('resubmit',
+    help="""Resubmit an alert for analysis. This means the alert will be re-analyzed as-if it was new."""))
 resubmit_command_parser.add_argument('uuid', help="The UUID of the analysis/alert to resubmit.")
 resubmit_command_parser.set_defaults(func=_cli_resubmit_alert)
 
 def get_analysis(uuid, *args, **kwargs):
-    """Get any analysis results.
+    """Get analysis results.
 
     :param str uuid: The UUID of the analysis request.
     :return: Result dictionary containing any and all analysis results.
@@ -447,7 +454,8 @@ def get_analysis(uuid, *args, **kwargs):
 def _cli_get_analysis(args):
     return get_analysis(remote_host=args.remote_host, ssl_verification=args.ssl_verification, uuid=args.uuid)
 
-get_analysis_command_parser = _api_command(subparsers.add_parser('get-analysis'))
+get_analysis_command_parser = _api_command(subparsers.add_parser('get-analysis',
+    help="""Get analysis results."""))
 get_analysis_command_parser.add_argument('uuid', help="The UUID of the analysis to get.")
 get_analysis_command_parser.set_defaults(func=_cli_get_analysis)
 
@@ -461,16 +469,13 @@ def _cli_get_analysis_details(args):
                                 uuid=args.uuid,
                                 name=args.name)
 
-get_analysis_details_command_parser = _api_command(subparsers.add_parser('get-analysis-details'))
+get_analysis_details_command_parser = _api_command(subparsers.add_parser('get-analysis-details',
+    help="""Get detailed analysis results."""))
 get_analysis_details_command_parser.add_argument('uuid', help="The UUID of the analysis to get details from.")
 get_analysis_details_command_parser.add_argument('name', help="The name of the details to get.")
 get_analysis_details_command_parser.set_defaults(func=_cli_get_analysis_details)
 
 def get_analysis_file(uuid, name, output_file=None, output_fp=None, *args, **kwargs):
-    #Get a file from an analysis result.
-    # Coming back to this one
-    #:param str uuid: The UUID of the analysis.
-    #:param str name: The name or UUID of the file.
     if output_file is None and output_fp is None:
         output_fp = sys.stdout.buffer
     elif output_fp is None:
@@ -497,7 +502,8 @@ def _cli_get_analysis_file(args):
                              output_file=args.output_file,
                              output_fp=sys.stdout.buffer if args.output_file is None else None)
 
-get_analysis_file_command_parser = _api_command(subparsers.add_parser('get-analysis-file'))
+get_analysis_file_command_parser = _api_command(subparsers.add_parser('get-analysis-file',
+    help="""Download the given file from the given analysis."""))
 get_analysis_file_command_parser.add_argument('uuid', help="The UUID of the analysis to get the file from.")
 get_analysis_file_command_parser.add_argument('name', help="The name of the file to get.")
 get_analysis_file_command_parser.add_argument('-o', '--output-file', 
@@ -516,7 +522,8 @@ def get_analysis_status(uuid, *args, **kwargs):
 def _cli_get_analysis_status(args):
     return get_analysis_status(remote_host=args.remote_host, ssl_verification=args.ssl_verification, uuid=args.uuid)
 
-get_analysis_status_command_parser = _api_command(subparsers.add_parser('get-analysis-status'))
+get_analysis_status_command_parser = _api_command(subparsers.add_parser('get-analysis-status',
+    help="""Get the status of an analysis."""))
 get_analysis_status_command_parser.add_argument('uuid', help="The UUID of the analysis to get the status from.")
 get_analysis_status_command_parser.set_defaults(func=_cli_get_analysis_status)
 
@@ -561,7 +568,8 @@ def _cli_download(args):
                     uuid=args.uuid,
                     target_dir=target_dir)
 
-download_command_parser = _api_command(subparsers.add_parser('download'))
+download_command_parser = _api_command(subparsers.add_parser('download',
+    help="""Download everything related to this uuid and write it to target_dir."""))
 download_command_parser.add_argument('uuid', help="The UUID of the analysis/alert to download.")
 download_command_parser.add_argument('-o', '--output-dir', 
     help="""The name of the directory to save the analysis into. Defaults to a new directory created relative to the
@@ -596,6 +604,9 @@ def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
             os.remove(tar_path)
         except Exception as e:
             log.warning("unable to remove {}: {}".foramt(tar_path, e))
+
+def clear(uuid, lock_uuid, *args, **kwargs):
+    return _execute_api_call('engine/clear/{}/{}'.format(uuid, lock_uuid), *args, **kwargs).status_code == 200
 
 def cloudphish_submit(url, reprocess=False, ignore_filters=False, context={}, *args, **kwargs):
     """Submit a URL for Cloudphish to analyze.
@@ -633,7 +644,8 @@ def _cli_cloudphish_submit(args):
                              ignore_filters=args.ignore_filters,
                              context=args.context if args.context else {})
     
-cloudphish_submit_command_parser = _api_command(subparsers.add_parser('cloudphish-submit'))
+cloudphish_submit_command_parser = _api_command(subparsers.add_parser('cloudphish-submit',
+    help="""Submit a URL for Cloudphish to analyze."""))
 cloudphish_submit_command_parser.add_argument('url', help="The URL to download and analyze.")
 cloudphish_submit_command_parser.add_argument('-r', '--reprocess', default=False, action='store_true',
     help="Forces cloudphish to re-analyze the given url (bypassing the cache.)")
@@ -695,7 +707,8 @@ def _cli_cloudphish_download(args):
                                output_path=args.output_file,
                                output_fp=sys.stdout.buffer if args.output_file is None else None)
     
-cloudphish_download_command_parser = _api_command(subparsers.add_parser('cloudphish-download'))
+cloudphish_download_command_parser = _api_command(subparsers.add_parser('cloudphish-download',
+    help="""Download content from Cloudphish."""))
 cloudphish_download_command_parser.add_argument('target', 
     help="""The URL (or sha256 if -s is used) to download the contents of.""")
 cloudphish_download_command_parser.add_argument('-s', '--sha256', default=False, action='store_true',
@@ -726,7 +739,8 @@ def _cli_cloudphish_clear_alert(args):
                                   url=url,
                                   sha256=sha256)
 
-cloudphish_clear_alert_command_parser = _api_command(subparsers.add_parser('cloudphish-clear-alert'))
+cloudphish_clear_alert_command_parser = _api_command(subparsers.add_parser('cloudphish-clear-alert',
+    help="""Clear the ALERT status of a URL analyzed by cloudphish."""))
 cloudphish_clear_alert_command_parser.add_argument('target', 
     help="""The URL (or sha256 if -s is used) to clear the alert for.""")
 cloudphish_clear_alert_command_parser.add_argument('-s', '--sha256', default=False, action='store_true',
@@ -1283,7 +1297,8 @@ def _cli_submit_failed_alerts(args):
                                 fail_dir=args.fail_dir,
                                 delete_on_success=not args.keep_alerts)
 
-submit_failed_alerts_command_parser = _api_command(subparsers.add_parser('submit-failed-alerts'))
+submit_failed_alerts_command_parser = _api_command(subparsers.add_parser('submit-failed-alerts',
+    help="""(Re)submit alerts that failed to sent previously using the Alert and Analysis classes of this API."""))
 submit_failed_alerts_command_parser.add_argument('--fail-dir', default='.saq_alerts',
     help="The directory that contains the alerts that failed to send. Defaults to .saq_alerts")
 submit_failed_alerts_command_parser.add_argument('--keep-alerts', default=False, action='store_true',
