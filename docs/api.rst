@@ -222,8 +222,6 @@ A python library exits for intereacting with the ACE API. You can install it wil
 
 .. autofunction:: ace_api.get_analysis
 
-.. autofunction:: ace_api.load_analysis
-
 .. autofunction:: ace_api.download
 
 .. autofunction:: ace_api.upload
