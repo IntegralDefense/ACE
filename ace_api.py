@@ -745,16 +745,16 @@ class Analysis(object):
 
     :param str discription: (optional) A brief description of this analysis data (Why? What? How?).
     :param str analysis_mode: (optional) The ACE mode this analysis should be put into. 'correlation' will force an
-    alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
+        alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
     :param str tool: (optional) The "tool" that is submitting this analysis. Meant for distinguishing your custom
-    hunters and detection tools. Default: 'ace_api'.
+        hunters and detection tools. Default: 'ace_api'.
     :param str tool_instance: (optional) The instance of the tool that is submitting this analysis.
     :param str type: (optional) The type of analysis this is, kinda like the focus of the alert. Mainly used internally
-    by some ACE modules. Default: 'generic'
+        by some ACE modules. Default: 'generic'
     :param datetime event_time: (optional) Assign a time to this analysis. Usually, the time associated to what ever
-    event triggered this analysis creation. Default: now()
+        event triggered this analysis creation. Default: now()
     :param dict details: (optional) A dictionary of additional details to get added to the alert, think notes and
-    comments.
+        comments.
     :param list observables: (optional) A list of observables to add to the request.
     :param list tags: (optional) If this request becomes an Alert, these tags will get added to it.
     :param list files: (optional) A list of (file_name, file_descriptor) tuples to be included in this ACE request.
@@ -936,8 +936,8 @@ class Analysis(object):
 
         :param str filename: The name of the file. Assumed to be a valid path to the file if data_or_fp is None.
         :param data_or_fp: (optional) A string or file pointer.
-        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis 
-        directory. Default is the root of the analysis.
+        :param str relative_storage_path: (optional) Where the file should be stored, relative to the analysis
+            directory. Default is the root of the analysis.
         :type data_or_fp: str or bytes or None or _io.TextIOWrapper or _io.BufferedReader 
         """
         # get just the file name
@@ -945,7 +945,7 @@ class Analysis(object):
         if relative_storage_path is not None:
             file_name = relative_storage_path
         else:
-            file_name = os.path.relpath(file_name_or_path)
+            file_name = os.path.basename(file_name_or_path)
 
         # convert whatever we passed as content into some kind of a file pointer
         if isinstance(data_or_fp, str):

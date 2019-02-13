@@ -2639,7 +2639,7 @@ WHERE
                         logging.error(f"unable to delete {target_file}: {e}")
 
         for sha256_url, sha256_content in results:
-            c.execute("DELETE FROM cloudphish_analysis_results WHERE sha256_url = UNHEX('%s')", (sha256_url,))
+            c.execute("DELETE FROM cloudphish_analysis_results WHERE sha256_url = UNHEX(%s)", (sha256_url,))
             url_counter += 1
             if url_counter % 100 == 0:
                 db.commit()
