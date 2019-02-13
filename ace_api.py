@@ -24,6 +24,7 @@ except ImportError:
     print("You need to install the tzlocal library (see https://pypi.org/project/tzlocal/)")
     sys.exit(1)
 
+import argparse
 import copy
 import datetime
 import inspect
@@ -33,6 +34,7 @@ import logging
 import os
 import os.path
 import pickle
+import pprint
 import shutil
 import socket
 import tarfile
@@ -41,6 +43,22 @@ import traceback
 import urllib3
 import uuid
 import warnings
+
+# set up the argument parsing as we define the functions
+# so we can keep them grouped together
+parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
+
+# all API commands take the following parameters
+def _api_command(parser):
+    parser.add_argument('--remote-host', required=False, default='localhost:443', dest='remote_host',
+        help="The remote host to connect to in host[:port] format.")
+    parser.add_argument('--ssl-verification', required=False, default=None, dest='ssl_verification',
+        help="Optional path to root CA ssl to load. Defaults to system installed CA.")
+    parser.add_argument('--disable-proxy', required=False, default=False, action='store_true',
+        help="Disables proxy usage by removing the environment variables http_proxy, https_proxy and ftp_proxy.")
+    return parser
+
+subparsers = parser.add_subparsers(dest='cmd')
 
 # ignoring this: /usr/lib/python3/dist-packages/urllib3/connection.py:344:
 # SubjectAltNameWarning: Certificate for localhost has no `subjectAltName`,
@@ -94,16 +112,6 @@ LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
 # the datetime string format we use for this api
 DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
 
-def api_command(func):
-    global api_commands
-    api_commands.append(func)
-    return func
-
-def support_command(func):
-    global support_commands
-    support_commands.append(func)
-    return func
-
 def _execute_api_call(command, 
                       method=METHOD_GET, 
                       remote_host=None, 
@@ -144,7 +152,6 @@ def _execute_api_call(command,
     r.raise_for_status()
     return r
 
-@api_command
 def get_supported_api_version(*args, **kwargs):
     """Get the API version for the ACE ecosystem you're working with.
     
@@ -153,7 +160,12 @@ def get_supported_api_version(*args, **kwargs):
     """
     return _execute_api_call('common/get_supported_api_version', *args, **kwargs).json()
 
-@api_command
+def _cli_get_supported_api_version(args):
+    return get_supported_api_version(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
+
+get_supported_command_parser = _api_command(subparsers.add_parser('get-supported-api-version'))
+get_supported_command_parser.set_defaults(func=_cli_get_supported_api_version)
+
 def get_valid_companies(*args, **kwargs):
     """Get a list of the companies supported by this ACE ecosystem.
     
@@ -162,7 +174,12 @@ def get_valid_companies(*args, **kwargs):
     """
     return _execute_api_call('common/get_valid_companies', *args, **kwargs).json()
 
-@api_command
+def _cli_get_valid_companies(args):
+    return get_valid_companies(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
+
+get_valid_companies_command_parser = _api_command(subparsers.add_parser('get-valid-companies'))
+get_valid_companies_command_parser.set_defaults(func=_cli_get_valid_companies)
+
 def get_valid_observables(*args, **kwargs):
     """Get all of the valid observable types for this ACE ecosystem.
 
@@ -171,83 +188,31 @@ def get_valid_observables(*args, **kwargs):
     """
     return _execute_api_call('common/get_valid_observables', *args, **kwargs).json()
 
-@api_command
+def _cli_get_valid_observables(args):
+    return get_valid_observables(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
+
+get_valid_observables_command_parser = _api_command(subparsers.add_parser('get-valid-observables'))
+get_valid_observables_command_parser.set_defaults(func=_cli_get_valid_observables)
+
 def get_valid_directives(*args, **kwargs):
     return _execute_api_call('common/get_valid_directives', *args, **kwargs).json()
 
-@api_command
+def _cli_get_valid_directives(args):
+    return get_valid_directives(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
+
+get_valid_directives_command_parser = _api_command(subparsers.add_parser('get-valid-directives'))
+get_valid_directives_command_parser.set_defaults(func=_cli_get_valid_directives)
+
 def ping(*args, **kwargs):
     """Connectivity check to the ACE ecosystem."""
     return _execute_api_call('common/ping', *args, **kwargs).json()
 
-def parse_submit(args):
-    # Utility funciton
-    if args.event_time:
-        # make sure the time is formatted correctly
-        datetime.datetime.strptime(args.event_time, DATETIME_FORMAT)
+def _cli_ping(args):
+    return ping(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
 
-    # parse the details JSON
-    if args.details:
-        if args.details.startswith('@'):
-            with open(args.details, 'r') as fp:
-                args.details = fp.read()
+ping_command_parser = _api_command(subparsers.add_parser('ping'))
+ping_command_parser.set_defaults(func=_cli_ping)
 
-    # parse the observables
-    observables = []
-    if args.observables:
-        for o in args.observables:
-            o = o.split(':')
-            _type = o[0]
-            _value = o[1]
-            _time = _tags = _directives = _limited_analysis = None
-
-            if len(o) > 2:
-                if o[2].strip():
-                    datetime.datetime.strptime(o[2].strip(), DATETIME_FORMAT)
-                    _time = o[2].strip()
-
-            if len(o) > 3:
-                if o[3].strip():
-                    _tags = [_.strip() for _ in o[3].split(',')]
-
-            if len(o) > 4:
-                if o[4].strip():
-                    _directives = [_.strip() for _ in o[4].split(',')]
-
-            if len(o) > 5:
-                if o[5].strip():
-                    _limited_analysis = [_.strip() for _ in o[5].split(',')]
-
-            o = { 'type': _type, 'value': _value }
-            if _time:
-                o['time'] = _time
-            if _tags:
-                o['tags'] = _tags
-            if _directives:
-                o['directives'] = _directives
-            if _limited_analysis:
-                o['limited_analysis'] = _limited_analysis
-
-            observables.append(o)
-
-    args.observables = observables
-
-    files = []
-    if args.files:
-        for f in args.files:
-            if '-->' in f:
-                source_file, dest_file = f.split('-->')
-            else:
-                source_file = f
-                dest_file = os.path.basename(f)
-
-            files.append((dest_file, open(source_file, 'rb')))
-
-    args.files = files
-
-    return args
-
-@api_command
 def submit(
     description, 
     analysis_mode='analysis',
@@ -262,15 +227,17 @@ def submit(
     *args, **kwargs):
     """Submit a request to ACE for analysis and/or correlation.
     
-    :param str discription: A brief description of this analysis data (Why? What? How?).
+    :param str description: The title of the analysis. This ends up being displayed as the title if it becomes
+    an alert.
     :param str analysis_mode: (optional) The ACE mode this analysis should be put into. 'correlation' will force an alert creation. 'analysis' will only alert if a detection is made. Default: 'analysis'
     :param str tool: (optional) The "tool" that is submitting this analysis. Meant for distinguishing your custom hunters and detection tools. Default: 'ace_api'.
     :param str tool_instance: (optional) The instance of the tool that is submitting this analysis.
-    :param str type: (optional) The type of analysis this is, kinda like the focus of the alert. Mainly used internally by some ACE modules. Default: 'generic'
+    :param str type: (optional) The type of the analysis. Defaults to 'generic'.
     :param datetime event_time: (optional) Assign a time to this analysis. Usually, the time associated to what ever event triggered this analysis creation. Default: now()
-    :param dict details: (optional) A dictionary of additional details to get added to the alert, think notes and comments.
+    :param dict details: (optional) The dict of details for the analysis. This is a free form JSON object and typically
+    contains detailed information about what is being analyzed or what was found that triggered the analysis.
     :param list observables: (optional) A list of observables to add to the request.
-    :param list tags: (optional) If this request becomes an Alert, these tags will get added to it.
+    :param list tags: (optional) An optional list of tags to add the the analysis.
     :param list files: (optional) A list of (file_name, file_descriptor) tuples to be included in this ACE request.
     :return: A result dictionary. If submission was successful, the UUID of the analysis will be contained. Like this:
         {'result': {'uuid': '960b0a0f-3ea2-465f-852f-ebccac6ae282'}}
@@ -344,7 +311,114 @@ def submit(
         }),
     }, files=files_params, method=METHOD_POST, *args, **kwargs).json()
 
-@api_command
+def _cli_submit(args):
+    
+    if args.event_time:
+        # make sure the time is formatted correctly
+        datetime.datetime.strptime(args.event_time, DATETIME_FORMAT)
+
+    # parse the details JSON
+    if args.details:
+        if args.details.startswith('@'):
+            with open(args.details[1:], 'r') as fp:
+                args.details = json.load(fp)
+
+    # parse the observables
+    observables = []
+    if args.observables:
+        for o in args.observables:
+            o = o.split('/')
+            _type = o[0]
+            _value = o[1]
+            _time = _tags = _directives = _limited_analysis = None
+
+            if len(o) > 2:
+                if o[2].strip():
+                    datetime.datetime.strptime(o[2].strip(), DATETIME_FORMAT)
+                    _time = o[2].strip()
+
+            if len(o) > 3:
+                if o[3].strip():
+                    _tags = [_.strip() for _ in o[3].split(',')]
+
+            if len(o) > 4:
+                if o[4].strip():
+                    _directives = [_.strip() for _ in o[4].split(',')]
+
+            if len(o) > 5:
+                if o[5].strip():
+                    _limited_analysis = [_.strip() for _ in o[5].split(',')]
+
+            o = { 'type': _type, 'value': _value }
+            if _time:
+                o['time'] = _time
+            if _tags:
+                o['tags'] = _tags
+            if _directives:
+                o['directives'] = _directives
+            if _limited_analysis:
+                o['limited_analysis'] = _limited_analysis
+
+            observables.append(o)
+
+    args.observables = observables
+
+    files = []
+    if args.files:
+        for f in args.files:
+            if '-->' in f:
+                source_file, dest_file = f.split('-->')
+            else:
+                source_file = f
+                dest_file = os.path.basename(f)
+
+            files.append((dest_file, open(source_file, 'rb')))
+
+    args.files = files
+
+    f_args = [ args.description ]
+    f_kwargs = { 'remote_host': args.remote_host }
+    for prop in [ 'ssl_verification', 'analysis_mode', 'tool', 'tool_instance', 
+                  'type', 'event_time', 'details', 'observables',
+                  'tags', 'files' ]:
+
+        if getattr(args, prop) is not None:
+            f_kwargs[prop] = getattr(args, prop)
+
+    return submit(*f_args, **f_kwargs)
+
+submit_command_parser = _api_command(subparsers.add_parser('submit'))
+submit_command_parser.add_argument('description', help="The description (title) of the analysis.")
+submit_command_parser.add_argument('-m', '--mode', '--analysis_mode', dest='analysis_mode',
+    help="The mode of analysis. Defaults of analysis. Set it to correlation to automatically become an alert.")
+submit_command_parser.add_argument('--tool', 
+    help="The name of the tool that generated the analysis request. Defaults to ace_api")
+submit_command_parser.add_argument('--tool-instance',
+    help="The instance of the tool that generated the analysis request. Defaults to ace_api(ipv4).")
+submit_command_parser.add_argument('--type',
+    help="The type of the analysis. Defaults to generic.")
+submit_command_parser.add_argument('-t', '--time', '--event-time', dest='event_time',
+    help="""The time of the event that triggered the analysis, or the source reference time for all analysis. 
+            The expected format is {} (example: {}). Defaults to current time and current time zone.""".format(
+    DATETIME_FORMAT.replace('%', '%%'),
+    LOCAL_TIMEZONE.localize(datetime.datetime.now()).strftime(DATETIME_FORMAT)))
+submit_command_parser.add_argument('-d', '--details', dest='details',
+    help="""The free form JSON dict that makes up the details of the analysis.
+            You can specify @filename to load a given file as a JSON dict.""")
+submit_command_parser.add_argument('-o', '--observables', nargs='+', dest='observables',
+    help="""Adds the given observable to the analysis in the following format:
+            type/value/[/time][/tags_csv][/directives_csv][/limited_analysis_csv]
+            Any times must be in {} format (example: {}).""".format(
+    DATETIME_FORMAT.replace('%', '%%'), 
+    LOCAL_TIMEZONE.localize(datetime.datetime.now()).strftime(DATETIME_FORMAT)))
+submit_command_parser.add_argument('-T', '--tags', nargs='+', dest='tags',
+    help="""The list of tags to add to the analysis.""")
+submit_command_parser.add_argument('-f', '--files', nargs='+', dest='files',
+    help="""The list of files to add to the analysis.
+            Each file name can optionally be renamed in the remote submission by using the format
+            source_path-->dest_path where dest_path is a relative path.""")
+submit_command_parser.set_defaults(func=_cli_submit)
+
 def resubmit_alert(uuid, *args, **kwargs):
     """Resubmit an alert for analysis. This means the alert will be re-analyzed as-if it was new.
 
@@ -354,7 +428,13 @@ def resubmit_alert(uuid, *args, **kwargs):
     """
     return _execute_api_call('analysis/resubmit/{}'.format(uuid), *args, **kwargs).json()
 
-@api_command
+def _cli_resubmit_alert(args):
+    return resubmit_alert(remote_host=args.remote_host, ssl_verification=args.ssl_verification, uuid=args.uuid)
+
+resubmit_command_parser = _api_command(subparsers.add_parser('resubmit'))
+resubmit_command_parser.add_argument('uuid', help="The UUID of the analysis/alert to resubmit.")
+resubmit_command_parser.set_defaults(func=_cli_resubmit_alert)
+
 def get_analysis(uuid, *args, **kwargs):
     """Get any analysis results.
 
@@ -364,12 +444,28 @@ def get_analysis(uuid, *args, **kwargs):
     """
     return _execute_api_call('analysis/{}'.format(uuid), *args, **kwargs).json()
 
-@api_command
+def _cli_get_analysis(args):
+    return get_analysis(remote_host=args.remote_host, ssl_verification=args.ssl_verification, uuid=args.uuid)
+
+get_analysis_command_parser = _api_command(subparsers.add_parser('get-analysis'))
+get_analysis_command_parser.add_argument('uuid', help="The UUID of the analysis to get.")
+get_analysis_command_parser.set_defaults(func=_cli_get_analysis)
+
 def get_analysis_details(uuid, name, *args, **kwargs):
     # Get external details.
     return _execute_api_call('analysis/details/{}/{}'.format(uuid, name), *args, **kwargs).json()
 
-@api_command
+def _cli_get_analysis_details(args):
+    return get_analysis_details(remote_host=args.remote_host, 
+                                ssl_verification=args.ssl_verification, 
+                                uuid=args.uuid,
+                                name=args.name)
+
+get_analysis_details_command_parser = _api_command(subparsers.add_parser('get-analysis-details'))
+get_analysis_details_command_parser.add_argument('uuid', help="The UUID of the analysis to get details from.")
+get_analysis_details_command_parser.add_argument('name', help="The name of the details to get.")
+get_analysis_details_command_parser.set_defaults(func=_cli_get_analysis_details)
+
 def get_analysis_file(uuid, name, output_file=None, output_fp=None, *args, **kwargs):
     #Get a file from an analysis result.
     # Coming back to this one
@@ -393,7 +489,22 @@ def get_analysis_file(uuid, name, output_file=None, output_fp=None, *args, **kwa
 
     return True
 
-@api_command
+def _cli_get_analysis_file(args):
+    return get_analysis_file(remote_host=args.remote_host,
+                             ssl_verification=args.ssl_verification,
+                             uuid=args.uuid,
+                             name=args.name,
+                             output_file=args.output_file,
+                             output_fp=sys.stdout.buffer if args.output_file is None else None)
+
+get_analysis_file_command_parser = _api_command(subparsers.add_parser('get-analysis-file'))
+get_analysis_file_command_parser.add_argument('uuid', help="The UUID of the analysis to get the file from.")
+get_analysis_file_command_parser.add_argument('name', help="The name of the file to get.")
+get_analysis_file_command_parser.add_argument('-o', '--output-file', 
+    help="""The name of the local file to write to. If this option is not specified then the file is written
+            to standard output.""")
+get_analysis_file_command_parser.set_defaults(func=_cli_get_analysis_file)
+
 def get_analysis_status(uuid, *args, **kwargs):
     """Get the status of an analysis.
 
@@ -402,7 +513,13 @@ def get_analysis_status(uuid, *args, **kwargs):
     """
     return _execute_api_call('analysis/status/{}'.format(uuid), *args, **kwargs).json()
 
-@api_command
+def _cli_get_analysis_status(args):
+    return get_analysis_status(remote_host=args.remote_host, ssl_verification=args.ssl_verification, uuid=args.uuid)
+
+get_analysis_status_command_parser = _api_command(subparsers.add_parser('get-analysis-status'))
+get_analysis_status_command_parser.add_argument('uuid', help="The UUID of the analysis to get the status from.")
+get_analysis_status_command_parser.set_defaults(func=_cli_get_analysis_status)
+
 def download(uuid, target_dir, *args, **kwargs):
     """Download everything related to this uuid and write it to target_dir.
     
@@ -434,7 +551,23 @@ def download(uuid, target_dir, *args, **kwargs):
         except:
             sys.stderr.write("unable to delete temporary file {}: {}\n".format(tar_path, e))
 
-@api_command
+def _cli_download(args):
+    target_dir = args.output_dir
+    if not target_dir:
+        target_dir = args.uuid
+
+    return download(remote_host=args.remote_host,
+                    ssl_verification=args.ssl_verification,
+                    uuid=args.uuid,
+                    target_dir=target_dir)
+
+download_command_parser = _api_command(subparsers.add_parser('download'))
+download_command_parser.add_argument('uuid', help="The UUID of the analysis/alert to download.")
+download_command_parser.add_argument('-o', '--output-dir', 
+    help="""The name of the directory to save the analysis into. Defaults to a new directory created relative to the
+          current working directory using the UUID as the name.""")
+download_command_parser.set_defaults(func=_cli_download)
+
 def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
     """Upload an ACE analysis/alert directory.
 
@@ -464,18 +597,12 @@ def upload(uuid, source_dir, overwrite=False, sync=True, *args, **kwargs):
         except Exception as e:
             log.warning("unable to remove {}: {}".foramt(tar_path, e))
 
-@api_command
-def clear(uuid, lock_uuid, *args, **kwargs):
-    # Clear/Delete an analysis?
-    return _execute_api_call('engine/clear/{}/{}'.format(uuid, lock_uuid), *args, **kwargs).status_code == 200
-
-@api_command
 def cloudphish_submit(url, reprocess=False, ignore_filters=False, context={}, *args, **kwargs):
     """Submit a URL for Cloudphish to analyze.
 
     :param str url: The URL
     :param bool reprocess: (optional) If True, re-analyze the URL and ignore the cache.
-    :param bool ignore_filters: (optional) What?
+    :param bool ignore_filters: (optional) Ignore URL filtering (forces download and analysis.)
     :param dict context: (optional) Additional context to associated to the analysis.
     """
     # make sure the following keys are not in the context
@@ -493,7 +620,30 @@ def cloudphish_submit(url, reprocess=False, ignore_filters=False, context={}, *a
 
     return _execute_api_call('cloudphish/submit', data=data, method=METHOD_POST, *args, **kwargs).json()
 
-@api_command
+def _cli_cloudphish_submit(args):
+    if args.context:
+        if args.context.startswith('@'):
+            with open(args.context[1:], 'r') as fp:
+                args.context = json.load(fp)
+
+    return cloudphish_submit(remote_host=args.remote_host,
+                             ssl_verification=args.ssl_verification,
+                             url=args.url, 
+                             reprocess=args.reprocess,
+                             ignore_filters=args.ignore_filters,
+                             context=args.context if args.context else {})
+    
+cloudphish_submit_command_parser = _api_command(subparsers.add_parser('cloudphish-submit'))
+cloudphish_submit_command_parser.add_argument('url', help="The URL to download and analyze.")
+cloudphish_submit_command_parser.add_argument('-r', '--reprocess', default=False, action='store_true',
+    help="Forces cloudphish to re-analyze the given url (bypassing the cache.)")
+cloudphish_submit_command_parser.add_argument('-i', '--ignore-filters', default=False, action='store_true',
+    help="Forces cloudphish to analyze the given url (bypassing any filtering it does.)")
+cloudphish_submit_command_parser.add_argument('-c', '--context', default=None,
+    help="""Optional additional context to add to the request. This is a free-form JSON dict.
+            If this parameter starts with a @ then it is taken as the name of a JSON file to load.""")
+cloudphish_submit_command_parser.set_defaults(func=_cli_cloudphish_submit)
+
 def cloudphish_download(url=None, sha256=None, output_path=None, output_fp=None, *args, **kwargs):
     """Download content from Cloudphish. 
     Note: either the url OR the sha256 of the url is expected to passed.
@@ -530,7 +680,30 @@ def cloudphish_download(url=None, sha256=None, output_path=None, output_fp=None,
 
     return True
 
-@api_command
+def _cli_cloudphish_download(args):
+    url = args.target
+    sha256 = None
+
+    if args.sha256:
+        url = None
+        sha256 = target
+
+    return cloudphish_download(remote_host=args.remote_host,
+                               ssl_verification=args.ssl_verification,
+                               url=url,
+                               sha256=sha256,
+                               output_path=args.output_file,
+                               output_fp=sys.stdout.buffer if args.output_file is None else None)
+    
+cloudphish_download_command_parser = _api_command(subparsers.add_parser('cloudphish-download'))
+cloudphish_download_command_parser.add_argument('target', 
+    help="""The URL (or sha256 if -s is used) to download the contents of.""")
+cloudphish_download_command_parser.add_argument('-s', '--sha256', default=False, action='store_true',
+    help="Treat target as the sha256 of the URL.")
+cloudphish_download_command_parser.add_argument('-o', '--output-file', 
+    help="Save the content to the given file. Defaults to writing the content to stdout.")
+cloudphish_download_command_parser.set_defaults(func=_cli_cloudphish_download)
+
 def cloudphish_clear_alert(url=None, sha256=None, *args, **kwargs):
     params = {}
     if url is not None:
@@ -538,7 +711,27 @@ def cloudphish_clear_alert(url=None, sha256=None, *args, **kwargs):
     if sha256 is not None:
         params['s'] = sha256
 
-    return _execute_api_call('cloudphish/clear_alert', params=params).status_code == 200
+    return _execute_api_call('cloudphish/clear_alert', params=params, *args, **kwargs).status_code == 200
+
+def _cli_cloudphish_clear_alert(args):
+    url = args.target
+    sha256 = None
+
+    if args.sha256:
+        url = None
+        sha256 = target
+
+    return cloudphish_clear_alert(remote_host=args.remote_host,
+                                  ssl_verification=args.ssl_verification,
+                                  url=url,
+                                  sha256=sha256)
+
+cloudphish_clear_alert_command_parser = _api_command(subparsers.add_parser('cloudphish-clear-alert'))
+cloudphish_clear_alert_command_parser.add_argument('target', 
+    help="""The URL (or sha256 if -s is used) to clear the alert for.""")
+cloudphish_clear_alert_command_parser.add_argument('-s', '--sha256', default=False, action='store_true',
+    help="Treat target as the sha256 of the URL.")
+cloudphish_clear_alert_command_parser.set_defaults(func=_cli_cloudphish_clear_alert)
 
 #
 # supporting backwards comptability for the old ace_client_lib.client library
@@ -1033,7 +1226,6 @@ class Alert(Analysis):
                                      save_on_fail=save_on_fail, 
                                      ssl_verification=ssl_verification)
 
-@support_command
 def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq_alerts', delete_on_success=True, *args, **kwargs):
     """Submits any alerts found in .saq_alerts, or, the directory specified by the fail_dir parameter."""
     if not os.path.isdir(fail_dir):
@@ -1085,92 +1277,33 @@ def submit_failed_alerts(remote_host=None, ssl_verification=None, fail_dir='.saq
         except Exception as e:
             logging.error("unable to submit {}: {}".format(target_path, e))
 
+def _cli_submit_failed_alerts(args):
+    return submit_failed_alerts(remote_host=args.remote_host,
+                                ssl_verification=args.ssl_verification,
+                                fail_dir=args.fail_dir,
+                                delete_on_success=not args.keep_alerts)
+
+submit_failed_alerts_command_parser = _api_command(subparsers.add_parser('submit-failed-alerts'))
+submit_failed_alerts_command_parser.add_argument('--fail-dir', default='.saq_alerts',
+    help="The directory that contains the alerts that failed to send. Defaults to .saq_alerts")
+submit_failed_alerts_command_parser.add_argument('--keep-alerts', default=False, action='store_true',
+    help="""Do NOT delete the alerts after sending. 
+            Defaults to False (alerts are deleted locally after a successful send.""")
+submit_failed_alerts_command_parser.set_defaults(func=_cli_submit_failed_alerts)
+
 def main():
-    import argparse
-    parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
-    subparsers = parser.add_subparsers(dest='cmd')
-
-    all_commands = api_commands[:]
-    all_commands.extend(support_commands)
-
-    for command in all_commands:
-        subcommand_parser = subparsers.add_parser('api-' + command.__name__.replace('_', '-'), help=command.__doc__)
-        if command in api_commands:
-            subcommand_parser.add_argument('remote_host', help="The remote host to connect to in host[:port] format.")
-            subcommand_parser.add_argument('--ssl-verification', required=False, default='/opt/ace/ssl/ca-chain.cert.pem',
-                help="Optional path to root CA ssl to load.")
-        command_signature = inspect.signature(command)
-        for p_name, parameter in command_signature.parameters.items():
-            if p_name not in [ 'args', 'kwargs' ]:
-                # if this command does NOT have a default_value then it's a positional command
-                if parameter.default == inspect.Parameter.empty:
-                    subcommand_parser.add_argument(parameter.name, help="(REQUIRED)")
-                else:
-                    subcommand_parser.add_argument('--{}'.format(parameter.name.replace('_', '-')), 
-                                                   required=False,
-                                                   dest=parameter.name,
-                                                   default=parameter.default,
-                                                   help="(default: {})".format(parameter.default))
-
-        subcommand_parser.set_defaults(func=command, conv=None)
-
-    submit_command_parser = subparsers.add_parser('submit')
-    submit_command_parser.add_argument('remote_host', help="The remote host to connect to in host[:port] format.")
-    submit_command_parser.add_argument('description', help="The description (title) of the analysis.")
-    submit_command_parser.add_argument('--ssl-verification', required=False, default='/opt/ace/ssl/ca-chain.cert.pem',
-        help="Optional path to root CA ssl to load.")
-    submit_command_parser.add_argument('-m', '--mode', '--analysis_mode', dest='analysis_mode',
-        help="The mode of analysis. Defaults of analysis. Set it to correlation to automatically become an alert.")
-    submit_command_parser.add_argument('--tool', 
-        help="The name of the tool that generated the analysis request. Defaults to ace_api")
-    submit_command_parser.add_argument('--tool_instance',
-        help="The instance of the tool that generated the analysis request. Defautls to ace_api(ipv4).")
-    submit_command_parser.add_argument('--type',
-        help="The type of the analysis. Defaults to generic.")
-    submit_command_parser.add_argument('-t', '--time', '--event-time', dest='event_time',
-        help="""The time of the event that triggered the analysis, or the source reference time for all analysis. 
-                The expected format is {DATETIME_FORMAT}. Defaults to current time and current time zone.""")
-    submit_command_parser.add_argument('-d', '--details', dest='details',
-        help="""The free form JSON dict that makes up the details of the analysis.""")
-    submit_command_parser.add_argument('-o', '--observables', nargs='+', dest='observables',
-        help="""Adds the given observable to the analysis in the following format:
-                type:value:[:time][:tags_csv][:directives_csv][:limited_analysis_csv]
-                Any times must be in {DATETIME_FORMAT} format.""")
-    submit_command_parser.add_argument('-T', '--tags', nargs='+', dest='tags',
-        help="""The list of tags to add to the analysis.""")
-    submit_command_parser.add_argument('-f', '--files', nargs='+', dest='files',
-        help="""The list of files to add to the analysis.
-                Each file name can optionally be renamed in the remote submission by using the format
-                source_path-->dest_path where dest_path is a relative path.""")
-    submit_command_parser.set_defaults(func=submit, conv=parse_submit)
 
     args = parser.parse_args()
 
+    if args.disable_proxy:
+        for env_var in [ 'http_proxy', 'https_proxy', 'ftp_proxy' ]:
+            if env_var in os.environ:
+                del os.environ[env_var]
+
     try:
-        # do we need to preprocess the arguments?
-        if args.conv:
-            args = args.conv(args)
-
-        # call the handler for the given command
-        params = copy.copy(vars(args))
-        if 'cmd' in params:
-            del params['cmd']
-        if 'func' in params:
-            del params['func']
-        if 'conv' in params:
-            del params['conv']
-
-        # remove any parameters not set
-        params = {key: value for key, value in params.items() if value is not None}
-
-        result = args.func(**params)
-        #result = commands[args.command](remote_host=args.remote_host, 
-                                        #ssl_verification=args.ssl_verification, 
-                                        #*args.command_arguments)
-
-        if args.func in api_commands:
-            print(json.dumps(result, sort_keys=True, indent=4))
-
+        result = args.func(args)
+        if isinstance(result, dict):
+            pprint.pprint(result)
     except Exception as e:
         sys.stderr.write("unable to execute api call: {}\n".format(e))
         traceback.print_exc()
