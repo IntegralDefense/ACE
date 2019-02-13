@@ -379,7 +379,7 @@ def get_details(uuid, name):
     # find the analysis with this name
     for analysis in root.all_analysis:
         if analysis.external_details_path == name:
-            analysis.load()
+            #analysis.load()
             return json_result({'result': analysis.details})
 
     abort(Response("invalid uuid or invalid details name", 400))
