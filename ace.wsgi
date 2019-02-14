@@ -34,8 +34,10 @@ import saq
 saq.initialize(saq_home=saq_home, config_paths=None, logging_config_path=logging_config_path, relative_dir=saq_home)
 
 # initialize flask
-from app import create_app
-application = create_app() # fix this hard coded string
+import app
+application = app.create_app() # fix this hard coded string
+# tell ACE to use the session scope provided by the sqlalchemy-flask extension
+saq.db = app.db.session
 
 # add the "do" template command
 application.jinja_env.add_extension('jinja2.ext.do')
