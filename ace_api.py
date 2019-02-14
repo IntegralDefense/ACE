@@ -773,7 +773,7 @@ class Analysis(object):
     :param list tags: (optional) If this request becomes an Alert, these tags will get added to it.
     :param list files: (optional) A list of (file_name, file_descriptor) tuples to be included in this ACE request.
     """
-    def __init__(self, description, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         # these just get passed to ace_api.submit function
         self.submit_args = args
         self.submit_kwargs = kwargs
@@ -783,7 +783,7 @@ class Analysis(object):
 
         # default submission
         self.submit_kwargs = {
-            'description': description,
+            'description': '',
             'analysis_mode': 'analysis',
             'tool': 'ace_api',
             'tool_instance': 'ace_api:{}'.format(socket.getfqdn()),
@@ -1213,8 +1213,8 @@ class Alert(Analysis):
     There is no reason to use this class rather than the Analysis class.
     If you want to force an analysis submission to become an alert, you should declare your Analysis with the analysis_mode set to 'correlation'.
     """
-    def __init__(self, description, *args, **kwargs):
-        super().__init__(description, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         # default mode for legacy api is correlation
         self.submit_kwargs['analysis_mode'] = 'correlation'
 
