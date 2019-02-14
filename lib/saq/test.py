@@ -740,10 +740,10 @@ class ACEBasicTestCase(TestCase):
         # this is a bit weird because I want the urls to be the same as they
         # are configured for apache, where they are all starting with /api
         
-        from api import create_app
+        import api
         from saq.database import initialize_database
 
-        app = create_app(testing=True)
+        app = api.create_app(testing=True)
         from werkzeug.serving import run_simple
         from werkzeug.wsgi import DispatcherMiddleware
         from flask import Flask
@@ -761,7 +761,8 @@ class ACEBasicTestCase(TestCase):
             saq.CONFIG.get('api', 'ssl_cert') if ssl_cert is None else ssl_cert,
             saq.CONFIG.get('api', 'ssl_key') if ssl_key is None else ssl_key )
 
-        initialize_database(use_flask=True)
+        initialize_database()
+        saq.db = api.db.session
 
         logging.info(f"starting api server on {listen_address} port {listen_port}")
         run_simple(listen_address, listen_port, application, ssl_context=ssl_context, use_reloader=False)
