@@ -231,10 +231,14 @@ def resubmit(uuid):
 
 @analysis_bp.route('/<uuid>', methods=['GET'])
 def get_analysis(uuid):
+
     storage_dir = storage_dir_from_uuid(uuid)
     if saq.CONFIG['engine']['work_dir'] and not os.path.isdir(storage_dir):
         storage_dir = workload_storage_dir(uuid)
-    
+
+    if not os.path.exists(storage_dir):
+        abort(Response("invalid uuid {}".format(uuid), 400))
+
     root = RootAnalysis(storage_dir=storage_dir)
     root.load()
     return json_result({'result': root.json})
