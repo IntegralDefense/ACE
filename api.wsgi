@@ -31,8 +31,10 @@ logging_config_path = os.path.join(saq_home, 'etc', 'api_logging.ini')
 # initialize saq
 # note that config paths are determined by the env vars we dug out above
 import saq
-saq.initialize(saq_home=saq_home, config_paths=None, logging_config_path=logging_config_path, relative_dir=saq_home, use_flask=True)
+saq.initialize(saq_home=saq_home, config_paths=None, logging_config_path=logging_config_path, relative_dir=saq_home)
 
 # initialize flask
-from api import create_app
-application = create_app()
+import api
+application = api.create_app()
+# tell ACE to use the session scope provided by the sqlalchemy-flask extension
+saq.db = api.db.session
