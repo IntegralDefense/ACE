@@ -2001,10 +2001,8 @@ def clear_delayed_analysis_requests(root, db, c):
     """Clears all delayed analysis requests for the given RootAnalysis object."""
     execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE uuid = %s", (root.uuid,), commit=True)
     
-def initialize_database(use_flask=False):
-    """Initializes database connections by creating the SQLAlchemy engine and session objects.
-       :param bool use_flask: If this flag is set to True then we use configure database session to be in sync with
-       Flask's request objects. Otherwise the default "thread local" session_scope is used. """
+def initialize_database():
+    """Initializes database connections by creating the SQLAlchemy engine and session objects."""
 
     global DatabaseSession
     from config import config
@@ -2014,13 +2012,7 @@ def initialize_database(use_flask=False):
         **config[saq.CONFIG['global']['instance_type']].SQLALCHEMY_DATABASE_OPTIONS)
 
     DatabaseSession = sessionmaker(bind=engine)
-
-    if use_flask:
-        import flask
-        saq.db = scoped_session(DatabaseSession, scopefunc=flask._app_ctx_stack.__ident_func__)
-        logging.debug("using flask for session scoping")
-    else:
-        saq.db = scoped_session(DatabaseSession)
+    saq.db = scoped_session(DatabaseSession)
 
 @use_db
 def initialize_node(db, c):

@@ -165,8 +165,7 @@ def initialize(saq_home=None,
                logging_config_path=None, 
                args=None, 
                relative_dir=None, 
-               unittest=False, 
-               use_flask=False):
+               unittest=False):
 
     from saq.database import initialize_database, initialize_node
 
@@ -460,7 +459,7 @@ def initialize(saq_home=None,
     YSS_SOCKET_DIR = os.path.join(YSS_BASE_DIR, CONFIG['yara']['yss_socket_dir'])
 
     # initialize the database connection
-    initialize_database(use_flask=use_flask)
+    initialize_database()
 
     # initialize fallback semaphores
     initialize_fallback_semaphores()
