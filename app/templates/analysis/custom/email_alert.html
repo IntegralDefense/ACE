@@ -8,7 +8,12 @@
     {% if 'env_rcpt_to' in analysis.details['email'] %}
     <li class="list-group-item">RCPT TO: {{ analysis.details['email']['env_rcpt_to'] | join(', ')}}</li>
     {% endif %}
-    <li class="list-group-item">From: {{ analysis.details['email']['from']}}</li>
+    {% if 'reply_to' in analysis.details['email'] %}
+    <li class="list-group-item">Reply-To: {{ analysis.details['email']['reply_to']}}</li>
+    {% endif %}
+    {% if 'return_path' in analysis.details['email'] %}
+    <li class="list-group-item">Return-Path: {{ analysis.details['email']['return_path']}}</li>
+    {% endif %}
     <li class="list-group-item">To: {{ analysis.details['email']['to'] | join(', ')}}</li>
     <li class="list-group-item">Subject: {{ analysis.details['email']['subject']}}</li>
     {% if 'decoded_subject' in analysis.details['email'] %}
@@ -20,7 +25,7 @@
     {% if 'message-id' in analysis.details['email'] %}
     <li class="list-group-item">Message-ID: {{ analysis.details['email']['message-id'] }}</li>
     {% endif %}
-    {% if 'originating-_p' in analysis.details['email'] %}
+    {% if 'originating_ip' in analysis.details['email'] %}
     <li class="list-group-item">Originating IP: {{ analysis.details['email']['originating_ip'] }}</li>
     {% endif %}
 </ul>

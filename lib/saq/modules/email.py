@@ -70,6 +70,7 @@ KEY_UUIDS = 'uuids'
 KEY_CONNECTION_ID = 'connection_id'
 KEY_SOURCE_IPV4 = 'source_ipv4'
 KEY_SOURCE_PORT = 'source_port'
+KEY_RETURN_PATH = 'return_path'
 
 TAG_OUTBOUND_EMAIL = 'outbound_email'
 
@@ -1007,6 +1008,20 @@ class EmailAnalysis(Analysis):
         return None
 
     @property
+    def reply_to(self):
+        if self.email and KEY_REPLY_TO in self.email:
+            return self.email[KEY_REPLY_TO]
+
+        return None
+
+    @property
+    def return_path(self):
+        if self.email and KEY_RETURN_PATH in self.email:
+            return self.email[KEY_RETURN_PATH]
+
+        return None
+
+    @property
     def received(self):
         """Returns the list of Received: headers of the email, or None if the headers are not available."""
         if not self.headers:
@@ -1319,16 +1334,6 @@ class EmailAnalyzer(AnalysisModule):
                 if from_address:
                     from_address.add_tag('mail_from')
 
-        if 'reply-to' in target_email:
-            email_details[KEY_REPLY_TO] = target_email['reply-to']
-            name, address = email.utils.parseaddr(target_email['reply-to'])
-            if address != '':
-                reply_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
-                if reply_to:
-                    reply_to.add_tag('reply_to')
-                    if mail_from:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
-
         # do we know who this was actually delivered to?
         if 'X-MS-Exchange-Organization-OriginalEnvelopeRecipients' in target_email:
             email_details[KEY_ENV_RCPT_TO] = [target_email['X-MS-Exchange-Organization-OriginalEnvelopeRecipients']]
@@ -1349,6 +1354,26 @@ class EmailAnalyzer(AnalysisModule):
                     mail_to.add_tag('mail_to')
                     if mail_from:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
+
+        if 'reply-to' in target_email:
+            email_details[KEY_REPLY_TO] = target_email['reply-to']
+            name, address = email.utils.parseaddr(target_email['reply-to'])
+            if address != '':
+                reply_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
+                if reply_to:
+                    reply_to.add_tag('reply_to')
+                    if mail_to:
+                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to.value))
+
+        if 'return-path' in target_email:
+            email_details[KEY_RETURN_PATH] = target_email['return-path']
+            name, address = email.utils.parseaddr(target_email['return-path'])
+            if address != '':
+                return_path = analysis.add_observable(F_EMAIL_ADDRESS, address)
+                if return_path:
+                    return_path.add_tag('return_path')
+                    if mail_to:
+                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to.value))
 
         
         if 'subject' in target_email:
