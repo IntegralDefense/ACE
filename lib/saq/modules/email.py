@@ -1964,7 +1964,7 @@ class EmailArchiveAction(AnalysisModule):
                     self.server_id = row[0]
                     logging.debug("created server_id {} for {}".format(self.server_id, self.hostname))
 
-            execute_with_retry(db, c, "INSERT INTO archive ( server_id, md5 ) VALUES ( %s, UNHEX(%s) )", 
+            execute_with_retry(db, c, "INSERT IGNORE INTO archive ( server_id, md5 ) VALUES ( %s, UNHEX(%s) )", 
                               (self.server_id, email_md5))
             archive_id = c.lastrowid
 

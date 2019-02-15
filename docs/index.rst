@@ -54,6 +54,7 @@ ACE is the implementation of a proven detection strategy, a framework for automa
    additional
    admin-guide
    developer-guide
+   developer-README
 
 
 Indices and tables
