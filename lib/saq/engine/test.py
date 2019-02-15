@@ -730,6 +730,59 @@ class TestCase(ACEEngineTestCase):
         # post analysis should have executed
         self.assertEquals(log_count('execute_post_analysis called'), 1)
 
+    def test_delayed_analysis_recovery(self):
+
+        from saq.database import DelayedAnalysis, Workload
+
+        # scenario: delayed analysis starts, ace engine stops and then starts back up
+        # the delayed analysis should pick back up and complete
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, '0:05|0:10')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_test_delayed_analysis')
+        engine.controlled_stop()
+        engine.start()
+
+        # wait until we see the delay in the queue
+        wait_for_log_count('queue sizes workload 0 delayed 1', 1)
+        # now kill the engine
+        engine.stop()
+        engine.wait()
+
+        # we should have one delayed analysis still in the queue
+        self.assertEquals(saq.db.query(DelayedAnalysis.id).count(), 1)
+        # and nothing in the workload queue
+        self.assertEquals(saq.db.query(Workload.id).count(), 0)
+
+        # start another engine back up
+        engine = TestEngine()
+        engine.enable_module('analysis_module_test_delayed_analysis')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        from saq.modules.test import DelayedAnalysisTestAnalysis
+
+        root = create_root_analysis(uuid=root.uuid, storage_dir=storage_dir_from_uuid(root.uuid))
+        root.load()
+        analysis = root.get_observable(observable.id).get_analysis(DelayedAnalysisTestAnalysis)
+        self.assertIsNotNone(analysis)
+        self.assertTrue(analysis.initial_request)
+        self.assertTrue(analysis.delayed_request)
+        self.assertEquals(analysis.request_count, 2)
+        self.assertTrue(analysis.completed)
+
+        # queue should be empty
+        saq.db.close()
+        self.assertEquals(saq.db.query(DelayedAnalysis.id).count(), 0)
+        self.assertEquals(saq.db.query(Workload.id).count(), 0)
+
     def test_wait_for_analysis(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_groups')
