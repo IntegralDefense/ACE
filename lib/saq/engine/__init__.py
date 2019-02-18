@@ -2483,8 +2483,8 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                                                         wait_exception.observable, wait_exception.analysis)
                     
                 except Exception as e:
-                    logging.error("analysis module {} failed on {} for {}".format(
-                        analysis_module, work_item, self.root))
+                    logging.error("analysis module {} failed on {} for {} reason {}".format(
+                        analysis_module, work_item, self.root, e))
                     report_exception()
 
                     if work_item.dependency:
