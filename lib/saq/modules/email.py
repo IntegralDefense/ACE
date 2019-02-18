@@ -1873,108 +1873,118 @@ class EmailArchiveAction(AnalysisModule):
         self.hostname = socket.gethostname().lower()
         self.server_id = None
 
-    def verify_environment(self):
-        if saq.ENCRYPTION_PASSWORD is None:
-            raise RuntimeError("email archiving is enabled but you have not set the encryption password")
-
-        self.verify_config_exists('archive_dir')
-        self.create_required_directory(self.config['archive_dir'])
-
     @property
     def valid_observable_types(self):
         return [ F_FILE ]
 
     @property
     def required_directives(self):
-        return [ DIRECTIVE_ARCHIVE, DIRECTIVE_ORIGINAL_EMAIL ]
+        return [ DIRECTIVE_ARCHIVE ]
 
     @property
     def generated_analysis_type(self):
         return EmailArchiveResults
 
+    def _get_email_md5(self, _file):
+        """Returns the md5 hash for a given email file."""
+        _file.compute_hashes()
+        email_md5 = _file.md5_hash
+
+        if not email_md5:
+            return None
+
+        return email_md5.lower()
+
     def execute_analysis(self, _file):
         # has this been whitelisted?
         if _file.whitelisted:
-            logging.debug("{} has been whitelisted - not archiving".format(_file.value))
+            logging.debug(f"{_file.value} has been whitelisted - not archiving")
             return False
 
         # if this file has been decrypted from the archives then we obviously don't need to process any further
         if _file.has_tag('decrypted_email'):
             # this should not happen now
-            logging.warning("detected decrypted email {} as original email".format(_file))
+            logging.warning(f"detected decrypted email {_file.value} as original email")
             return False
 
-        # we'll wait until the end of analysis
-        return True
+        email_analysis = self.wait_for_analysis(_file, EmailAnalysis)
+        if email_analysis is None:
+            return None
 
-    def execute_final_analysis(self, _file):
-        from saq.modules.file_analysis import FileHashAnalysis
-        email_analysis = _file.get_analysis(EmailAnalysis)
-        if not email_analysis:
-            logging.warning("cannot find EmailAnalysis for {}".format(_file))
-            return False
-
-        _file.compute_hashes()
-        email_md5 = _file.md5_hash
-
+        email_md5 = self._get_email_md5(_file)
         if not email_md5:
-            logging.error("email file {} missing md5?".format(_file))
+            # this should not happen
+            logging.error(f"email file {_file.value} missing md5?")
             return False
 
         analysis = self.create_analysis(_file)
 
-        email_md5 = email_md5.lower()
+        # if we have the encryption password set then we use it to store an encrypted copy of the email
+        if saq.ENCRYPTION_PASSWORD:
+            archive_dir = os.path.join(saq.DATA_DIR, self.config['archive_dir'], self.hostname, email_md5[0:3])
+            if not os.path.isdir(archive_dir):
+                logging.debug(f"creating archive directory {archive_dir}")
 
-        # archive the email...
-        archive_dir = os.path.join(saq.DATA_DIR, self.config['archive_dir'], self.hostname, email_md5[0:3])
-        if not os.path.isdir(archive_dir):
-            logging.debug("creating archive directory {}".format(archive_dir))
+                try:
+                    os.makedirs(archive_dir)
+                except:
+                    # it might have already been created by another process
+                    # mkdir is an atomic operation (FYI)
+                    if not os.path.isdir(archive_dir):
+                        raise Exception(f"unable to create archive directory {archive_dir}: {e}")
 
+            source_path = os.path.join(self.root.storage_dir, _file.value)
+            archive_path = '{}.gz'.format(os.path.join(archive_dir, email_md5))
+            if os.path.exists('{}.e'.format(archive_path)):
+                logging.info(f"archive path {archive_path}.e already exists")
+                analysis.details = archive_path
+                return True
+                
+            # compress the data
+            logging.debug(f"compressing {archive_path}")
             try:
-                os.makedirs(archive_dir)
-            except:
-                # it might have already been created by another process
-                # mkdir is an atomic operation (FYI)
-                if not os.path.isdir(archive_dir):
-                    raise Exception("unable to create archive directory {}: {}".format(archive_dir, e))
+                with open(source_path, 'rb') as fp_in:
+                    with gzip.open(archive_path, 'wb') as fp_out:
+                        shutil.copyfileobj(fp_in, fp_out)
 
-        source_path = os.path.join(self.root.storage_dir, _file.value)
-        archive_path = '{}.gz'.format(os.path.join(archive_dir, email_md5))
-        if os.path.exists('{}.e'.format(archive_path)):
-            logging.warning("archive path {} already exists".format('{}.e'.format(archive_path)))
-            analysis.details = archive_path
-            return True
-            
-        # compress the data
-        logging.debug("compressing {}".format(archive_path))
-        try:
-            with open(source_path, 'rb') as fp_in:
-                with gzip.open(archive_path, 'wb') as fp_out:
-                    shutil.copyfileobj(fp_in, fp_out)
-
-        except Exception as e:
-            logging.error("compression failed for {}: {}".format(archive_path, e))
-            return False
-
-        # encrypt the archive file
-        encrypted_file = '{}.e'.format(archive_path)
-
-        try:
-            encrypt(archive_path, encrypted_file)
-        except Exception as e:
-            logging.error("unable to encrypt archived email {}: {}".format(archive_path, e))
-
-        logging.info("archived email {} to {}".format(archive_path, encrypted_file))
-
-        # delete the unencrypted copy
-        if os.path.exists(encrypted_file):
-            try:
-                os.remove(archive_path)
             except Exception as e:
-                logging.error("unable to delete unencrypted archive file {}: {}".format(archive_path, e))
-        else:
-            logging.error("expected encrypted output file {} does not exist".format(encrypted_file))
-            return False
+                logging.error(f"compression failed for {archive_path}: {e}".format(archive_path, e))
+                return False
+
+            # encrypt the archive file
+            encrypted_file = f'{archive_path}.e'
+
+            try:
+                encrypt(archive_path, encrypted_file)
+            except Exception as e:
+                logging.error(f"unable to encrypt archived email {archive_path}: {e}")
+
+            logging.info(f"archived email {archive_path} to {encrypted_file}")
+
+            # delete the unencrypted copy
+            if os.path.exists(encrypted_file):
+                try:
+                    os.remove(archive_path)
+                except Exception as e:
+                    logging.error(f"unable to delete unencrypted archive file {archive_path}: {e}")
+            else:
+                logging.error(f"expected encrypted output file {encrypted_file} does not exist")
+                return False
+
+            analysis.details = archive_path
+
+        self.index_email(_file, email_analysis)
+        return True
+
+    def index_email(self, _file, email_analysis):
+
+        #
+        # update the email-archive database with the meta data of this email
+        # NOTE that we do this regardless of archiving the file locally
+
+        email_md5 = self._get_email_md5(_file)
+        if not email_md5:
+            return
 
         with get_db_connection('email_archive') as db:
             c = db.cursor()
@@ -1985,7 +1995,7 @@ class EmailArchiveAction(AnalysisModule):
                 try:
                     row = c.fetchone() 
                     self.server_id = row[0]
-                    logging.debug("got server_id {} for {}".format(self.server_id, self.hostname))
+                    logging.debug(f"got server_id {self.server_id} for {self.hostname}")
                 except:
                     # create the server_id if it does not exist yet
                     execute_with_retry(db, c, "INSERT IGNORE INTO archive_server ( hostname ) VALUES ( %s )", 
@@ -1995,17 +2005,19 @@ class EmailArchiveAction(AnalysisModule):
                     c.execute("SELECT server_id FROM archive_server WHERE hostname = %s", (self.hostname,))
                     row = c.fetchone() 
                     self.server_id = row[0]
-                    logging.debug("created server_id {} for {}".format(self.server_id, self.hostname))
+                    logging.debug(f"created server_id {self.server_id} for {self.hostname}")
 
-            execute_with_retry(db, c, "INSERT IGNORE INTO archive ( server_id, md5 ) VALUES ( %s, UNHEX(%s) )", 
-                              (self.server_id, email_md5))
-            archive_id = c.lastrowid
+            # have we already started archiving this email?
+            c.execute("SELECT archive_id FROM archive WHERE md5 = UNHEX(%s)", (email_md5,))
+            row = c.fetchone()
+            if row is None:
+                execute_with_retry(db, c, "INSERT IGNORE INTO archive ( server_id, md5 ) VALUES ( %s, UNHEX(%s) )", 
+                                  (self.server_id, email_md5))
+                archive_id = c.lastrowid
+            else:
+                archive_id = row[0]
 
-            if not archive_id:
-                logging.error("c.lastrowid returned None for {}".format(_file))
-                return
-
-            logging.debug("got archive_id {} for email {}".format(archive_id, _file))
+            logging.debug(f"got archive_id {archive_id} for email {_file.value}")
 
             transactions = []
 
@@ -2035,6 +2047,8 @@ class EmailArchiveAction(AnalysisModule):
             if email_analysis.message_id:
                 transactions.append(('message_id', email_analysis.message_id))
 
+            from saq.modules.file_analysis import FileHashAnalysis
+
             def _callback(target):
                 if isinstance(target, Observable) and target.type == F_URL:
                     transactions.append(('url', target.value))
@@ -2047,6 +2061,7 @@ class EmailArchiveAction(AnalysisModule):
             # update the fast search indexes
             for field, email_property in transactions:
                 hasher = hashlib.md5()
+                # not the greatest idea to use the ascii encoding for this...
                 hasher.update(email_property.encode('ascii', errors='ignore'))
                 property_md5 = hasher.hexdigest()
 
@@ -2059,16 +2074,27 @@ class EmailArchiveAction(AnalysisModule):
 
             db.commit()
 
-        analysis.details = archive_path
-        return True
+    #
+    # url and content data found in attachments can (will) be added after we initially record the archive analysis
 
-    @property
-    def maintenance_frequency(self):
-        return 60 # execute every 60 seconds
+    def execute_post_analysis(self):
+        for _file in self.root.find_observables(F_FILE):
+            email_analysis = _file.get_analysis(EmailAnalysis)
+            if not email_analysis:
+                continue
 
-    def execute_maintenance(self):
-        from saq.email import maintain_archive
-        maintain_archive()
+            self.index_email(_file, email_analysis)
+
+    # this was broken when we moved to analysis modes
+    # see https://github.com/IntegralDefense/ACE/issues/172
+
+    #@property
+    #def maintenance_frequency(self):
+        #return 60 # execute every 60 seconds
+
+    #def execute_maintenance(self):
+        #from saq.email import maintain_archive
+        #maintain_archive()
 
 class EmailConversationFrequencyAnalysis(Analysis):
     """How often does this external person email this internal person?"""
