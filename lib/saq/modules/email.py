@@ -1222,9 +1222,10 @@ class EmailAnalyzer(AnalysisModule):
 
         except Exception as e:
             logging.error("unable to parse email {}: {}".format(_file, e))
-            #report_exception()
 
             try:
+                # if Python's email parsing library can't parse it then we copy it off to the side
+                # for analysis later
                 src_path = os.path.join(self.root.storage_dir, _file.value)
                 dst_path = os.path.join(saq.DATA_DIR, 'review', 'rfc822', str(uuid.uuid4()))
                 shutil.copy(src_path, dst_path)
@@ -1321,9 +1322,10 @@ class EmailAnalyzer(AnalysisModule):
         for header, value in target_email.items():
             email_details[KEY_HEADERS].append([header, value])
 
-        # who did the email come from?
+        # who did the email come from and who did it go to?
         # with office365 journaling all you have is the header from
         mail_from = None
+        mail_to = None
 
         if 'from' in target_email:
             email_details[KEY_FROM] = target_email['from']
@@ -1345,6 +1347,7 @@ class EmailAnalyzer(AnalysisModule):
                     if mail_from:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
 
+        
         email_details[KEY_TO] = target_email.get_all('to', [])
         for mail_to in email_details[KEY_TO]:
             name, address = email.utils.parseaddr(mail_to)
