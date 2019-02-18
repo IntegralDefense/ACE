@@ -1324,8 +1324,8 @@ class EmailAnalyzer(AnalysisModule):
 
         # who did the email come from and who did it go to?
         # with office365 journaling all you have is the header from
-        mail_from = None
-        mail_to = None
+        mail_from = None # str
+        mail_to = None # strt
 
         if 'from' in target_email:
             email_details[KEY_FROM] = target_email['from']
@@ -1341,43 +1341,48 @@ class EmailAnalyzer(AnalysisModule):
             email_details[KEY_ENV_RCPT_TO] = [target_email['X-MS-Exchange-Organization-OriginalEnvelopeRecipients']]
             name, address = email.utils.parseaddr(email_details[KEY_ENV_RCPT_TO][0])
             if address:
-                mail_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
-                if mail_to:
-                    mail_to.add_tag('delivered_to')
+                mail_to = address
+                to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
+                if to_address:
+                    to_address.add_tag('delivered_to')
                     if mail_from:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
 
         
         email_details[KEY_TO] = target_email.get_all('to', [])
-        for mail_to in email_details[KEY_TO]:
-            name, address = email.utils.parseaddr(mail_to)
+        for addr in email_details[KEY_TO]:
+            name, address = email.utils.parseaddr(addr)
             if address:
-                mail_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
-                if mail_to:
-                    mail_to.add_tag('mail_to')
+
+                # if we don't know who it was delivered to yet then we grab the first To:
+                if mail_to is None:
+                    mail_to = address
+
+                to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
+                if to_address:
+                    to_address.add_tag('mail_to')
                     if mail_from:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
 
         if 'reply-to' in target_email:
             email_details[KEY_REPLY_TO] = target_email['reply-to']
             name, address = email.utils.parseaddr(target_email['reply-to'])
-            if address != '':
+            if address:
                 reply_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if reply_to:
                     reply_to.add_tag('reply_to')
                     if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to.value))
+                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
 
         if 'return-path' in target_email:
             email_details[KEY_RETURN_PATH] = target_email['return-path']
             name, address = email.utils.parseaddr(target_email['return-path'])
-            if address != '':
+            if address:
                 return_path = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if return_path:
                     return_path.add_tag('return_path')
                     if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to.value))
-
+                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
         
         if 'subject' in target_email:
             email_details[KEY_SUBJECT] = target_email['subject']
