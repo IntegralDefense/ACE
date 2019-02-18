@@ -1,6 +1,8 @@
 <p><b>Process Details</b></p>
-{% if analysis.details['segment_count'] > ace_config['carbon_black'].getint('segment_limit') %}
-<h6> {{ ace_config['carbon_black'].getint('segment_limit') }} out of {{ analysis.details['segment_count'] }} process segments stored.</h6>
+{% if 'segment_count' in analysis.details %}
+	{% if analysis.details['segment_count'] > ace_config['carbon_black'].getint('segment_limit') %}
+	    <h6> {{ ace_config['carbon_black'].getint('segment_limit') }} out of {{ analysis.details['segment_count'] }} process segments stored.</h6>
+	{% endif %}
 {% endif %}
 <div class="row">
     <div class="col-md-12">
