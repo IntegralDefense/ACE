@@ -7,7 +7,11 @@ then
     db_auth="--defaults-file=etc/mysql_defaults.root"
 fi
 
-mysqldump $db_auth --comments --no-data --no-create-db ace | sed -e 's/\s*AUTO_INCREMENT=[0-9]*\s*//g' > sql/ace_schema.sql
+mysqldump $db_auth --comments --no-data --no-create-db ace | sed -e 's/\s*AUTO_INCREMENT=[0-9]*\s*/ /g' > sql/ace_schema.sql
+mysqldump $db_auth --comments --no-data --no-create-db brocess | sed -e 's/\s*AUTO_INCREMENT=[0-9]*\s*/ /g' > sql/brocess_schema.sql
+mysqldump $db_auth --comments --no-data --no-create-db email-archive | sed -e 's/\s*AUTO_INCREMENT=[0-9]*\s*/ /g' > sql/email-archive_schema.sql
+mysqldump $db_auth --comments --no-data --no-create-db hal9000 | sed -e 's/\s*AUTO_INCREMENT=[0-9]*\s*/ /g' > sql/hal9000_schema.sql
+mysqldump $db_auth --comments --no-data --no-create-db vt-hash-cache | sed -e 's/\s*AUTO_INCREMENT=[0-9]*\s*/ /g' > sql/vt-hash-cache_schema.sql
 
 # create the v5.5 schema that has the 767 char size limit on indexes
 sed -e '/UNIQUE KEY `storage_dir_UNIQUE` (`storage_dir`)/ s/),$/(767)),/' \

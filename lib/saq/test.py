@@ -51,6 +51,7 @@ from subprocess import Popen, PIPE
 import saq
 import saq.engine
 from saq.analysis import RootAnalysis, _enable_io_tracker, _disable_io_tracker
+from saq.crypto import get_aes_key
 from saq.database import initialize_database, get_db_connection, use_db
 from saq.engine import Engine
 from saq.error import report_exception
@@ -326,7 +327,6 @@ def initialize_test_environment():
         logging.error("unable to create temp dir {}: {}".format(test_dir, e))
 
     # in all our testing we use the password "password" for encryption/decryption
-    from saq.crypto import get_aes_key
     saq.ENCRYPTION_PASSWORD = get_aes_key('password')
 
     #initialize_database()
@@ -563,6 +563,9 @@ class ACEBasicTestCase(TestCase):
         self.reset_email_archive()
         self.reset_crawlphish()
         self.reset_log_exports()
+
+        # re-enable encryption in case we disabled it
+        saq.ENCRYPTION_PASSWORD = get_aes_key('password')
 
     def reset_log_exports(self):
         # reset splunk export logs

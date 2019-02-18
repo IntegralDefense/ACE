@@ -1,6 +1,8 @@
 # vim: sw=4:ts=4:et
 
 import datetime
+import filecmp
+import gzip
 import json
 import logging
 import os, os.path
@@ -13,6 +15,7 @@ import pytz
 
 import saq, saq.test
 from saq.analysis import RootAnalysis
+from saq.crypto import decrypt
 from saq.constants import *
 from saq.database import get_db_connection
 from saq.test import *
@@ -492,27 +495,13 @@ class TestCase(ACEModuleTestCase):
 
     def test_archive_1(self):
 
-        # clear email archive
-        with get_db_connection('email_archive') as db:
-            c = db.cursor()
-            c.execute("DELETE FROM archive")
-            db.commit()
-
-        hostname = socket.gethostname().lower()
-        archive_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'], hostname)
-        if os.path.isdir(archive_dir):
-            try:
-                shutil.rmtree(archive_dir)
-                os.mkdir(archive_dir)
-            except Exception as e:
-                self.fail("unable to clear archive dir {}: {}".format(archive_dir, e))
+        self.reset_email_archive()
 
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
                     os.path.join(root.storage_dir, 'email.rfc822'))
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
-        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
         root.schedule()
@@ -526,6 +515,31 @@ class TestCase(ACEModuleTestCase):
         engine.controlled_stop()
         engine.start()
         engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        archive_results = file_observable.get_analysis('EmailArchiveResults')
+        self.assertIsNotNone(archive_results)
+        
+        # this should point to the archive file (minus the .e at the end)
+        self.assertIsNotNone(archive_results.details)
+        archive_path = archive_results.details + '.e'
+        self.assertTrue(os.path.exists(archive_path))
+
+        # make sure we can decrypt it
+        gzip_path = os.path.join(saq.TEMP_DIR, 'temp.gz')
+        dest_path = os.path.join(saq.TEMP_DIR, 'temp.email')
+
+        decrypt(archive_path, gzip_path)
+        with gzip.open(gzip_path, 'rb') as fp_in:
+            with open(dest_path, 'wb') as fp_out:
+                shutil.copyfileobj(fp_in, fp_out)
+
+        # this should be the same as the original email
+        self.assertTrue(filecmp.cmp(dest_path, os.path.join(root.storage_dir, 'email.rfc822')))
 
         # there should be a single entry in the archive
         with get_db_connection('email_archive') as db:
@@ -547,36 +561,23 @@ class TestCase(ACEModuleTestCase):
             ('url', b'http://197.210.28.107')]
 
             for field_name, field_value in expected_values:
-                c.execute("SELECT value FROM archive_search WHERE field = %s AND archive_id = %s AND value = %s", 
-                         (field_name, archive_id, field_value))
-                row = c.fetchone()
-                self.assertIsNotNone(row)
-                value = row[0]
-                self.assertEquals(value, field_value)
+                with self.subTest(field_name=field_name, field_value=field_value):
+                    c.execute("SELECT value FROM archive_search WHERE field = %s AND archive_id = %s AND value = %s", 
+                             (field_name, archive_id, field_value))
+                    row = c.fetchone()
+                    self.assertIsNotNone(row)
+                    value = row[0]
+                    self.assertEquals(value, field_value)
 
     def test_archive_2(self):
 
-        # clear email archive
-        with get_db_connection('email_archive') as db:
-            c = db.cursor()
-            c.execute("DELETE FROM archive")
-            db.commit()
-
-        hostname = socket.gethostname().lower()
-        archive_dir = os.path.join(saq.SAQ_HOME, saq.CONFIG['analysis_module_email_archiver']['archive_dir'], hostname)
-        if os.path.isdir(archive_dir):
-            try:
-                shutil.rmtree(archive_dir)
-                os.mkdir(archive_dir)
-            except Exception as e:
-                self.fail("unable to clear archive dir {}: {}".format(archive_dir, e))
+        self.reset_email_archive()
 
         root = create_root_analysis(alert_type='mailbox')
         root.initialize_storage()
         shutil.copy(os.path.join('test_data', 'emails', 'pdf_attachment.email.rfc822'), 
                     os.path.join(root.storage_dir, 'email.rfc822'))
         file_observable = root.add_observable(F_FILE, 'email.rfc822')
-        file_observable.add_directive(DIRECTIVE_ORIGINAL_EMAIL)
         file_observable.add_directive(DIRECTIVE_ARCHIVE)
         root.save()
         root.schedule()
@@ -591,6 +592,31 @@ class TestCase(ACEModuleTestCase):
         engine.controlled_stop()
         engine.start()
         engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        archive_results = file_observable.get_analysis('EmailArchiveResults')
+        self.assertIsNotNone(archive_results)
+        
+        # this should point to the archive file (minus the .e at the end)
+        self.assertIsNotNone(archive_results.details)
+        archive_path = archive_results.details + '.e'
+        self.assertTrue(os.path.exists(archive_path))
+
+        # make sure we can decrypt it
+        gzip_path = os.path.join(saq.TEMP_DIR, 'temp.gz')
+        dest_path = os.path.join(saq.TEMP_DIR, 'temp.email')
+
+        decrypt(archive_path, gzip_path)
+        with gzip.open(gzip_path, 'rb') as fp_in:
+            with open(dest_path, 'wb') as fp_out:
+                shutil.copyfileobj(fp_in, fp_out)
+
+        # this should be the same as the original email
+        self.assertTrue(filecmp.cmp(dest_path, os.path.join(root.storage_dir, 'email.rfc822')))
 
         # there should be a single entry in the archive
         with get_db_connection('email_archive') as db:
@@ -617,6 +643,71 @@ class TestCase(ACEModuleTestCase):
                 self.assertIsNotNone(row)
                 value = row[0]
                 self.assertEquals(value, field_value)
+
+    def test_archive_no_local_archive(self):
+
+        self.reset_email_archive()
+
+        # disable archive encryption
+        saq.ENCRYPTION_PASSWORD = None
+
+        root = create_root_analysis(alert_type='mailbox')
+        root.initialize_storage()
+        shutil.copy(os.path.join('test_data', 'emails', 'splunk_logging.email.rfc822'), 
+                    os.path.join(root.storage_dir, 'email.rfc822'))
+        file_observable = root.add_observable(F_FILE, 'email.rfc822')
+        file_observable.add_directive(DIRECTIVE_ARCHIVE)
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_file_type', 'test_groups')
+        engine.enable_module('analysis_module_file_hash_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_analyzer', 'test_groups')
+        engine.enable_module('analysis_module_email_archiver', 'test_groups')
+        engine.enable_module('analysis_module_url_extraction', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        archive_results = file_observable.get_analysis('EmailArchiveResults')
+        self.assertIsNotNone(archive_results)
+        
+        # the details is typicaly the path to the archive but will be None here since it's disabled
+        self.assertIsNone(archive_results.details)
+
+        # there should be a single entry in the archive
+        with get_db_connection('email_archive') as db:
+            c = db.cursor()
+            c.execute("SELECT archive_id FROM archive")
+            row = c.fetchone()
+            self.assertIsNotNone(row)
+            archive_id = row[0]
+
+            # check the index and make sure all the expected values are there
+            expected_values = [ ('body_from', b'unixfreak0037@gmail.com'),
+            ('body_to', b'jwdavison@company.com'),
+            ('decoded_subject', b'canary #3'),
+            ('env_to', b'jwdavison@company.com'),
+            ('message_id', b'<CANTOGZsMiMb+7aB868zXSen_fO=NS-qFTUMo9h2eHtOexY8Qhw@mail.gmail.com>'),
+            ('subject', b'canary #3'),
+            ('url', b'http://tldp.org/LDP/abs/html'),
+            ('url', b'https://www.alienvault.com'),
+            ('url', b'http://197.210.28.107')]
+
+            for field_name, field_value in expected_values:
+                with self.subTest(field_name=field_name, field_value=field_value):
+                    c.execute("SELECT value FROM archive_search WHERE field = %s AND archive_id = %s AND value = %s", 
+                             (field_name, archive_id, field_value))
+                    row = c.fetchone()
+                    self.assertIsNotNone(row)
+                    value = row[0]
+                    self.assertEquals(value, field_value)
 
     def test_email_pivot(self):
 
