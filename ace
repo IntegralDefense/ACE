@@ -477,7 +477,7 @@ def correlate(args):
         root.tool = 'ACE - Command Line Analysis'
         root.tool_instance = socket.gethostname()
         root.alert_type = args.alert_type
-        root.analysis_mode = ANALYSIS_MODE_CLI
+        root.analysis_mode = ANALYSIS_MODE_CLI if args.analysis_mode is None else args.analysis_mode
         root.description = args.description if args.description else 'Command Line Correlation'
         root.event_time = datetime.datetime.now() if reference_time is None else reference_time
         root.details = { 
@@ -662,6 +662,8 @@ correlate_parser.add_argument('-E', '--enable-module', required=False, dest='ena
     help="Zero or more module names (substring match) to enable.")
 correlate_parser.add_argument('-G', '--enable-module-group', required=False, dest='enable_module_group', nargs='+',
     help="One or more module group names to enable.")
+correlate_parser.add_argument('-m', '--analysis-mode', required=False, dest='analysis_mode', 
+    help="The analysis mode to use for this analysis. Defaults to cli")
 correlate_parser.add_argument('-d', '--storage-dir', required=False, dest='storage_dir', default='ace.out',
     help="Specify an output directory.  Defaults to ace.out.")
 correlate_parser.add_argument('-t', '--reference-time', required=False, dest='reference_time', default=None,
