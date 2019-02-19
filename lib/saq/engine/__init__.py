@@ -132,11 +132,35 @@ class Worker(object):
             return
 
         # is the process running?
-        if self.process is not None and self.process.is_alive():
+        while self.process is not None and self.process.is_alive():
+            # is it using too much memory?
+            try:
+                p = psutil.Process(pid=self.process.pid)
+                memory = p.memory_info()
+                if memory.rss > (saq.CONFIG['global'].getint('memory_limit_kill') * 1024 * 1024):
+                    logging.error(f"worker {self.process.pid} used too much memory: {memory} KILLING")
+                    kill_process_tree(self.process.pid, signal.SIGKILL)
+
+                    # clears out what this was working on 
+                    # this completely removes it from the workload so it won't get picked up again
+                    saq.database.clear_workload_by_pid(self.process.pid)
+
+                    # set this to None and break to spawn a new worker
+                    self.process = None
+                    break
+
+                elif memory.rss > (saq.CONFIG['global'].getint('memory_limit_warning') * 1024 * 1024):
+                    logging.warning(f"worker {self.process.pid} is using too much memory: {memory}")
+
+            except Exception as e:
+                logging.error(f"unable to check memory of process {self.process}: {e}")
+
             return
 
         # if not then start it back up
-        logging.info("detected death of process {} pid {}".format(self.process, self.process.pid))
+        if self.process:
+            logging.info("detected death of process {} pid {}".format(self.process, self.process.pid))
+
         self.start()
         self.wait_for_start()
 
