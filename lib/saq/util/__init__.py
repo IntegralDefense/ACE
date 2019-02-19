@@ -7,10 +7,12 @@ import datetime
 import logging
 import os, os.path
 import re
+import signal
 
 import saq
 from saq.constants import *
 
+import psutil
 import pytz
 
 CIDR_REGEX = re.compile(r'^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?$')
@@ -172,3 +174,27 @@ def abs_path(path):
         return path
 
     return os.path.join(saq.SAQ_HOME, path)
+
+
+def kill_process_tree(pid, sig=signal.SIGTERM, include_parent=True,
+                      timeout=None, on_terminate=None):
+    """Kill a process tree (including grandchildren) with signal
+    "sig" and return a (gone, still_alive) tuple.
+    "on_terminate", if specified, is a callabck function which is
+    called as soon as a child terminates.
+    """
+
+    if pid == os.getpid():
+        raise RuntimeError("I refuse to kill myself")
+
+    parent = psutil.Process(pid)
+    children = parent.children(recursive=True)
+    if include_parent:
+        children.append(parent)
+
+    for p in children:
+        p.send_signal(sig)
+
+    gone, alive = psutil.wait_procs(children, timeout=timeout,
+                                    callback=on_terminate)
+    return (gone, alive)

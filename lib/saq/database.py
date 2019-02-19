@@ -1796,6 +1796,24 @@ ON DUPLICATE KEY UPDATE uuid=uuid""", (root.uuid, saq.SAQ_NODE_ID, root.analysis
     logging.info("added {} to workload with analysis mode {} company_id {} exclusive_uuid {}".format(
                   root.uuid, root.analysis_mode, root.company_id, exclusive_uuid))
 
+@use_db
+def clear_workload_by_pid(pid, db=None, c=None):
+    """Utility function that clears (deletes) any workload items currently being processed by the given process
+       identified by pid. This is accomplished by querying the lock_owner column of the locks table and then
+       find workload items for the uuids found.
+
+       This is typically used to clear out error conditions."""
+    
+    c.execute("SELECT uuid FROM locks WHERE lock_owner LIKE CONCAT('%%-', %s)", (pid,))
+    for row in c:
+        uuid = row[0]
+        logging.warning(f"clearing workload item {uuid}")
+        execute_with_retry(db, c, "DELETE FROM workload WHERE uuid = %s", (uuid,))
+
+    logging.warning(f"clearing locks for pid {pid}")
+    execute_with_retry(db, c, "DELETE FROM locks WHERE lock_owner LIKE CONCAT('%%-', %s)", (pid,))
+    db.commit()
+
 class Lock(Base):
     
     __tablename__ = 'locks'

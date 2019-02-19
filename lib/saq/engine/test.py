@@ -9,6 +9,7 @@ import signal
 import tarfile
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 
@@ -631,6 +632,53 @@ class TestCase(ACEEngineTestCase):
         wait_for_log_count('detected death of process', 1)
         engine.controlled_stop()
         engine.wait()
+
+    def test_memory_limit(self):
+
+        from saq.database import Workload, Lock
+
+        # reduce the limits so the test is easier
+        saq.CONFIG['global']['memory_limit_warning'] = '128'
+        saq.CONFIG['global']['memory_limit_kill'] = '256'
+
+        root = create_root_analysis()
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_memory_limit_warning')
+        root.save() 
+        root.schedule()
+
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_basic_test')
+        engine.start()
+
+        time.sleep(3)
+        engine.controlled_stop()
+        engine.wait()
+
+        # we should see a warning message about taking up too much memory
+        wait_for_log_count('is using too much memory', 1)
+
+        # same thing as before except we allocate so much memory we force ace to kill the process
+        root = create_root_analysis()
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_memory_limit_kill')
+        root.save() 
+        root.schedule()
+
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_module('analysis_module_basic_test')
+        engine.start()
+
+        time.sleep(3)
+        engine.controlled_stop()
+        engine.wait()
+
+        # we should see a warning message about taking up too much memory
+        wait_for_log_count('used too much memory', 1)
+
+        # we should NOT see a workload item or a lock left
+        self.assertEquals(saq.db.query(Workload.id).count(), 0)
+        self.assertEquals(saq.db.query(Lock.uuid).count(), 0)
 
     def test_final_analysis(self):
         """Test final analysis execution."""

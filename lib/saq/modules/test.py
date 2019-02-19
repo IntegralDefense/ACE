@@ -81,6 +81,10 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_analysis_test_add_file(test)
         elif test.value == 'test_watched_file':
             return self.execute_test_watched_file(test)
+        elif test.value == 'test_memory_limit_warning':
+            return self.execute_test_memory_limit_warning(test)
+        elif test.value == 'test_memory_limit_kill':
+            return self.execute_test_memory_limit_kill(test)
         else:
             return False
 
@@ -150,6 +154,16 @@ class BasicTestAnalyzer(AnalysisModule):
 
     def execute_test_watched_file(self, test):
         analysis = self.create_analysis(test)
+        return True
+
+    def execute_test_memory_limit_warning(self, test):
+        chunk = bytearray((saq.CONFIG['global'].getint('memory_limit_warning') * 1024 * 1024) + 1)
+        time.sleep(3)
+        return True
+
+    def execute_test_memory_limit_kill(self, test):
+        chunk = bytearray((saq.CONFIG['global'].getint('memory_limit_kill') * 1024 * 1024) + 1024)
+        time.sleep(3)
         return True
 
 class MergeTestAnalysis(TestAnalysis):
