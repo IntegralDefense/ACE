@@ -1541,7 +1541,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 # go grab it
                 return self.transfer_work_target(uuid, node_id)
 
-            return RootAnalysis(uuid=uuid, storage_dir=storage_dir)
+            return RootAnalysis(uuid=uuid, storage_dir=storage_dir, analysis_mode=analysis_mode)
 
         return None
 
@@ -1769,7 +1769,15 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         elif isinstance(work_item, RootAnalysis):
             self.root = work_item
+            # the analysis mode set in the workload may not match what is currently saved with this analysis
+            # for example, when an analyst sets the disposition of the alert, it gets added back into the 
+            # workload in DISPOSITIONED mode even though the analysis_mode saved with the alert is CORRELATION
+            current_analysis_mode = self.root.analysis_mode
             self.root.load()
+            if self.root.analysis_mode != current_analysis_mode:
+                logging.debug(f"changing analysis mode for {self.root} from {self.root.analysis_mode} "
+                              f"to workload value of {current_analysis_mode}")
+                self.root.analysis_mode = current_analysis_mode
 
         logging.info("processing {} mode {} ({})".format(self.root.description, self.root.analysis_mode, self.root.uuid))
 
