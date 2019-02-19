@@ -8,23 +8,6 @@ fi
 
 cd "${SAQ_HOME}" || { echo "cannot cd to ${SAQ_HOME}"; exit 1; }
 
-#rm -rf error_reports/* 2> /dev/null
-
-# clear logs
-if [ -e logs/unittest.log ]
-then
-    rm logs/unittest.log
-fi
-
-# clear data directory
-data_dir="$(ace config -v global.data_dir)"
-if [ -d "$data_dir" ]
-then
-    echo "clearing $data_dir..."
-    rm -rf "$data_dir"
-fi
-mkdir "$data_dir"
-
 # if we passed no parameters then we run all the tests
 if [ "$#" -eq "0" ]
 then
