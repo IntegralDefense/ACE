@@ -1462,6 +1462,52 @@ WHERE
     def node_location(self):
         return self.nodes.location
 
+def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
+    """Utility function to the set disposition of many Alerts at once.
+       :param alert_uuids: A list of UUIDs of Alert objects to set.
+       :param disposition: The disposition to set the Alerts.
+       :param user_id: The id of the User that is setting the disposition.
+       :param user_comment: Optional comment the User is providing as part of the disposition."""
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        # update dispositions
+        uuid_where_clause = ' , '.join(["'{}'".format(u) for u in alert_uuids])
+        c.execute("""
+                  UPDATE alerts 
+                  SET disposition = %s, disposition_user_id = %s, disposition_time = NOW(),
+                  owner_id = %s, owner_time = NOW()
+                  WHERE uuid IN ( {} ) and (disposition is NULL or disposition != %s)""".format(uuid_where_clause),
+                  (disposition, user_id, user_id, disposition))
+        
+        # add the comment if it exists
+        if user_comment:
+            for uuid in alert_uuids:
+                c.execute("""
+                          INSERT INTO comments ( user_id, uuid, comment ) 
+                          VALUES ( %s, %s, %s )""", ( user_id, uuid, user_comment))
+
+        # now we need to insert each of these alert back into the workload
+        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
+        sql = f"""
+INSERT IGNORE INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
+SELECT 
+    alerts.uuid, 
+    nodes.id,
+    %s, 
+    NOW(),
+    alerts.company_id, 
+    NULL, 
+    alerts.storage_dir 
+FROM 
+    alerts JOIN nodes ON alerts.location = nodes.name
+WHERE 
+    uuid IN ( {uuid_placeholders} )"""
+        params = [ saq.constants.ANALYSIS_MODE_DISPOSITIONED ]
+        params.extend(alert_uuids)
+        c.execute(sql, tuple(params))
+        db.commit()
+
 class Similarity:
     def __init__(self, uuid, disposition, percent):
         self.uuid = uuid
