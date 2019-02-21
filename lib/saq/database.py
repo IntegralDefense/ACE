@@ -1821,7 +1821,8 @@ def add_workload(root, exclusive_uuid=None, db=None, c=None):
     # if we don't specify an analysis mode then we default to whatever the engine default is
     # NOTE you should always specify an analysis mode
     if root.analysis_mode is None:
-        logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(root))
+        logging.warning(f"missing analysis mode for call to add_workload({root}) - "
+                        f"using engine default {saq.CONFIG['engine']['default_analysis_mode']}")
         root.analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
 
     # make sure we've initialized our node id

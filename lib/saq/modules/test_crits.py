@@ -6,7 +6,7 @@ import saq.database
 import saq.test
 
 from saq.analysis import RootAnalysis
-from saq.database import use_db, get_db_connection, ALERT
+from saq.database import use_db, get_db_connection, ALERT, set_dispositions
 from saq.constants import *
 from saq.test import *
 
@@ -29,40 +29,11 @@ class TestCase(ACEModuleTestCase):
         root.load()
 
         ALERT(root)
+        set_dispositions([root.uuid], DISPOSITION_FALSE_POSITIVE, UNITTEST_USER_ID)
 
-        # change the disposition to FALSE POSITIVE which will change the indicator into INFORMATIONAL
-        with get_db_connection() as ace_db:
-            ace_c = ace_db.cursor()
-            ace_c.execute("""
-                UPDATE alerts SET 
-                    disposition = %s, 
-                    disposition_user_id = %s, 
-                    disposition_time = NOW(),
-                    owner_id = %s, 
-                    owner_time = NOW()
-                WHERE 
-                    uuid = %s
-                    AND ( disposition IS NULL OR disposition != %s )""",
-                ( DISPOSITION_FALSE_POSITIVE, UNITTEST_USER_ID, UNITTEST_USER_ID, root.uuid, DISPOSITION_FALSE_POSITIVE  ))
-
-            ace_c.execute("""
-                INSERT INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
-                SELECT 
-                    alerts.uuid, 
-                    nodes.id,
-                    %s, 
-                    NOW(),
-                    alerts.company_id, 
-                    NULL, 
-                    alerts.storage_dir 
-                FROM 
-                    alerts JOIN nodes ON alerts.location = nodes.name
-                WHERE 
-                    uuid = %s""", ( ANALYSIS_MODE_CORRELATION, root.uuid ))
-            ace_db.commit()
-
-        engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_CORRELATION ])
-        engine.enable_module('analysis_module_faqueue_alert_analyzer', ANALYSIS_MODE_CORRELATION)
+        engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_CORRELATION, ANALYSIS_MODE_DISPOSITIONED ])
+        engine.enable_module('analysis_module_faqueue_alert_analyzer', [ ANALYSIS_MODE_CORRELATION,
+                                                                         ANALYSIS_MODE_DISPOSITIONED ])
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -70,38 +41,11 @@ class TestCase(ACEModuleTestCase):
         self.assertEquals(log_count('updating crits_id 5c3c9e42ad951d6254d20f98 to status Informational'), 1)
 
         # change the disposition to anything except FALSE POSITIVE and the indicator becomes ANALYZED
-        with get_db_connection() as ace_db:
-            ace_c = ace_db.cursor()
-            ace_c.execute("""
-                UPDATE alerts SET 
-                    disposition = %s, 
-                    disposition_user_id = %s, 
-                    disposition_time = NOW(),
-                    owner_id = %s, 
-                    owner_time = NOW()
-                WHERE 
-                    uuid = %s
-                    AND ( disposition IS NULL OR disposition != %s )""",
-                ( DISPOSITION_WEAPONIZATION, UNITTEST_USER_ID, UNITTEST_USER_ID, root.uuid, DISPOSITION_WEAPONIZATION  ))
+        set_dispositions([root.uuid], DISPOSITION_WEAPONIZATION, UNITTEST_USER_ID)
 
-            ace_c.execute("""
-                INSERT INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
-                SELECT 
-                    alerts.uuid, 
-                    nodes.id,
-                    %s, 
-                    NOW(),
-                    alerts.company_id, 
-                    NULL, 
-                    alerts.storage_dir 
-                FROM 
-                    alerts JOIN nodes ON alerts.location = nodes.name
-                WHERE 
-                    uuid = %s""", ( ANALYSIS_MODE_CORRELATION, root.uuid ))
-            ace_db.commit()
-
-        engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_CORRELATION ])
-        engine.enable_module('analysis_module_faqueue_alert_analyzer', ANALYSIS_MODE_CORRELATION)
+        engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_CORRELATION, ANALYSIS_MODE_DISPOSITIONED ])
+        engine.enable_module('analysis_module_faqueue_alert_analyzer', [ANALYSIS_MODE_CORRELATION,
+                                                                        ANALYSIS_MODE_DISPOSITIONED])
         engine.controlled_stop()
         engine.start()
         engine.wait()
