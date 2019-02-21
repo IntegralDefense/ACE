@@ -872,6 +872,18 @@ class ACEEngineTestCase(ACEBasicTestCase):
             if key.startswith('analysis_module_'):
                 saq.CONFIG[key]['enabled'] = 'no'
 
+            #if key.startswith('analysis_mode_'):
+                #delete_list = []
+                #for value in saq.CONFIG[key].keys():
+                    #if value.startswith('analysis_module_'):
+                        #delete_list.append(value)
+
+                #for analysis_module in delete_list:
+                    #logging.debug(f"deleting {analysis_module} from {key}")
+                    #del saq.CONFIG[key][analysis_module]
+
+                #saq.CONFIG[key]['module_groups'] = ''
+
         logging.debug("disabled all modules")
 
 class CloudphishServer(EngineProcess):

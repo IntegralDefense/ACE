@@ -160,3 +160,59 @@ class TestCase(ACEModuleTestCase):
 
         # and we should have a warning about the alert already existing
         #self.assertEquals(log_count('uuid {} already exists in alerts table'.format(root.uuid)), 1)
+
+    def test_alert_dispositioned(self):
+
+        from saq.database import Alert, User, set_dispositions
+
+        # test the following scenario
+        # 1) alert is generated
+        # 2) ace begins to analyze the alert in correlation mode
+        # 3) user sets the disposition of the alert WHILE ace is analyzing it
+        # 4) ace detects the disposition and stops analyzing the alert
+        # 5) ace picks up the alert in ANALYSIS_MODE_DISPOSITIONED mode
+
+        saq.CONFIG['analysis_module_alert_disposition_analyzer']['threaded_execution_frequency'] = '1'
+        
+        # create an analysis that turns into an alert
+        root = create_root_analysis(analysis_mode='test_single')
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_detection')
+        observable_pause = root.add_observable(F_TEST, 'pause_3')
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine(pool_size_limit=1, local_analysis_modes=['test_single', ANALYSIS_MODE_CORRELATION])
+        engine.enable_module('analysis_module_detection', 'test_single')
+        engine.enable_module('analysis_module_alert_disposition_analyzer', ANALYSIS_MODE_CORRELATION)
+        engine.enable_module('analysis_module_basic_test', ['test_single', ANALYSIS_MODE_CORRELATION])
+        engine.enable_module('analysis_module_low_priority', ANALYSIS_MODE_CORRELATION)
+        engine.enable_module('analysis_module_pause', ANALYSIS_MODE_CORRELATION)
+        engine.start()
+
+        # wait until we're processing the alert
+        wait_for_log_count("processing This is only a test. mode correlation", 1, 10)
+
+        # set the disposition of this alert
+        set_dispositions([root.uuid],
+                         DISPOSITION_FALSE_POSITIVE, 
+                         saq.db.query(User).first().id)
+
+        # look for analysis_module_alert_disposition_analyzer to cancel the analysis
+        wait_for_log_count("has been dispositioned - canceling analysis", 1)
+
+        # now wait for it to stop
+        engine.controlled_stop()
+        engine.wait()
+
+        saq.db.close()
+        alert = saq.db.query(Alert).filter(Alert.uuid == root.uuid).one()
+        self.assertIsNotNone(alert)
+        alert.load()
+
+        observable_pause = alert.get_observable(observable_pause.id)
+        self.assertIsNotNone(observable_pause)
+        # since LowPriorityAnalysis executes *after* analysis_module_pause, it
+        # should NOT have executed on this observable
+        low_pri_analysis = observable_pause.get_analysis('LowPriorityAnalysis')
+        self.assertIsNone(low_pri_analysis)
