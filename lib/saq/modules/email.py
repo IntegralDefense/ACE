@@ -970,6 +970,12 @@ class EmailAnalysis(Analysis):
         return None
 
     @property
+    def recipient(self):
+        if self.env_rcpt_to is not None:
+            return self.env_rcpt_to
+        return mail_to
+
+    @property
     def reply_to(self):
         if self.email and KEY_REPLY_TO in self.email:
             return self.email[KEY_REPLY_TO]
@@ -1326,6 +1332,21 @@ class EmailAnalyzer(AnalysisModule):
         # with office365 journaling all you have is the header from
         mail_from = None # str
         mail_to = None # strt
+        remediation_message_id = None
+
+        if 'message-id' in target_email:
+            email_details[KEY_MESSAGE_ID] = target_email['message-id']
+            remediation_message_id =target_email['message-id'].strip()
+            message_id_observable = analysis.add_observable(F_MESSAGE_ID, target_email['message-id'].strip())
+            if message_id_observable: 
+                # this module will extract an email from the archives based on the message-id
+                # we don't want to do that here so we exclude that analysis
+                message_id_observable.exclude_analysis(MessageIDAnalyzer)
+        
+        phishme_report = False
+        if 'subject' in target_email:
+            email_details[KEY_SUBJECT] = target_email['subject']
+            phsihme_report = email_details[KEY_SUBJECT].strip().startswith("[POTENTIAL PHISH]")
 
         if 'from' in target_email:
             email_details[KEY_FROM] = target_email['from']
@@ -1343,10 +1364,13 @@ class EmailAnalyzer(AnalysisModule):
             if address:
                 mail_to = address
                 to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
+                if remediation_message_id is not None and not phishme_report:
+                    analysis.add_observable(F_REMEDIATION_TARGET, "{}:{}".format(remediation_message_id, address))
                 if to_address:
                     to_address.add_tag('delivered_to')
                     if mail_from:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
+                        analysis.add_
 
         
         email_details[KEY_TO] = target_email.get_all('to', [])
@@ -1359,6 +1383,8 @@ class EmailAnalyzer(AnalysisModule):
                     mail_to = address
 
                 to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
+                if remediation_message_id is not None and not phishme_report:
+                    analysis.add_observable(F_REMEDIATION_TARGET, "{}:{}".format(remediation_message_id, address))
                 if to_address:
                     to_address.add_tag('mail_to')
                     if mail_from:
@@ -1383,17 +1409,6 @@ class EmailAnalyzer(AnalysisModule):
                     return_path.add_tag('return_path')
                     if mail_to:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
-        
-        if 'subject' in target_email:
-            email_details[KEY_SUBJECT] = target_email['subject']
-
-        if 'message-id' in target_email:
-            email_details[KEY_MESSAGE_ID] = target_email['message-id']
-            message_id_observable = analysis.add_observable(F_MESSAGE_ID, target_email['message-id'].strip())
-            if message_id_observable: 
-                # this module will extract an email from the archives based on the message-id
-                # we don't want to do that here so we exclude that analysis
-                message_id_observable.exclude_analysis(MessageIDAnalyzer)
 
         # the rest of these details are for the generate logging output
 
