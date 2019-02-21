@@ -2445,8 +2445,7 @@ class TestCase(ACEEngineTestCase):
 
     def test_analysis_mode_dispositioned(self):
 
-        from saq.database import Alert, User, Workload, add_workload
-        from app.analysis.views import set_dispositions
+        from saq.database import Alert, User, Workload, add_workload, set_dispositions
         
         root = create_root_analysis(analysis_mode='test_single')
         root.initialize_storage()

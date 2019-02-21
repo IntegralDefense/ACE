@@ -1472,13 +1472,15 @@ def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
     with get_db_connection() as db:
         c = db.cursor()
         # update dispositions
-        uuid_where_clause = ' , '.join(["'{}'".format(u) for u in alert_uuids])
-        c.execute("""
-                  UPDATE alerts 
-                  SET disposition = %s, disposition_user_id = %s, disposition_time = NOW(),
-                  owner_id = %s, owner_time = NOW()
-                  WHERE uuid IN ( {} ) and (disposition is NULL or disposition != %s)""".format(uuid_where_clause),
-                  (disposition, user_id, user_id, disposition))
+        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
+        sql = f"""UPDATE alerts SET 
+                      disposition = %s, disposition_user_id = %s, disposition_time = NOW(),
+                      owner_id = %s, owner_time = NOW()
+                  WHERE 
+                      (disposition IS NULL OR disposition != %s) AND uuid IN ( {uuid_placeholders} )"""
+        parameters = [disposition, user_id, user_id, disposition]
+        parameters.extend(alert_uuids)
+        c.execute(sql, parameters)
         
         # add the comment if it exists
         if user_comment:
@@ -1488,7 +1490,6 @@ def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
                           VALUES ( %s, %s, %s )""", ( user_id, uuid, user_comment))
 
         # now we need to insert each of these alert back into the workload
-        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
         sql = f"""
 INSERT IGNORE INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
 SELECT 

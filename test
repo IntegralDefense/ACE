@@ -8,6 +8,11 @@ fi
 
 cd "${SAQ_HOME}" || { echo "cannot cd to ${SAQ_HOME}"; exit 1; }
 
+if [ -f "logs/unittest.log" ]
+then
+    rm logs/unittest.log
+fi
+
 # if we passed no parameters then we run all the tests
 if [ "$#" -eq "0" ]
 then
