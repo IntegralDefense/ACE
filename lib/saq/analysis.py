@@ -2110,6 +2110,7 @@ class RootAnalysis(Analysis):
         # we are the root
         self.root = self
 
+        self._original_analysis_mode = None
         self._analysis_mode = None
         if analysis_mode:
             self.analysis_mode = analysis_mode
@@ -2328,10 +2329,23 @@ class RootAnalysis(Analysis):
     def analysis_mode(self):
         return self._analysis_mode
 
+    @property
+    def original_analysis_mode(self):
+        return self._original_analysis_mode
+
     @analysis_mode.setter
     def analysis_mode(self, value):
         assert value is None or ( isinstance(value, str) and value )
         self._analysis_mode = value
+        if self._original_analysis_mode is None:
+            self._original_analysis_mode = value
+
+    def override_analysis_mode(self, value):
+        """Change the analysis mode and disregard current values.
+           This has the effect of setting both the analysis mode and original analysis mode."""
+        assert value is None or ( isinstance(value, str) and value )
+        self._analysis_mode = value
+        self._original_analysis_mode = value
 
     @property
     def uuid(self):

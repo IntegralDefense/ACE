@@ -10,6 +10,7 @@ import time
 import re
 
 import saq
+import saq.test
 from saq.constants import *
 from saq.analysis import Analysis
 from saq.modules import AnalysisModule
@@ -85,6 +86,8 @@ class BasicTestAnalyzer(AnalysisModule):
             return self.execute_test_memory_limit_warning(test)
         elif test.value == 'test_memory_limit_kill':
             return self.execute_test_memory_limit_kill(test)
+        elif test.value == 'test_pause':
+            return self.execute_test_pause(test)
         else:
             return False
 
@@ -164,6 +167,30 @@ class BasicTestAnalyzer(AnalysisModule):
     def execute_test_memory_limit_kill(self, test):
         chunk = bytearray((saq.CONFIG['global'].getint('memory_limit_kill') * 1024 * 1024) + 1024)
         time.sleep(3)
+    def execute_test_pause(self, test):
+        analysis = self.create_analysis(test)
+        time.sleep(3)
+        return True
+
+class PauseAnalysis(TestAnalysis):
+    def initialize_details(self):
+        self.details = { }
+
+class PauseAnalyzer(AnalysisModule):
+    @property
+    def generated_analysis_type(self):
+        return PauseAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        if test.value.startswith('pause_'):
+            seconds = int(test.value[len('pause_'):])
+            time.sleep(seconds)
+
         return True
 
 class MergeTestAnalysis(TestAnalysis):
