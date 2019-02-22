@@ -164,25 +164,25 @@ class HAL9000Analyzer(AnalysisModule):
                                                                   KEY_MAL_COUNT: None }
 
         if self.root.analysis_mode != ANALYSIS_MODE_CORRELATION:
-            # TODO check to see if this analysis mode has cleanup set to True
-            # really what we want to do is see if we can possibly end up in a different analysis mode
-            with get_db_connection('hal9000') as db:
-                c = db.cursor()
+            # we're looking for analysis modes that delete after their done
+            if saq.CONFIG[f'analysis_mode_{self.root.analysis_mode}'].getboolean('cleanup'):
+                with get_db_connection('hal9000') as db:
+                    c = db.cursor()
 
-                placeholder_clause = ','.join(['(UNHEX(%s))' for _ in self.state[STATE_KEY_ID_TRACKING].keys()])
-                parameters = tuple(self.state[STATE_KEY_ID_TRACKING].keys())
+                    placeholder_clause = ','.join(['(UNHEX(%s))' for _ in self.state[STATE_KEY_ID_TRACKING].keys()])
+                    parameters = tuple(self.state[STATE_KEY_ID_TRACKING].keys())
 
-                # record appearance of all hal9000 observables
-                execute_with_retry(db, c, f"""
-                                   INSERT INTO observables (id)
-                                   VALUES {placeholder_clause}
-                                   ON DUPLICATE KEY
-                                   UPDATE total_count = total_count + 1""", parameters, 
-                                   commit=True)
+                    # record appearance of all hal9000 observables
+                    execute_with_retry(db, c, f"""
+                                       INSERT INTO observables (id)
+                                       VALUES {placeholder_clause}
+                                       ON DUPLICATE KEY
+                                       UPDATE total_count = total_count + 1""", parameters, 
+                                       commit=True)
 
-            return True # all we do here
-            # we don't really need to record any more state here because 
-            # we expect this entire analysis to get deleted
+                return True # all we do here
+                # we don't really need to record any more state here because 
+                # we expect this entire analysis to get deleted (hence the check for cleanup)
 
         # are we an alert with a disposition?
         new_disposition = None
