@@ -156,6 +156,32 @@
     {% endif %}
 {% endmacro %}
 
+{% if remediation_targets | length > 0 %}
+<div class="panel panel-default">
+    <div class="panel-heading">Phishfry Remediation Status<a role="button" data-toggle="collapse" data-target="#collapse_phishfry" aria-expanded="true" aria-controls="collapse_phishfry">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_phishfry">
+        <table class="table table-striped">
+            <tr>
+                <th>Remediated</th>
+                <th>To</th>
+                <th>From</th>
+                <th>Subject</th>
+                <th>Error</th>
+            </tr>
+            {% for target in remediation_targets %}
+            <tr{% if target["remediated"] %} class="success"{% endif %}>
+		<td>{% if target["remediated"] %}Yes{% else %}No{% endif %}</td>
+                <td>{{target["recipient"]}}</td>
+                <td>{{target["sender"]}}</td>
+                <td>{{target["subject"]}}</td>
+                <td>{{target["error"]}}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {% for entry in email_remediations %}
 <div class="panel panel-default">
     <div class="panel-heading">

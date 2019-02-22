@@ -3549,6 +3549,42 @@ def index():
 
     domain_summary_str = _create_histogram_string(domains)
 
+    targets = {}
+    message_ids = []
+    recipients = []
+
+    with get_db_connection() as ace_db:
+        c = ace_db.cursor()
+
+        # get all remediation target observables in the alerts
+        c.execute("""SELECT o.id, o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
+                     JOIN alerts a ON om.alert_id = a.id
+                     WHERE o.type = 'remediation_target' AND a.uuid = %s""", (alert.uuid))
+
+        # add results to list of targets
+        for row in c:
+            oid, target = row
+            message_id, recipient, sender, subject = target.decode(errors='ignore').split(":", 3)
+            key = "{}:{}".format(message_id, recipient)
+            targets[key] = {"oid": oid, "message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": 0, "error": ""}
+            message_ids.append(message_id)
+            recipients.append(recipient)
+
+        # get all relevant remediation history
+        message_ids_format = ",".join(['%s' for _ in message_ids])
+        recipients_format = ",".join(['%s' for _ in recipients])
+        c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
+                     WHERE message_id IN ( {} ) AND recipient IN ( {} )""".format(message_ids_format, recipients_format),
+                tuple(message_ids + recipients))
+
+        # update targets remediation history
+        for row in c:
+            message_id, recipient, remediated, error = row
+            key = "{}:{}".format(message_id, recipient)
+            if key in targets:
+                targets[key]["remediated"] = remediated
+                targets[key]["error"] = error
+
     return render_template('analysis/index.html',
                            alert=alert,
                            alert_tags=alert_tags,
@@ -3575,6 +3611,7 @@ def index():
                            domains=domains,
                            domain_list=domain_list,
                            domain_summary_str=domain_summary_str,
+                           remediation_targets=list(targets.values()),
                            email_remediations=email_remediations)
 
 @analysis.route('/file', methods=['GET'])
@@ -3881,6 +3918,178 @@ def query_message_ids():
     response = make_response(json.dumps(result))
     response.mimetype = 'application/json'
     return response
+
+@analysis.route('/remediation_targets', methods=['POST'])
+@login_required
+def remediation_targets():
+    alert_uuids = json.loads(request.values['alert_uuids'])
+    targets = {}
+    message_ids = []
+    recipients = []
+
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        # get all remediation target observables in the alerts
+        c.execute("""SELECT o.id, o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
+                     JOIN alerts a ON om.alert_id = a.id
+                     WHERE o.type = 'remediation_target' AND a.uuid IN ( {} )""".format(','.join(['%s' for _ in alert_uuids])),
+                 tuple(alert_uuids))
+
+        # add results to list of targets
+        for row in c:
+            oid, target = row
+            message_id, recipient, sender, subject = target.decode(errors='ignore').split(":", 3)
+            key = "{}:{}".format(message_id, recipient)
+            targets[key] = {"oid": oid, "message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": 0, "error": ""}
+            message_ids.append(message_id)
+            recipients.append(recipient)
+
+        # get all relevant remediation history
+        message_ids_format = ",".join(['%s' for _ in message_ids])
+        recipients_format = ",".join(['%s' for _ in recipients])
+        c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
+                     WHERE message_id IN ( {} ) AND recipient IN ( {} )""".format(message_ids_format, recipients_format),
+                tuple(message_ids + recipients))
+
+        # update targets remediation history
+        for row in c:
+            message_id, recipient, remediated, error = row
+            key = "{}:{}".format(message_id, recipient)
+            if key in targets:
+                targets[key]["remediated"] = remediated
+                targets[key]["error"] = error
+
+    return render_template('analysis/phishfry_email_remediation.html', targets=list(targets.values()), select=True)
+
+@analysis.route('/phishfry_remediate', methods=['POST'])
+@login_required
+def phishfry_remediate():
+    # get action
+    action = request.values['action']
+    assert action in [ 'restore', 'delete' ];
+
+    # get selected remediation target observable ids
+    oids = []
+    for key in request.values.keys():
+        if key.startswith('remediation_target_'):
+            oids.append(key[len('remediation_target_'):])
+
+    # get remediation target info
+    targets = {}
+    message_ids = []
+    recipients = []
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        # get all remediation target observables in the alerts
+        c.execute("""SELECT value FROM observables WHERE id IN ( {} )""".format(','.join(['%s' for _ in oids])), tuple(oids))
+
+        # add results to list of targets
+        for row in c:
+            message_id, recipient, sender, subject = row[0].decode(errors='ignore').split(":", 3)
+            key = "{}:{}".format(message_id, recipient)
+            targets[key] = {"message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": 0, "error": ""}
+            message_ids.append(message_id)
+            recipients.append(recipient)
+
+        # get all relevant remediation history
+        message_ids_format = ",".join(['%s' for _ in message_ids])
+        recipients_format = ",".join(['%s' for _ in recipients])
+        c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
+                     WHERE message_id IN ( {} ) AND recipient IN ( {} )""".format(message_ids_format, recipients_format),
+                tuple(message_ids + recipients))
+
+        # update targets remediation history
+        for row in c:
+            message_id, recipient, remediated, error = row
+            key = "{}:{}".format(message_id, recipient)
+            if key in targets:
+                targets[key]["remediated"] = remediated
+                targets[key]["error"] = error
+
+        import EWS
+        from configparser import ConfigParser
+
+        def get_config_var(section, key, default=None):
+            if section in config and key in config[section] and config[section][key]:
+                return config[section][key]
+            elif default is not None:
+                return default
+            raise Exception("Missing required config variable config[{}][{}]".format(section, key))
+
+        # load ews accounts from phishfry.ini
+        accounts = []
+        config = ConfigParser()
+        config.read(os.path.join(SAQ_HOME, "etc", "phishfry.ini"))
+        timezone = get_config_var("DEFAULT", "timezone", default="UTC")
+        for section in config.sections():
+            server = get_config_var(section, "server", default="outlook.office365.com")
+            version = get_config_var(section, "version", default="Exchange2016")
+            user = get_config_var(section, "user")
+            password = get_config_var(section, "pass")
+            accounts.append(EWS.Account(user, password, server=server, version=version, timezone=timezone))
+
+        result_targets = {}
+        message_ids = []
+        recipients = []
+        targets = list(targets.values())
+        for target in targets:
+            results = {}
+            for account in accounts:
+                # execute the remediation action
+                results = account.Remediate(action, target["recipient"], target["message_id"])
+
+                # use results from whichever account succesfully resolved the mailbox
+                if results[target["recipient"]].mailbox_type != "Unknown":
+                    break
+
+            results = list(results.values())
+            for result in results:
+                # add results target entry
+                key = "{}:{}".format(result.message_id, result.address)
+                result_targets[key] = {}
+                result_targets[key]["message_id"] = result.message_id
+                result_targets[key]["recipient"] = result.address
+                result_targets[key]["sender"] = target["sender"]
+                result_targets[key]["subject"] = target["subject"]
+                result_targets[key]["remediated"] = 0
+                result_targets[key]["error"] = "None"
+                message_ids.append(result.message_id)
+                recipients.append(result.address)
+
+                # update remediation history
+                if result.success:
+                    remediated = 1 if action == "delete" else 0
+                    c.execute("""INSERT INTO email_remediation ( `message_id`, `recipient`, `remediated`, `error` )
+                                 VALUES ( %s, %s, %s, %s )
+                                 ON DUPLICATE KEY UPDATE `remediated` = %s, `error` = %s""", (
+                              result.message_id, result.address, remediated, "", remediated, "None"))
+                else:
+                    c.execute("""INSERT INTO email_remediation ( `message_id`, `recipient`, `error` )
+                                 VALUES ( %s, %s, %s )
+                                 ON DUPLICATE KEY UPDATE `error` = %s""", (
+                              result.message_id, result.address, result.message, result.message))
+
+        # commit changes to remediation history
+        db.commit()
+
+        # get all relevant remediation history
+        message_ids_format = ",".join(['%s' for _ in message_ids])
+        recipients_format = ",".join(['%s' for _ in recipients])
+        c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
+                     WHERE message_id IN ( {} ) AND recipient IN ( {} )""".format(message_ids_format, recipients_format),
+                tuple(message_ids + recipients))
+
+        # update targets remediation history
+        for row in c:
+            message_id, recipient, remediated, error = row
+            key = "{}:{}".format(message_id, recipient)
+            if key in result_targets:
+                result_targets[key]["remediated"] = remediated
+                result_targets[key]["error"] = error
+    
+    return render_template('analysis/phishfry_email_remediation.html', targets=list(result_targets.values()), select=False)
 
 class EmailRemediationTarget(object):
     def __init__(self, archive_id=None, message_id=None, recipient=None):

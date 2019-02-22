@@ -69,6 +69,12 @@ $(document).ready(function() {
     $("#btn-remediate-alerts").click(function(e) {
         remediate_emails([current_alert_uuid], null);
     });
+
+
+    $("#btn-phishfry-alerts").off()
+    $("#btn-phishfry-alerts").click(function(e) {
+        remediate_alerts([current_alert_uuid]);
+    });
     
 
     // pull this out of the disposition form
