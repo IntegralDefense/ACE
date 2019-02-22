@@ -404,14 +404,12 @@ class Engine(object):
     def __init__(self, name='ace', local_analysis_modes=None, 
                                    analysis_pools=None, 
                                    pool_size_limit=None, 
-                                   default_analysis_mode=None,
                                    copy_analysis_on_error=None,
                                    single_threaded_mode=False):
 
         assert local_analysis_modes is None or isinstance(local_analysis_modes, list)
         assert analysis_pools is None or isinstance(analysis_pools, dict)
         assert pool_size_limit is None or (isinstance(pool_size_limit, int) and pool_size_limit > 0)
-        assert default_analysis_mode is None or (isinstance(default_analysis_mode, str) and default_analysis_mode)
 
         global CURRENT_ENGINE
         CURRENT_ENGINE = self
@@ -491,17 +489,17 @@ class Engine(object):
         self.pool_size_limit = pool_size_limit
 
         # the default analysis mode for RootAnalysis objects assigned to invalid (unknown) analysis modes
-        self._default_analysis_mode = None
-        # if we pass this in on the constructor we use that instead of what is in the configuration file
-        if default_analysis_mode is not None:
-            self.default_analysis_mode = default_analysis_mode
-        else:
-            self.default_analysis_mode = self.config['default_analysis_mode']
+        self.default_analysis_mode = self.config['default_analysis_mode']
 
         # make sure this analysis mode is valid
         if 'analysis_mode_{}'.format(self.default_analysis_mode) not in saq.CONFIG:
             logging.critical("engine.default_analysis_mode value {} invalid (no such analysis mode defined)".format(
                               self.default_analysis_mode))
+
+        if self.local_analysis_modes:
+            if self.default_analysis_mode not in self.local_analysis_modes:
+                self.local_analysis_modes.append(self.default_analysis_mode)
+                logging.debug(f"added default analysis mode {self.default_analysis_mode} to list of supported modes")
 
         # things we do *not* want to analyze
         self.observable_exclusions = {} # key = o_type, value = [] of values
@@ -584,6 +582,11 @@ class Engine(object):
         # are we using a different directory for the workload?
         self.work_dir = self.config['work_dir']
 
+        # how often do we check to see if an analyst dispositioned the alert we're currently analyzing
+        # (in the case where we are analyzing an alert)
+        # in seconds
+        self.alert_disposition_check_frequency = self.config.getint('alert_disposition_check_frequency')
+
     def __str__(self):
         return "Engine ({} - {})".format(saq.SAQ_NODE, self.name)
 
@@ -638,21 +641,6 @@ class Engine(object):
 
         self.analysis_pools[analysis_mode] = count
         logging.debug("added analysis pool mode {} count {}".format(analysis_mode, count))
-
-    @property
-    def default_analysis_mode(self):
-        return self._default_analysis_mode
-
-    @default_analysis_mode.setter
-    def default_analysis_mode(self, value):
-        # if we're controlling which analysis modes we support then we need to make sure we support the default
-        if self.local_analysis_modes:
-            if value not in self.local_analysis_modes:
-                logging.debug("added default analysis mode {} to list of supported modes".format(value))
-                self.local_analysis_modes.append(value)
-
-        self._default_analysis_mode = value
-        logging.debug("set default analysis mode to {}".format(value))
 
     @property
     @use_db
@@ -1565,7 +1553,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 # go grab it
                 return self.transfer_work_target(uuid, node_id)
 
-            return RootAnalysis(uuid=uuid, storage_dir=storage_dir)
+            return RootAnalysis(uuid=uuid, storage_dir=storage_dir, analysis_mode=analysis_mode)
 
         return None
 
@@ -1606,14 +1594,20 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
     @use_db
     def clear_work_target(self, target, db, c):
-        if isinstance(target, DelayedAnalysisRequest):
-            execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE id = %s", (target.database_id,))
-        else:
-            execute_with_retry(db, c, "DELETE FROM workload WHERE uuid = %s", (target.uuid,))
+        try:
+            if isinstance(target, DelayedAnalysisRequest):
+                execute_with_retry(db, c, "DELETE FROM delayed_analysis WHERE id = %s", (target.database_id,))
+            else:
+                execute_with_retry(db, c, "DELETE FROM workload WHERE uuid = %s AND analysis_mode = %s", 
+                                  (target.uuid, target.original_analysis_mode))
 
-        execute_with_retry(db, c, "DELETE FROM locks where uuid = %s", (target.uuid,))
-        db.commit()
-        logging.debug("cleared work target {}".format(target))
+            execute_with_retry(db, c, "DELETE FROM locks where uuid = %s", (target.uuid,))
+            db.commit()
+            logging.debug(f"cleared work target {target}")
+
+        except Exception as e:
+            logging.error(f"unable to clear work target {target}: {e}")
+            report_exception()
 
     def setup(self, mode):
         """Called to setup the engine for execution. Typically this is called on the worker
@@ -1656,12 +1650,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             logging.error("error processing work item {}: {}".format(work_item, e))
             report_exception()
 
-            try:
-                self.clear_work_target(work_item)
-            except Exception as e:
-                logging.error("unable to clear work item {}: {}".format(work_item, e))
-                report_exception()
-    
+            self.clear_work_target(work_item)
             return
 
         # if self.root is not set at this point then something went wrong
@@ -1669,10 +1658,23 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             logging.warning(f"unless to process work item {work_item} (self.root was None)")
             return 
 
-        # at this point self.root is set and loaded
-        # remember what the analysis mode was before we started analysis
-        current_analysis_mode = self.root.analysis_mode
         logging.debug("analyzing {} in analysis_mode {}".format(self.root, self.root.analysis_mode))
+
+        #
+        # special handling of the "correlation" analysis mode
+        # if an alert is dispositioned the analysis in correlation mode on that alert stops
+        # so if the disposition was set before ace got to it, skip the analysis
+        try:
+            if work_item.analysis_mode == ANALYSIS_MODE_CORRELATION:
+                saq.db.close()
+                if saq.db.query(Alert.id).filter(Alert.uuid == work_item.uuid, 
+                                                 Alert.disposition != None).count() != 0:
+                    logging.info(f"skipping analysis of dispositioned alert {work_item.uuid}")
+                    self.clear_work_target(work_item)
+                    return
+
+        except Exception as e:
+            logging.error(f"unable to check for disposition of {work_item}: {e}")
 
         try:
             self.analyze(work_item)
@@ -1681,18 +1683,13 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             report_exception()
 
         self.stop_root_lock_manager()
-
-        try:
-            self.clear_work_target(work_item)
-        except Exception as e:
-            logging.error("unable to clear work item {}: {}".format(work_item, e))
-            report_exception()
+        self.clear_work_target(work_item)
 
         # did the analysis mode change?
         # NOTE that we do this AFTER locks are released
-        if not self.is_local and self.root.analysis_mode != current_analysis_mode:
+        if not self.is_local and self.root.analysis_mode != self.root.original_analysis_mode:
             logging.info("analysis mode for {} changed from {} to {}".format(
-                          self.root, current_analysis_mode, self.root.analysis_mode))
+                          self.root, self.root.original_analysis_mode, self.root.analysis_mode))
 
             # did this analysis become an alert?
             if self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
@@ -1793,7 +1790,15 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         elif isinstance(work_item, RootAnalysis):
             self.root = work_item
+            # the analysis mode set in the workload may not match what is currently saved with this analysis
+            # for example, when an analyst sets the disposition of the alert, it gets added back into the 
+            # workload in DISPOSITIONED mode even though the analysis_mode saved with the alert is CORRELATION
+            current_analysis_mode = self.root.analysis_mode
             self.root.load()
+            if self.root.analysis_mode != current_analysis_mode:
+                logging.debug(f"changing analysis mode for {self.root} from {self.root.analysis_mode} "
+                              f"to workload value of {current_analysis_mode}")
+                self.root.override_analysis_mode(current_analysis_mode)
 
         logging.info("processing {} mode {} ({})".format(self.root.description, self.root.analysis_mode, self.root.uuid))
 
@@ -2330,8 +2335,21 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                 logging.debug("analysis for {} limited to {}".format(work_item, work_item.analysis_module))
                 analysis_modules = [work_item.analysis_module]
 
+            # in the case work_item is actually an alert,
+            # periodically check to see if an analyst dispositioned it while in correlation analysis mode
+            last_disposition_check = datetime.datetime.now()
+
             # analyze this thing with the analysis modules we've selected sorted by priority
             for analysis_module in sorted(analysis_modules, key=attrgetter('priority')):
+                if (datetime.datetime.now() - last_disposition_check).total_seconds() > self.alert_disposition_check_frequency:
+                    if self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
+                        saq.db.close()
+                        if saq.db.query(Alert.id).filter(Alert.uuid == self.root.uuid,
+                                                         Alert.disposition != None).count() != 0:
+                            logging.info(f"detected disposition of alert {self.root}")
+                            self.cancel_analysis()
+
+                    last_disposition_check = datetime.datetime.now()
 
                 if self.cancel_analysis_flag:
                     break
@@ -2430,7 +2448,6 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         # by returning False here
                         try:
                             module_start_time = datetime.datetime.now()
-                            current_analysis_mode = self.root.analysis_mode
                             analysis_result = analysis_module.analyze(work_item.observable, final_analysis_mode)
                         finally:
                             # make sure we stop the monitor thread

@@ -241,6 +241,8 @@ class TestCase(ACEEngineTestCase):
 
     def test_missing_analysis_mode(self):
 
+        saq.CONFIG['engine']['default_analysis_mode'] = 'test_single'
+
         root = create_root_analysis(uuid=str(uuid.uuid4()))
         root.analysis_mode = None # <-- no analysis mode here
         root.storage_dir = storage_dir_from_uuid(root.uuid)
@@ -250,7 +252,6 @@ class TestCase(ACEEngineTestCase):
         root.schedule()
 
         engine = TestEngine()
-        engine.default_analysis_mode = 'test_single' # <-- default to test_single
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
         engine.start()
@@ -259,11 +260,10 @@ class TestCase(ACEEngineTestCase):
         # the analysis mode should default to test_single
         root = RootAnalysis(storage_dir=root.storage_dir)
         root.load()
-        self.assertIsNone(root.analysis_mode)
+        #self.assertIsNone(root.analysis_mode)
         observable = root.get_observable(observable.id)
         self.assertIsNotNone(observable)
-        from saq.modules.test import BasicTestAnalysis
-        analysis = observable.get_analysis(BasicTestAnalysis)
+        analysis = observable.get_analysis('BasicTestAnalysis')
         self.assertIsNotNone(analysis)
 
     def test_invalid_analysis_mode(self):
@@ -357,8 +357,9 @@ class TestCase(ACEEngineTestCase):
         engine.start()
         engine.wait()
 
-        # there should be 13 analysis modules loaded
-        self.assertEquals(log_count('loading module '), 17)
+        # TODO kind of annoying I have to edit this every time I add a new module for testing
+        # there should be 18 analysis modules loaded
+        self.assertEquals(log_count('loading module '), 18)
 
     def test_locally_enabled_modules(self):
         
@@ -1575,6 +1576,8 @@ class TestCase(ACEEngineTestCase):
 
     def test_local_analysis_mode_missing_default(self):
 
+        saq.CONFIG['engine']['default_analysis_mode'] = 'test_single'
+
         # when we specify a default analysis mode that is not in the locally supported modes of the engine
         # it should automatically get added to the list of locally supported modes
 
@@ -1588,7 +1591,6 @@ class TestCase(ACEEngineTestCase):
         root.schedule()
 
         engine = TestEngine(local_analysis_modes=['test_empty'], 
-                            default_analysis_mode='test_single', 
                             pool_size_limit=1)
         engine.enable_module('analysis_module_basic_test')
         engine.controlled_stop()
@@ -1600,7 +1602,7 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(observable)
         from saq.modules.test import BasicTestAnalysis
         analysis = observable.get_analysis(BasicTestAnalysis)
-        self.assertIsNotNone(analysis)
+        #self.assertIsNotNone(analysis)
 
         # both test_empty and test_single should be in this list
         self.assertEquals(len(engine.local_analysis_modes), 2)
@@ -1608,12 +1610,13 @@ class TestCase(ACEEngineTestCase):
         self.assertTrue('test_empty' in engine.local_analysis_modes)
 
     def test_local_analysis_mode_missing_pool(self):
+    
+        saq.CONFIG['engine']['default_analysis_mode'] = 'test_empty'
 
         # test_empty is specified as the only supported mode
         # but we specify a pool for test_single
         # this is a configuration error
         engine = TestEngine(local_analysis_modes=['test_empty'], 
-                            default_analysis_mode='test_empty',
                             analysis_pools={'test_single': 1})
 
         wait_for_log_count('attempted to add analysis pool for mode test_single which is not supported by this engine', 1, 5)
@@ -2490,3 +2493,78 @@ class TestCase(ACEEngineTestCase):
         # and this alert should be gone
         self.assertIsNone(saq.db.query(Alert).filter(Alert.uuid == ignore_root.uuid).first())
         self.assertFalse(os.path.exists(ignore_root.storage_dir))
+
+    def test_analysis_mode_dispositioned(self):
+
+        from saq.database import Alert, User, Workload, add_workload, set_dispositions
+        
+        root = create_root_analysis(analysis_mode='test_single')
+        root.initialize_storage()
+        observable = root.add_observable(F_TEST, 'test_detection')
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(pool_size_limit=1, local_analysis_modes=['test_single', ANALYSIS_MODE_CORRELATION])
+        engine.enable_module('analysis_module_basic_test', 'test_single')
+        engine.enable_module('analysis_module_detection', 'test_single')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should have a single alert
+        self.assertEquals(saq.db.query(Alert.id).count(), 1)
+        # and an empty workload
+        self.assertEquals(saq.db.query(Workload.id).count(), 0)
+
+        # set the disposition of this alert
+        set_dispositions([root.uuid],
+                         DISPOSITION_FALSE_POSITIVE, 
+                         saq.db.query(User).first().id)
+
+        # check the disposition
+        saq.db.close()
+        self.assertEquals(saq.db.query(Alert).first().disposition, DISPOSITION_FALSE_POSITIVE)
+
+        # we should have an entry in the workload for this now
+        self.assertEquals(saq.db.query(Workload.id).count(), 1)
+        workload_entry = saq.db.query(Workload).first()
+        self.assertIsNotNone(workload_entry)
+        self.assertEquals(workload_entry.uuid, root.uuid)
+        self.assertEquals(workload_entry.analysis_mode, ANALYSIS_MODE_DISPOSITIONED)
+
+        # start the engine back up with this mode enabled
+        engine = TestEngine(pool_size_limit=1, local_analysis_modes=[ANALYSIS_MODE_DISPOSITIONED])
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # workload should be clear again
+        saq.db.close()
+        self.assertEquals(saq.db.query(Workload.id).count(), 0)
+
+        # analysis mode should have changed
+        alert = saq.db.query(Alert).filter(Alert.uuid == root.uuid).first()
+        alert.load()
+        self.assertEquals(alert.analysis_mode, ANALYSIS_MODE_DISPOSITIONED)
+
+        # add another observable and add it back to the workload under correlation mode
+        observable_2 = alert.add_observable(F_TEST, 'test_1')
+        alert.analysis_mode = 'test_single'
+        alert.sync()
+        add_workload(alert)
+
+        engine = TestEngine(pool_size_limit=1, local_analysis_modes=['test_single', ANALYSIS_MODE_CORRELATION])
+        engine.enable_module('analysis_module_basic_test', 'test_single')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # make sure observable_2 got analyzed
+        saq.db.close()
+        
+        alert = saq.db.query(Alert).filter(Alert.uuid == root.uuid).first()
+        alert.load()
+        observable_2 = alert.get_observable(observable_2.id)
+        self.assertIsNotNone(observable_2)
+        analysis = observable_2.get_analysis('BasicTestAnalysis')
+        self.assertIsNotNone(analysis)
