@@ -1214,7 +1214,7 @@ def add_to_event():
 
         if len(alert_uuids) > 0:
             try:
-                set_dispositions(alert_uuids, event_disposition)
+                set_dispositions(alert_uuids, event_disposition, current_user.id)
             except Exception as e:
                 flash("unable to set disposition (review error logs)")
                 logging.error("unable to set disposition for {} alerts: {}".format(len(alert_uuids), e))
