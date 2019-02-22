@@ -593,8 +593,7 @@ CREATE TABLE `workload` (
   `exclusive_uuid` varchar(36) DEFAULT NULL COMMENT 'A workload item with an exclusive lock will only be processed by the engine (node) that created it.',
   `storage_dir` varchar(1024) NOT NULL COMMENT 'The location of the analysis. Relative paths are relative to SAQ_HOME.',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uuid_UNIQUE` (`uuid`),
-  UNIQUE KEY `storage_dir_UNIQUE` (`storage_dir`),
+  UNIQUE KEY `uuid_UNIQUE` (`uuid`,`analysis_mode`),
   KEY `fk_company_id_idx` (`company_id`),
   KEY `idx_uuid` (`uuid`),
   KEY `idx_node` (`node_id`),
@@ -613,4 +612,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-02-18 15:08:23
+-- Dump completed on 2019-02-22 15:39:37
