@@ -23,6 +23,8 @@
 		    <li><a disabled tabindex="-1"><span class="glyphicon glyphicon-{{action.icon}}"></span>  <del>{{action.description}}</del></a></li>
 		{% elif 'file_view_vx' in action.name and not ace_config['gui'].getboolean('view_in_vx') %}
 		    <li><a disabled tabindex="-1"><span class="glyphicon glyphicon-{{action.icon}}"></span>  <del>{{action.description}}</del></a></li>
+		{% elif 'file_upload_vt' in action.name and not ace_config['gui'].getboolean('upload_vt') %}
+                    <li><a disabled tabindex="-1"><span class="glyphicon glyphicon-{{action.icon}}"></span>  <del>{{action.description}}</del></a></li>
 		{% else %}
                     <li><a style="cursor: pointer" id="action_{{action.name}}_{{unique_reference}}"><span class="glyphicon glyphicon-{{action.icon}}"></span>  {{action.description}}</a></li>
 		{% endif %}

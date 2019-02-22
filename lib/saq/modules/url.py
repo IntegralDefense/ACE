@@ -926,12 +926,8 @@ class LiveBrowserAnalyzer(AnalysisModule):
 
             url = _file.get_relationship_by_type(R_DOWNLOADED_FROM).target
 
-            # NOTE we do not call wait_for_analysis because the crawlphish module only runs inside the
-            # cloudphish engine so it probably won't be available for waiting
-            # but at this point you should already have it
-
             # did we get an error response from the web server?
-            crawlphish_analysis = url.get_analysis(CrawlphishAnalysisV2)
+            crawlphish_analysis = self.wait_for_analysis(url, CrawlphishAnalysisV2)
             if not crawlphish_analysis:
                 logging.error("unable to get CrawlphishAnalysisV2 for {}".format(url))
                 return False
