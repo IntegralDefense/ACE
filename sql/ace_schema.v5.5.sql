@@ -614,3 +614,12 @@ CREATE TABLE `workload` (
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2019-02-18 15:08:23
+
+DROP TABLE IF EXISTS `email_remediation`;
+CREATE TABLE `email_remediation` (
+  `message_id` varchar(256) NOT NULL,
+  `recipient` varchar(256) NOT NULL,
+  `remediated` tinyint(1) DEFAULT 0,
+  `error` varchar(256) NOT NULL,
+  PRIMARY KEY (`message_id`, `recipient`),
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;

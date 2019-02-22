@@ -50,6 +50,8 @@
 {# we have to set these here because the javascript is stored in static #}
 <script>
     var query_message_ids_url = '{{ url_for('analysis.query_message_ids') }}';
+    var remediation_targets_url = '{{ url_for('analysis.remediation_targets') }}';
+    var phishfry_remediate_url = '{{ url_for('analysis.phishfry_remediate') }}';
     var remediate_emails_url = '{{ url_for('analysis.remediate_emails') }}';
 </script>
 
@@ -422,6 +424,26 @@
                 <button type="button" class="btn btn-default" id="btn-email-remediation-done" data-dismiss="modal">Chicken Out</button>
                 <button type="submit" class="btn btn-primary" id="btn-email-restore">Restore</button>
                 <button type="submit" class="btn btn-primary" id="btn-email-remediation">Remediate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- email remediation dialog -->
+<div class="modal fade" id="phishfry_email_remediation_modal" tabindex="-1" role="dialog" aria-labelledby="phishfry_email_remediation_label" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" id="btn-phishfry-email-remediation-close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="phishfry_email_remediation_label">Email Remediation</h4>
+            </div>
+            <div class="modal-body" id="phishfry-email-remediation-body">
+                loading...
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" id="btn-phishfry-email-remediation-done" data-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary" id="btn-phishfry-email-restore">Restore</button>
+                <button type="submit" class="btn btn-primary" id="btn-phishfry-email-remediation">Remediate</button>
             </div>
         </div>
     </div>
