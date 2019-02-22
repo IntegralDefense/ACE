@@ -1665,9 +1665,9 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
         # if an alert is dispositioned the analysis in correlation mode on that alert stops
         # so if the disposition was set before ace got to it, skip the analysis
         try:
-            if work_item.analysis_mode == ANALYSIS_MODE_CORRELATION:
+            if self.root.analysis_mode == ANALYSIS_MODE_CORRELATION:
                 saq.db.close()
-                if saq.db.query(Alert.id).filter(Alert.uuid == work_item.uuid, 
+                if saq.db.query(Alert.id).filter(Alert.uuid == self.root.uuid, 
                                                  Alert.disposition != None).count() != 0:
                     logging.info(f"skipping analysis of dispositioned alert {work_item.uuid}")
                     self.clear_work_target(work_item)
