@@ -4009,6 +4009,18 @@ def phishfry_remediate():
         recipients = []
         targets = list(targets.values())
         for target in targets:
+            # skip deleting targets that are already remediated
+            if action == "delete" and target["remediated"]:
+                key = "{}:{}".format(target["message_id"], target["recipient"])
+                result_targets[key] = target
+                continue
+
+            # skip restoring targets that are already restored
+            if action == "restore" and not target["remediated"]:
+                key = "{}:{}".format(target["message_id"], target["recipient"])
+                result_targets[key] = target
+                continue
+
             results = {}
             for account in accounts:
                 # execute the remediation action
