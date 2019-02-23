@@ -3943,6 +3943,9 @@ def phishfry_remediate():
         if key.startswith('remediation_target_'):
             oids.append(key[len('remediation_target_'):])
 
+    if len(oids) == 0:
+        return "Error: You must select at least one target."
+
     # get remediation target info
     targets = {}
     message_ids = []
@@ -3997,6 +4000,9 @@ def phishfry_remediate():
             user = get_config_var(section, "user")
             password = get_config_var(section, "pass")
             accounts.append(EWS.Account(user, password, server=server, version=version, timezone=timezone))
+
+        if len(accounts) == 0:
+            return "Error: No configured EWS remediation accounts"
 
         result_targets = {}
         message_ids = []

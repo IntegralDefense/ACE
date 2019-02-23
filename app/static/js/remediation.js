@@ -174,6 +174,11 @@ function phishfry_execute(action) {
     $('input:checked[id^=remediation_target_]').each(function(i, e) {
         request_data[e.id] = '1';
     });
+
+    if ($.isEmptyObject(request_data)) {
+        alert("ERROR: You must select at least one target")
+        return
+    }
     
     request_data['action'] = action;
     
