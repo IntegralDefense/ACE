@@ -3516,7 +3516,7 @@ def index():
 
     targets = {}
     message_ids = []
-    recipients = []
+    target_info = {}
 
     with get_db_connection() as ace_db:
         c = ace_db.cursor()
@@ -3531,16 +3531,15 @@ def index():
             oid, target = row
             message_id, recipient, sender, subject = target.decode(errors='ignore').split(":", 3)
             key = "{}:{}".format(message_id, recipient)
-            targets[key] = {"oid": oid, "message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": 0, "error": ""}
+            targets[key] = {"message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": 0, "error": ""}
             message_ids.append(message_id)
-            recipients.append(recipient)
+            target_info[message_id] = { "sender": sender, "subject": subject }
 
         # get all relevant remediation history
         message_ids_format = ",".join(['%s' for _ in message_ids])
-        recipients_format = ",".join(['%s' for _ in recipients])
         c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
-                     WHERE message_id IN ( {} ) AND recipient IN ( {} )""".format(message_ids_format, recipients_format),
-                tuple(message_ids + recipients))
+                     WHERE message_id IN ( {} )""".format(message_ids_format),
+                tuple(message_ids))
 
         # update targets remediation history
         for row in c:
@@ -3549,6 +3548,10 @@ def index():
             if key in targets:
                 targets[key]["remediated"] = remediated
                 targets[key]["error"] = error
+            else:
+                sender = target_info[message_id]["sender"]
+                subject = target_info[message_id]["subject"]
+                targets[key] = {"message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": remediated, "error": error}
 
     return render_template('analysis/index.html',
                            alert=alert,
@@ -4029,7 +4032,7 @@ def phishfry_remediate():
                     c.execute("""INSERT INTO email_remediation ( `message_id`, `recipient`, `remediated`, `error` )
                                  VALUES ( %s, %s, %s, %s )
                                  ON DUPLICATE KEY UPDATE `remediated` = %s, `error` = %s""", (
-                              result.message_id, result.address, remediated, "", remediated, "None"))
+                              result.message_id, result.address, remediated, "", remediated, ""))
                 else:
                     c.execute("""INSERT INTO email_remediation ( `message_id`, `recipient`, `error` )
                                  VALUES ( %s, %s, %s )

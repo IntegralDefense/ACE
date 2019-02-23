@@ -4,6 +4,7 @@
 		<th>To</th>
 		<th>From</th>
 		<th>Subject</th>
+		<th>Remediated</th>
 		<th>Error</th>
 	</tr>
 	{% for target in targets %}
@@ -12,6 +13,7 @@
 		<td>{{target["recipient"]}}</td>
 		<td>{{target["sender"]}}</td>
 		<td>{{target["subject"]}}</td>
+		<td>{% if target["remediated"] %}Yes{% else %}No{% endif %}</td>
 		<td>{{target["error"]}}</td>
 	</tr>
         {% endfor %}
