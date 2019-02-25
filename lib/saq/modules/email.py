@@ -970,12 +970,6 @@ class EmailAnalysis(Analysis):
         return None
 
     @property
-    def recipient(self):
-        if self.env_rcpt_to is not None:
-            return self.env_rcpt_to
-        return mail_to
-
-    @property
     def reply_to(self):
         if self.email and KEY_REPLY_TO in self.email:
             return self.email[KEY_REPLY_TO]
@@ -1148,12 +1142,6 @@ class EmailAnalysis(Analysis):
     @property
     def jinja_template_path(self):
         return "analysis/email_analysis.html"
-
-    def add_remediation_target(self, message_id, recipient, sender, subject):
-        if message_id is None:
-            return
-        remediation_target = "{}:{}:{}:{}".format(message_id, recipient, sender, subject)
-        self.add_observable(F_REMEDIATION_TARGET, remediation_target)
         
     def generate_summary(self):
         if self.parsing_error:
@@ -1339,66 +1327,14 @@ class EmailAnalyzer(AnalysisModule):
         mail_from = None # str
         mail_to = None # strt
 
-        # remediation target vars
-        phishme_report = False
-        subject = ""
-        message_id = None
-        sender = ""
-
-        if 'message-id' in target_email:
-            email_details[KEY_MESSAGE_ID] = target_email['message-id']
-            message_id =target_email['message-id'].strip()
-            message_id_observable = analysis.add_observable(F_MESSAGE_ID, target_email['message-id'].strip())
-            if message_id_observable: 
-                # this module will extract an email from the archives based on the message-id
-                # we don't want to do that here so we exclude that analysis
-                message_id_observable.exclude_analysis(MessageIDAnalyzer)
-        
-        if 'subject' in target_email:
-            email_details[KEY_SUBJECT] = target_email['subject']
-            phsihme_report = email_details[KEY_SUBJECT].strip().startswith("[POTENTIAL PHISH]")
-            subject = target_email['subject']
-
         if 'from' in target_email:
             email_details[KEY_FROM] = target_email['from']
             name, address = email.utils.parseaddr(email_details[KEY_FROM])
             if address != '':
                 mail_from = address
-                sender = address
                 from_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if from_address:
                     from_address.add_tag('mail_from')
-
-        # extract CC and BCC recipients
-        cc = []
-        if 'cc' in target_email:
-            for e in target_email['cc'].split(','):
-                e = e.strip()
-                cc.append(e)
-                name, address = email.utils.parseaddr(e)
-                if address:
-                    to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
-                    if not phishme_report:
-                        analysis.add_remediation_target(message_id, address, sender, subject)
-                    if to_address:
-                        to_address.add_tag('mail_to')
-                        if mail_from:
-                            analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
-
-        bcc = []
-        if 'bcc' in target_email:
-            for e in target_email['cc'].split(','):
-                e = e.strip()
-                bcc.append(e)
-                name, address = email.utils.parseaddr(e)
-                if address:
-                    to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
-                    if not phishme_report:
-                        analysis.add_remediation_target(message_id, address, sender, subject)
-                    if to_address:
-                        to_address.add_tag('mail_to')
-                        if mail_from:
-                            analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
 
         # do we know who this was actually delivered to?
         if 'X-MS-Exchange-Organization-OriginalEnvelopeRecipients' in target_email:
@@ -1407,12 +1343,11 @@ class EmailAnalyzer(AnalysisModule):
             if address:
                 mail_to = address
                 to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
-                if not phishme_report:
-                    analysis.add_remediation_target(message_id, address, sender, subject)
                 if to_address:
                     to_address.add_tag('delivered_to')
                     if mail_from:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(mail_from, address))
+
         
         email_details[KEY_TO] = target_email.get_all('to', [])
         for addr in email_details[KEY_TO]:
@@ -1424,8 +1359,6 @@ class EmailAnalyzer(AnalysisModule):
                     mail_to = address
 
                 to_address = analysis.add_observable(F_EMAIL_ADDRESS, address)
-                if not phishme_report:
-                    analysis.add_remediation_target(message_id, address, sender, subject)
                 if to_address:
                     to_address.add_tag('mail_to')
                     if mail_from:
@@ -1450,8 +1383,28 @@ class EmailAnalyzer(AnalysisModule):
                     return_path.add_tag('return_path')
                     if mail_to:
                         analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
+        
+        if 'subject' in target_email:
+            email_details[KEY_SUBJECT] = target_email['subject']
+
+        if 'message-id' in target_email:
+            email_details[KEY_MESSAGE_ID] = target_email['message-id']
+            message_id_observable = analysis.add_observable(F_MESSAGE_ID, target_email['message-id'].strip())
+            if message_id_observable: 
+                # this module will extract an email from the archives based on the message-id
+                # we don't want to do that here so we exclude that analysis
+                message_id_observable.exclude_analysis(MessageIDAnalyzer)
 
         # the rest of these details are for the generate logging output
+
+        # extract CC and BCC recipients
+        cc = []
+        if 'cc' in target_email:
+            cc = [e.strip() for e in target_email['cc'].split(',')]
+
+        bcc = []
+        if 'bcc' in target_email:
+            bcc = [e.strip() for e in target_email['bcc'].split(',')]
 
         path = []
         for header in target_email.get_all('received', []):

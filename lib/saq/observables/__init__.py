@@ -40,7 +40,6 @@ __all__ = [
     'YaraRuleObservable',
     'IndicatorObservable',
     'MD5Observable',
-    'RemediationTarget',
     'SHA1Observable',
     'SHA256Observable',
     'EmailConversationObservable',
@@ -507,14 +506,6 @@ class MD5Observable(CaselessObservable):
     def jinja_available_actions(self):
         return [ ObservableActionUploadToCrits() ]
 
-class RemediationTarget(CaselessObservable):
-    def __init__(self, *args, **kwargs):
-        super().__init__(F_REMEDIATION_TARGET, *args, **kwargs)
-
-    @property
-    def jinja_available_actions(self):
-        return [ ]
-
 class SHA1Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_SHA1, *args, **kwargs)
@@ -606,7 +597,6 @@ _OBSERVABLE_TYPE_MAPPING = {
     F_INDICATOR: IndicatorObservable,
     F_IPV4: IPv4Observable,
     F_MD5: MD5Observable,
-    F_REMEDIATION_TARGET: RemediationTarget,
     F_SHA1: SHA1Observable,
     F_SHA256: SHA256Observable,
     F_SUSPECT_FILE: FileObservable,
