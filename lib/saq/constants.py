@@ -54,7 +54,6 @@ F_YARA = 'yara'
 F_YARA_RULE = 'yara_rule'
 F_INDICATOR = 'indicator'
 F_MD5 = 'md5'
-F_REMEDIATION_TARGET = "remediation_target"
 F_SHA1 = 'sha1'
 F_SHA256 = 'sha256'
 F_SNORT_SIGNATURE = 'snort_sig'
@@ -84,7 +83,6 @@ OBSERVABLE_DESCRIPTIONS = {
     F_YARA_RULE: 'yara rule name',
     F_INDICATOR: 'crits indicator object id',
     F_MD5: 'MD5 hash',
-    F_REMEDIATION_TARGET: "message_id and email address pair to remediate",
     F_SHA1: 'SHA1 hash',
     F_SHA256: 'SHA256 hash',
     F_SNORT_SIGNATURE: 'snort signature ID',
@@ -117,7 +115,6 @@ OBSERVABLE_NODE_COLORS = {
     F_YARA_RULE : '#B22222', # firebrick 
     F_INDICATOR : "#F5F5F5", # white smoke
     F_MD5 : "#E6E6FA", # lavender
-    F_REMEDIATION_TARGET : "#E6E6FA", # lavender
     F_SHA1 : "#E6E6FA", # lavender
     F_SHA256 : "#E6E6FA", # lavender
     F_MESSAGE_ID : "#E6E6FA", # lavender
@@ -147,7 +144,6 @@ VALID_OBSERVABLE_TYPES = sorted([
     F_YARA_RULE,
     F_INDICATOR,
     F_MD5,
-    F_REMEDIATION_TARGET,
     F_SHA1,
     F_SHA256,
     F_SNORT_SIGNATURE,
