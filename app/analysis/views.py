@@ -3891,19 +3891,25 @@ def remediation_targets():
     # get all potential remediation targets
     targets = {}
     message_ids = []
-    alert_uuids = json.loads(request.values['alert_uuids'])
-    with get_db_connection() as db:
-        c = db.cursor()
-        alert_format = ','.join(['%s' for _ in alert_uuids])
-        c.execute("""SELECT o.id, o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
-                     JOIN alerts a ON om.alert_id = a.id
-                     WHERE o.type = 'message_id' AND a.uuid IN ( {} )""".format(alert_format), tuple(alert_uuids))
-        for row in c:
-            oid, message_id = row
-            message_id = message_id.decode(errors="ignore")
-            message_ids.append(message_id)
-            message_id = html.escape(message_id)
-            targets[message_id] = { "sender": "Unknown", "subject": "Unknown" }
+    if 'alert_uuids' in request.values:
+        alert_uuids = json.loads(request.values['alert_uuids'])
+        with get_db_connection() as db:
+            c = db.cursor()
+            alert_format = ','.join(['%s' for _ in alert_uuids])
+            c.execute("""SELECT o.id, o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
+                         JOIN alerts a ON om.alert_id = a.id
+                         WHERE o.type = 'message_id' AND a.uuid IN ( {} )""".format(alert_format), tuple(alert_uuids))
+            for row in c:
+                oid, message_id = row
+                message_id = message_id.decode(errors="ignore")
+                message_ids.append(message_id)
+                message_id = html.escape(message_id)
+                targets[message_id] = { "sender": "Unknown", "subject": "Unknown" }
+    else:
+        message_id = html.unescape(json.loads(request.values['message_id'])[0])
+        message_ids.append(message_id)
+        message_id = html.escape(message_id)
+        targets[message_id] = { "sender": "Unknown", "subject": "Unknown" }
 
     # get info about each target
     for source in get_email_archive_sections():

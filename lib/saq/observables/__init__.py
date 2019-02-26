@@ -553,7 +553,7 @@ class MessageIDObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionRemediateEmail(), ]
+        return [ ObservableActionRemediateEmail(), ObservableActionPhishfryEmail() ]
 
 class ProcessGUIDObservable(Observable): 
     def __init__(self, *args, **kwargs): 

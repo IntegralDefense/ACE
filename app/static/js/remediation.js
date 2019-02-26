@@ -142,9 +142,12 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
     });
 }
 
-function remediate_alerts(alert_uuids) {
+function remediate_alerts(alert_uuids=null, message_id=null) {
     data = { };
-    data['alert_uuids'] = JSON.stringify(alert_uuids);
+    if (alert_uuids != null)
+        data['alert_uuids'] = JSON.stringify(alert_uuids);
+    if (message_id != null)
+        data['message_id'] = JSON.stringify([message_id]);
     
     $.ajax({
         'url': remediation_targets_url, // <-- set in app/templates/base.html
