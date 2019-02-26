@@ -3515,44 +3515,41 @@ def index():
 
     domain_summary_str = _create_histogram_string(domains)
 
+    # get remediation targets
     targets = {}
     message_ids = []
-    target_info = {}
-
-    with get_db_connection() as ace_db:
-        c = ace_db.cursor()
-
-        # get all remediation target observables in the alerts
-        c.execute("""SELECT o.id, o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
+    with get_db_connection() as db:
+        c = db.cursor()
+        c.execute("""SELECT o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
                      JOIN alerts a ON om.alert_id = a.id
-                     WHERE o.type = 'remediation_target' AND a.uuid = %s""", (alert.uuid))
-
-        # add results to list of targets
+                     WHERE o.type = 'message_id' AND a.uuid = %s""", (alert.uuid))
         for row in c:
-            oid, target = row
-            message_id, recipient, sender, subject = target.decode(errors='ignore').split(":", 3)
-            key = "{}:{}".format(message_id, recipient)
-            targets[key] = {"message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": 0, "error": ""}
+            message_id = row[0].decode(errors="ignore")
             message_ids.append(message_id)
-            target_info[message_id] = { "sender": sender, "subject": subject }
+            message_id = html.escape(message_id)
+            targets[message_id] = { "recipients": {}, "sender": "Unknown", "subject": "Unknown" }
 
-        # get all relevant remediation history
+    # get info about each remediation target
+    for source in get_email_archive_sections():
+        result = search_archive(source, message_ids)
+        for archive_id in result:
+            message_id = html.escape(result[archive_id].message_id.decode(errors="ignore"))
+            targets[message_id]["recipients"][result[archive_id].recipient] = { "remediated": 0 }
+            targets[message_id]["sender"] = result[archive_id].sender
+            targets[message_id]["subject"] = result[archive_id].subject
+
+    # get remediation status of each target
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        # get remediation status of each target
         message_ids_format = ",".join(['%s' for _ in message_ids])
         c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
-                     WHERE message_id IN ( {} )""".format(message_ids_format),
-                tuple(message_ids))
-
-        # update targets remediation history
+                     WHERE message_id IN ( {} )""".format(message_ids_format), tuple(message_ids))
         for row in c:
             message_id, recipient, remediated, error = row
-            key = "{}:{}".format(message_id, recipient)
-            if key in targets:
-                targets[key]["remediated"] = remediated
-                targets[key]["error"] = error
-            else:
-                sender = target_info[message_id]["sender"]
-                subject = target_info[message_id]["subject"]
-                targets[key] = {"message_id": message_id, "recipient": recipient, "sender": sender, "subject": subject, "remediated": remediated, "error": error}
+            message_id = html.escape(message_id.decode(errors="ignore"))
+            targets[message_id]["recipients"][recipient] = { "remediated": remediated }
 
     return render_template('analysis/index.html',
                            alert=alert,
@@ -3893,6 +3890,7 @@ def query_message_ids():
 def remediation_targets():
     # get all potential remediation targets
     targets = {}
+    message_ids = []
     alert_uuids = json.loads(request.values['alert_uuids'])
     with get_db_connection() as db:
         c = db.cursor()
@@ -3902,7 +3900,9 @@ def remediation_targets():
                      WHERE o.type = 'message_id' AND a.uuid IN ( {} )""".format(alert_format), tuple(alert_uuids))
         for row in c:
             oid, message_id = row
-            message_id = html.escape(message_id.decode(errors="ignore"))
+            message_id = message_id.decode(errors="ignore")
+            message_ids.append(message_id)
+            message_id = html.escape(message_id)
             targets[message_id] = { "sender": "Unknown", "subject": "Unknown" }
 
     # get info about each target

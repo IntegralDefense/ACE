@@ -166,16 +166,16 @@
                 <th>From</th>
                 <th>Subject</th>
                 <th>Remediated</th>
-                <th>Error</th>
             </tr>
-            {% for target in remediation_targets %}
-	    <tr{% if target["remediated"] %} class="success"{% endif %}>
-                <td>{{target["recipient"]}}</td>
+            {% for message_id, target in remediation_targets %}
+            {% for recipient, info in target["recipients"] %}
+	    <tr{% if info["remediated"] %} class="success"{% endif %}>
+                <td>{{recipient}}</td>
                 <td>{{target["sender"]}}</td>
                 <td>{{target["subject"]}}</td>
-		<td>{% if target["remediated"] %}Yes{% else %}No{% endif %}</td>
-                <td>{{target["error"]}}</td>
+		<td>{% if info["remediated"] %}Yes{% else %}No{% endif %}</td>
             </tr>
+            {% endfor %}
             {% endfor %}
         </table>
     </div>
