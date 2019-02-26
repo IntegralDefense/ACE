@@ -3533,7 +3533,7 @@ def index():
     for source in get_email_archive_sections():
         result = search_archive(source, message_ids)
         for archive_id in result:
-            message_id = html.escape(result[archive_id].message_id.decode(errors="ignore"))
+            message_id = html.escape(result[archive_id].message_id)
             targets[message_id]["recipients"][result[archive_id].recipient] = { "remediated": 0 }
             targets[message_id]["sender"] = result[archive_id].sender
             targets[message_id]["subject"] = result[archive_id].subject
@@ -3548,7 +3548,7 @@ def index():
                      WHERE message_id IN ( {} )""".format(message_ids_format), tuple(message_ids))
         for row in c:
             message_id, recipient, remediated, error = row
-            message_id = html.escape(message_id.decode(errors="ignore"))
+            message_id = html.escape(message_id)
             targets[message_id]["recipients"][recipient] = { "remediated": remediated }
 
     return render_template('analysis/index.html',
@@ -3903,23 +3903,19 @@ def remediation_targets():
                 oid, message_id = row
                 message_id = message_id.decode(errors="ignore")
                 message_ids.append(message_id)
-                message_id = html.escape(message_id)
-                targets[message_id] = { "sender": "Unknown", "subject": "Unknown" }
     else:
         message_id = html.unescape(json.loads(request.values['message_id'])[0])
         message_ids.append(message_id)
-        message_id = html.escape(message_id)
-        targets[message_id] = { "sender": "Unknown", "subject": "Unknown" }
 
     # get info about each target
     for source in get_email_archive_sections():
         result = search_archive(source, message_ids)
         for archive_id in result:
-            message_id = html.escape(result[archive_id].message_id.decode(errors="ignore"))
-            if message_id in targets:
-                targets[message_id]["sender"] = result[archive_id].sender
-                targets[message_id]["subject"] = result[archive_id].subject
+            message_id = html.escape(result[archive_id].message_id)
+            targets[message_id] = { "sender": result[archive_id].sender, "subject": result[archive_id].subject }
 
+    if len(targets) == 0:
+        return "No targets found in email archive"
     return render_template('analysis/select_remediation_targets.html', targets=targets)
 
 @analysis.route('/phishfry_remediate', methods=['POST'])
@@ -3935,14 +3931,14 @@ def phishfry_remediate():
     for key in request.values.keys():
         if key.startswith('remediation_target_'):
             message_id = html.unescape(key[len('remediation_target_'):])
-            message_ids.appned(message_id)
+            message_ids.append(message_id)
             targets[message_id] = { "recipients": {}, "sender": "Unknown", "subject": "Unknown" }
 
     # get info about each target
     for source in get_email_archive_sections():
         result = search_archive(source, message_ids)
         for archive_id in result:
-            message_id = result[archive_id].message_id.decode(errors="ignore")
+            message_id = result[archive_id].message_id
             targets[message_id]["recipients"][result[archive_id].recipient] = { "remediated": 0, "error": "", "success": True }
             targets[message_id]["sender"] = result[archive_id].sender
             targets[message_id]["subject"] = result[archive_id].subject
@@ -3956,7 +3952,7 @@ def phishfry_remediate():
                      WHERE message_id IN ( {} )""".format(message_ids_format), tuple(message_ids))
         for row in c:
             message_id, recipient, remediated, error = row
-            message_id = message_id.decode(errors="ignore")
+            message_id = message_id
             targets[message_id]["recipients"][recipient] = { "remediated": remediated, "error": error, "success": True }
 
         import EWS
@@ -3989,17 +3985,21 @@ def phishfry_remediate():
         desired_status = 1 if action == "delete" else 0
         desired_error = "Remediated" if action == "delete" else "Restored"
 
+        result_targets = {}
         for message_id in targets:
             for recipient in targets[message_id]["recipients"]:
                 # skip deleting targets that are already the way we want them
                 remediated = targets[message_id]["recipients"][recipient]["remediated"]
                 if (action == "delete" and remediated) or (action == "restored" and not remediated):
+                    if message_id not in result_targets:
+                        result_targets[message_id] = { "recipients": {}, "sender": targets[message_id]["sender"], "subject": targets[message_id]["subject"] }
+                    result_targets[message_id]["recipients"][address] = { "remediated": desired_status, "error": desired_error, "success": True }
                     continue
 
                 results = {}
                 for account in accounts:
                     # execute the remediation action
-                    results = account.Remediate(action, target["recipient"], target["message_id"])
+                    results = account.Remediate(action, recipient, message_id)
 
                     # use results from whichever account succesfully resolved the mailbox
                     if results[recipient].mailbox_type != "Unknown":
@@ -4013,7 +4013,9 @@ def phishfry_remediate():
                         status = remediated if address in targets[message_id]["recipients"] else 0
                         error = results[address].message if status != desired_status else desired_error
                     success = status == desired_status
-                    targets[message_id]["recipients"][address] = { "remediated": status, "error": error, "success": success }
+                    if message_id not in result_targets:
+                        result_targets[message_id] = { "recipients": {}, "sender": targets[message_id]["sender"], "subject": targets[message_id]["subject"] }
+                    result_targets[message_id]["recipients"][address] = { "remediated": status, "error": error, "success": success }
                     c.execute("""INSERT INTO email_remediation ( `message_id`, `recipient`, `remediated`, `error` )
                                  VALUES ( %s, %s, %s, %s )
                                  ON DUPLICATE KEY UPDATE `remediated` = %s, `error` = %s""", (
@@ -4022,7 +4024,9 @@ def phishfry_remediate():
     # commit changes to remediation history
     db.commit()
     
-    return render_template('analysis/remediation_results.html', targets=targets)
+    logging.debug(targets)
+    logging.debug(result_targets)
+    return render_template('analysis/remediation_results.html', targets=result_targets)
 
 class EmailRemediationTarget(object):
     def __init__(self, archive_id=None, message_id=None, recipient=None):
