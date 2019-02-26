@@ -6,7 +6,7 @@
 		<th>Status</th>
 	</tr>
 	{% for message_id, target in targets.items() %}
-	{% for recipient, status in targets.items() %}
+	{% for recipient, status in target["recipients"].items() %}
 	<tr {% if status["success"] %}class="success"{% else %}class="danger"{% endif %}>
 		<td>{{recipient}}</td>
 		<td>{{target["sender"]}}</td>
