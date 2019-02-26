@@ -167,8 +167,8 @@
                 <th>Subject</th>
                 <th>Remediated</th>
             </tr>
-            {% for message_id, target in remediation_targets %}
-            {% for recipient, info in target["recipients"] %}
+            {% for message_id, target in remediation_targets.items() %}
+            {% for recipient, info in target["recipients"].items() %}
 	    <tr{% if info["remediated"] %} class="success"{% endif %}>
                 <td>{{recipient}}</td>
                 <td>{{target["sender"]}}</td>

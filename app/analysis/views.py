@@ -3518,8 +3518,8 @@ def index():
     # get remediation targets
     targets = {}
     message_ids = []
-    with get_db_connection() as db:
-        c = db.cursor()
+    with get_db_connection() as dbc:
+        c = dbc.cursor()
         c.execute("""SELECT o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
                      JOIN alerts a ON om.alert_id = a.id
                      WHERE o.type = 'message_id' AND a.uuid = %s""", (alert.uuid))
@@ -3539,8 +3539,8 @@ def index():
             targets[message_id]["subject"] = result[archive_id].subject
 
     # get remediation status of each target
-    with get_db_connection() as db:
-        c = db.cursor()
+    with get_db_connection() as dbc:
+        c = dbc.cursor()
 
         # get remediation status of each target
         message_ids_format = ",".join(['%s' for _ in message_ids])
@@ -3577,7 +3577,7 @@ def index():
                            domains=domains,
                            domain_list=domain_list,
                            domain_summary_str=domain_summary_str,
-                           remediation_targets=list(targets.values()),
+                           remediation_targets=targets,
                            email_remediations=email_remediations)
 
 @analysis.route('/file', methods=['GET'])
