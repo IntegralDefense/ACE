@@ -1291,9 +1291,9 @@ class FalconFileAnalyzer(FalconAnalyzer):
     def generated_analysis_type(self):
         return FalconFileAnalysis
 
-    #@property
-    #def required_directives(self):
-    #    return [ DIRECTIVE_SANDBOX ]
+    @property
+    def required_directives(self):
+        return [ DIRECTIVE_SANDBOX ]
 
     @property
     def valid_observable_types(self):
