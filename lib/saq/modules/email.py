@@ -1215,7 +1215,9 @@ class EmailAnalyzer(AnalysisModule):
         try:
             logging.debug("parsing email file {}".format(_file))
             with open(os.path.join(self.root.storage_dir, _file.value), 'r', errors='ignore') as fp:
-                unparsed_email = fp.read()
+                # we ignore any leading and/or trailing whitespace
+                # this isn't technically "correct" but some systems make mistakes
+                unparsed_email = fp.read().strip()
             
             # by default we target the parsed email (see NOTE A)
             target_email = parsed_email = email.parser.Parser().parsestr(unparsed_email)
