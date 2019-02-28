@@ -392,6 +392,7 @@ def correlate(args):
 
     engine = Engine(single_threaded_mode=args.single_threaded)
     engine.set_local()
+    engine.disable_alerting()
 
     def _cleanup():
         nonlocal engine
