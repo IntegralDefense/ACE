@@ -54,9 +54,9 @@ class TestCase(ACEModuleTestCase):
         root.schedule()
     
         engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_ANALYSIS, ANALYSIS_MODE_CORRELATION ])
+        engine.enable_alerting()
         engine.set_cleanup(ANALYSIS_MODE_ANALYSIS, False)
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_ANALYSIS)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_ANALYSIS)
         engine.enable_module('analysis_module_hal9000', [ ANALYSIS_MODE_ANALYSIS, ANALYSIS_MODE_CORRELATION ])
         engine.controlled_stop()
         engine.start()
@@ -116,8 +116,8 @@ class TestCase(ACEModuleTestCase):
                                                    ANALYSIS_MODE_CORRELATION, 
                                                    ANALYSIS_MODE_DISPOSITIONED ])
         engine.set_cleanup(ANALYSIS_MODE_ANALYSIS, False)
+        engine.enable_alerting()
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_ANALYSIS)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_ANALYSIS)
         engine.enable_module('analysis_module_hal9000', [ ANALYSIS_MODE_ANALYSIS, 
                                                           ANALYSIS_MODE_CORRELATION, 
                                                           ANALYSIS_MODE_DISPOSITIONED ])
@@ -132,8 +132,8 @@ class TestCase(ACEModuleTestCase):
         engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_ANALYSIS, 
                                                    ANALYSIS_MODE_CORRELATION, 
                                                    ANALYSIS_MODE_DISPOSITIONED ])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_ANALYSIS)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_ANALYSIS)
         engine.enable_module('analysis_module_hal9000', [ ANALYSIS_MODE_ANALYSIS, 
                                                           ANALYSIS_MODE_CORRELATION, 
                                                           ANALYSIS_MODE_DISPOSITIONED ])
@@ -191,8 +191,8 @@ class TestCase(ACEModuleTestCase):
         engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_ANALYSIS, 
                                                    ANALYSIS_MODE_CORRELATION, 
                                                    ANALYSIS_MODE_DISPOSITIONED ])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_ANALYSIS)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_ANALYSIS)
         engine.enable_module('analysis_module_hal9000', [ ANALYSIS_MODE_ANALYSIS, 
                                                           ANALYSIS_MODE_CORRELATION, 
                                                           ANALYSIS_MODE_DISPOSITIONED ])
@@ -246,8 +246,8 @@ class TestCase(ACEModuleTestCase):
         engine = TestEngine(local_analysis_modes=[ ANALYSIS_MODE_ANALYSIS, 
                                                    ANALYSIS_MODE_CORRELATION, 
                                                    ANALYSIS_MODE_DISPOSITIONED ])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_ANALYSIS)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_ANALYSIS)
         engine.enable_module('analysis_module_hal9000', [ ANALYSIS_MODE_ANALYSIS, 
                                                           ANALYSIS_MODE_CORRELATION, 
                                                           ANALYSIS_MODE_DISPOSITIONED ])

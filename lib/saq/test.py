@@ -894,6 +894,10 @@ class ACEModuleTestCase(ACEEngineTestCase):
     pass
 
 class TestEngine(Engine):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.disable_alerting()
+
     def set_cleanup(self, mode, value):
         saq.CONFIG[f'analysis_mode_{mode}']['cleanup'] = 'yes' if value else 'no'
         logging.debug(f"set cleanup to {value} for analysis mode {mode}")

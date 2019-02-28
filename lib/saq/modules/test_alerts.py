@@ -13,10 +13,6 @@ from saq.test import *
 from saq.util import *
 
 class TestCase(ACEModuleTestCase):
-    def setUp(self, *args, **kwargs):
-        super().setUp(*args, **kwargs)
-        self.disable_all_modules()
-
     @use_db
     def test_detection(self, db, c):
         root = create_root_analysis(uuid=str(uuid.uuid4()))
@@ -25,9 +21,9 @@ class TestCase(ACEModuleTestCase):
         root.save()
         root.schedule()
     
-        engine = TestEngine(local_analysis_modes=['test_groups', saq.CONFIG['analysis_module_detection']['target_mode']])
+        engine = TestEngine(local_analysis_modes=['test_groups', ANALYSIS_MODE_CORRELATION])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -35,9 +31,6 @@ class TestCase(ACEModuleTestCase):
         # analysis will have moved over to data dir now
         root = RootAnalysis(storage_dir=storage_dir_from_uuid(root.uuid))
         root.load()
-
-        # the analysis mode should have changed
-        self.assertEquals(root.analysis_mode, saq.CONFIG['analysis_module_detection']['target_mode'])
 
         # make sure we detected the change in modes
         self.assertTrue(log_count('analysis mode for RootAnalysis({}) changed from test_groups to correlation'.format(root.uuid)) > 0)
@@ -52,8 +45,8 @@ class TestCase(ACEModuleTestCase):
         root.schedule()
     
         engine = TestEngine()
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -77,8 +70,8 @@ class TestCase(ACEModuleTestCase):
         root.schedule()
     
         engine = TestEngine(local_analysis_modes=['test_groups', ANALYSIS_MODE_CORRELATION])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -97,8 +90,8 @@ class TestCase(ACEModuleTestCase):
         root.schedule()
     
         engine = TestEngine()
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -124,8 +117,8 @@ class TestCase(ACEModuleTestCase):
     
         # now analyze the alert that's already in the database
         engine = TestEngine()
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -147,8 +140,8 @@ class TestCase(ACEModuleTestCase):
         root.schedule()
 
         engine = TestEngine()
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test')
-        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -183,7 +176,7 @@ class TestCase(ACEModuleTestCase):
         root.schedule()
     
         engine = TestEngine(pool_size_limit=1, local_analysis_modes=['test_single', ANALYSIS_MODE_CORRELATION])
-        engine.enable_module('analysis_module_detection', 'test_single')
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test', ['test_single', ANALYSIS_MODE_CORRELATION])
         engine.enable_module('analysis_module_low_priority', ANALYSIS_MODE_CORRELATION)
         engine.enable_module('analysis_module_pause', ANALYSIS_MODE_CORRELATION)
@@ -231,6 +224,7 @@ class TestCase(ACEModuleTestCase):
         alert.schedule()
 
         engine = TestEngine(pool_size_limit=1, local_analysis_modes=[ANALYSIS_MODE_CORRELATION])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test', ['test_single', ANALYSIS_MODE_CORRELATION])
         engine.enable_module('analysis_module_low_priority', ANALYSIS_MODE_CORRELATION)
         engine.enable_module('analysis_module_pause', ANALYSIS_MODE_CORRELATION)
