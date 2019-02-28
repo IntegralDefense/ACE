@@ -698,11 +698,12 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         # now we start an engine to work on cloudphish analysis
         engine = TestEngine(analysis_pools={ANALYSIS_MODE_CLOUDPHISH: 1}, 
                             local_analysis_modes=[ANALYSIS_MODE_CLOUDPHISH])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
         # force this analysis to become an alert
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
+        #engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
         engine.wait()

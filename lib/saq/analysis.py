@@ -3256,7 +3256,7 @@ class RootAnalysis(Analysis):
     @property
     def all(self):
         """Returns the list of all Observables and Analysis for this RootAnalysis."""
-        result = self.all_analysis
+        result = self.all_analysis[:]
         result.extend(self.all_observables)
         return result
 
@@ -3320,8 +3320,6 @@ class RootAnalysis(Analysis):
 
     def has_detections(self):
         """Returns True if this RootAnalysis could become an Alert (has at least one DetectionPoint somewhere.)"""
-        if saq.FORCED_ALERTS:
-            return True
         if self.has_detection_points():
             return True
         for a in self.all_analysis:
