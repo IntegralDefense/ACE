@@ -39,6 +39,9 @@ from vxstreamlib import VxStreamServer, VxStreamSubmission, \
 
 KEY_JSON_PATH = 'json_path'
 KEY_SHA256 = 'sha256'
+KEY_MD5 = 'md5'
+KEY_SHA1 = 'sha1'
+KEY_SANDBOX_LINK = 'sandbox_link'
 KEY_ENV = 'environment_id'
 KEY_STATUS = 'status'
 KEY_SUBMIT_DATE = 'submit_date'
@@ -677,6 +680,9 @@ class FalconAnalysis(Analysis):
             KEY_FAIL_DATE: None,
             KEY_VXSTREAM_THREAT_SCORE: None,
             KEY_VXSTREAM_THREAT_LEVEL: None,
+            KEY_MD5: None,
+            KEY_SHA1: None,
+            KEY_SANDBOX_LINK: None
         }
 
     def generate_summary(self):
@@ -703,6 +709,33 @@ class FalconAnalysis(Analysis):
     @sha256.setter
     def sha256(self, value):
         self.details[KEY_SHA256] = value
+        self.set_modified()
+
+    @property
+    def md5(self):
+        return self.details_property(KEY_MD5)
+
+    @md5.setter
+    def md5(self, value):
+        self.details[KEY_MD5] = value
+        self.set_modified()
+
+    @property
+    def sha1(self):
+        return self.details_property(KEY_SHA1)
+
+    @sha1.setter
+    def sha1(self, value):
+        self.details[KEY_SHA1] = value
+        self.set_modified()
+
+    @property
+    def sandbox_link(self):
+        return self.details_property(KEY_SANDBOX_LINK)
+
+    @sandbox_link.setter
+    def sandbox_link(self, value):
+        self.details[KEY_SANDBOX_LINK] = value
         self.set_modified()
 
     @property
@@ -826,6 +859,10 @@ class FalconAnalyzer(SandboxAnalysisModule):
     @property
     def url(self):
         return saq.CONFIG['vxstream']['baseuri_v2']
+
+    @property
+    def base_gui_uri(self):
+        return saq.CONFIG['vxstream']['gui_baseuri'].strip('/')
 
     @property
     def api_key(self):
@@ -1047,7 +1084,6 @@ class FalconAnalyzer(SandboxAnalysisModule):
 
         return True
 
-
     def search(self, target_hash):
         """Search the Falcon environment for the target hash (md5, sha1, sha256)"""
         self.vx.verify_ssl = False
@@ -1056,7 +1092,6 @@ class FalconAnalyzer(SandboxAnalysisModule):
             # just going to take whatever is the first result
             result = result.json()[0]
             try:
-                self.environment_id = result['environment_id']
                 self.job_id = result['job_id']
             except KeyError as e:
                 logging.warning("Problem with Falcon Search results: {}".format(e))
@@ -1078,9 +1113,24 @@ class FalconAnalyzer(SandboxAnalysisModule):
                 return False
 
         if self.job_id is None:
-            if not self.search(target.value):
+            target_hash = target.value
+            if target.type == F_FILE:
+                # if it's a F_FILE type we *should* have the sha256 already 
+                target_hash = analysis.sha256
+            result = self.search(target_hash)
+            if not result:
                 logging.warn("Result not found in Falcon sandbox for {}".format(target))
                 return False
+            try:
+                analysis.sha1 = result['sha1']
+                analysis.md5 = result['md5']
+                analysis.sha256 = result['sha256']
+            except KeyError as e:
+                logging.warning("Problem with Falcon Search results: {}".format(e))
+                return None
+            analysis.sandbox_link = '{}/sample/{}?environmentId={}'.format(self.base_gui_uri,
+                                                                           analysis.sha256,
+                                                                           self.environment_id)
 
         status = self.vx._request("/report/{}/state".format(self.job_id)).json()
         if 'state' in status:
@@ -1108,6 +1158,7 @@ class FalconAnalyzer(SandboxAnalysisModule):
             logging.error("unknown vxstream status {} for sample {}".format(analysis.status, target))
             return False
 
+        logging.error("Analysis status : {}".format(analysis.status))
         # the analysis is assumed to be complete here
         analysis.complete_date = datetime.datetime.now()
 
@@ -1275,7 +1326,8 @@ class FalconHashAnalyzer(FalconAnalyzer):
         analysis = target.get_analysis(FalconHashAnalysis)
         if analysis is None:
             analysis = self.create_analysis(target)
-            analysis.sha256 = target.value
+            if target.type == F_SHA256:
+                analysis.sha256 = target.value
             analysis.environment_id = self.environment_id
             analysis.submit_date = datetime.datetime.now()
 
@@ -1310,6 +1362,7 @@ class FalconFileAnalyzer(FalconAnalyzer):
             # otherwise we wait to see if how the vxstream anaysis of the hash goes
             while hash_analysis:
                 sha256_observable = hash_analysis.get_observables_by_type(F_SHA256)
+                logging.error("Here DA SHA - {}".format(sha256_observable))
                 if len(sha256_observable) == 1:
                     sha256_observable = sha256_observable[0]
                 else:
@@ -1320,6 +1373,7 @@ class FalconFileAnalyzer(FalconAnalyzer):
                     logging.warning("vxstream analysis for {} returned nothing".format(sha256_observable))
                     break
 
+                logging.error("Analysis status {} : {}".format(hash_vx_analysis, hash_vx_analysis.status))
                 # if we've already analyzed the hash then we're done (the analysis will be listed under the hash)
                 if hash_vx_analysis.status in [ VXSTREAM_STATUS_ERROR, VXSTREAM_STATUS_SUCCESS ]:
                     return False
