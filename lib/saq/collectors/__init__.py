@@ -424,13 +424,16 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
                         and not isinstance(e, urllib3.exceptions.NewConnectionError) \
                         and not isinstance(e, requests.exceptions.ConnectionError):
                             # if it's not a connection issue then report it
-                            report_exception()
+                            #report_exception()
+                            pass
 
                     log_function("unable to submit work item {} to {} via group {}: {}".format(
                                  submission, target, self, e))
 
                     # if we are in full delivery mode then we need to try this one again later
-                    if self.full_delivery:
+                    if self.full_delivery and isinstance(e, urllib3.exceptions.MaxRetryError) \
+                                          or isinstance(e, urllib3.exceptions.NewConnectionError) \
+                                          or isinstance(e, requests.exceptions.ConnectionError):
                         continue
 
                     submission_failed = True
