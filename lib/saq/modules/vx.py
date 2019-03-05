@@ -860,10 +860,8 @@ class FalconAnalyzer(SandboxAnalysisModule):
             self._vx = FalconAPI(self.api_key, self.url) # proxies=self.proxies)
             if self.proxies:
                 self._vx.proxies = self.proxies
-            if self.ssl_verification:
-                self._vx.verify_ssl = self.ssl_verification
+            self._vx.verify_ssl = self.ssl_verification
             self._vx.env_id = saq.CONFIG['vxstream']['environmentid']
-
         return self._vx
 
     @property
@@ -881,16 +879,6 @@ class FalconAnalyzer(SandboxAnalysisModule):
     @property
     def secret(self):
         return saq.CONFIG['vxstream']['secret']
-
-    """
-    @property
-    def job_id(self):
-        return self._job_id
-
-    @job_id.setter
-    def job_id(self, value):
-        self._job_id = value
-    """
 
     @property
     def environment_id(self):
@@ -913,7 +901,8 @@ class FalconAnalyzer(SandboxAnalysisModule):
             else:
                 # it should be interpreted as a bool
                 return saq.CONFIG['vxstream'].getboolean('ssl_verification')
-        return None
+        # Default OS cert store
+        return True
 
     @property
     def threat_score_threshold(self):
@@ -1116,29 +1105,33 @@ class FalconAnalyzer(SandboxAnalysisModule):
                         break
             else:
                 logging.debug("Skipping target '{}' not in root analysis.".format(target))
-                return None
+                return False
 
         logging.debug("Working on '{}'".format(target))
-        target_hash = target.value
-        if target.type == F_FILE:
-            # if it's a F_FILE type we *should* have the sha256 already 
-            target_hash = analysis.sha256
-            logging.debug("Got file sha256 of {}".format(target_hash))
-        result = self.search(target_hash)
-        if not result:
-            logging.warn("Result not found in Falcon sandbox for {}".format(target))
-            return False
-        try:
-            analysis.job_id = result['job_id']
-            analysis.sha1 = result['sha1']
-            analysis.md5 = result['md5']
-            analysis.sha256 = result['sha256']
-        except KeyError as e:
-            logging.warning("Problem with Falcon Search results: {}".format(e))
-            return None
-        analysis.sandbox_link = '{}/sample/{}?environmentId={}'.format(self.base_gui_uri,
-                                                                       analysis.sha256,
-                                                                       self.environment_id)
+        if analysis.job_id is None:
+            target_hash = target.value
+            if target.type == F_FILE:
+                # if it's a F_FILE type we *should* have the sha256 already
+                if isinstance(analysis, bool):
+                    logging.error("Target type is F_FILE but analysis does not contain sha256 for {}".format(target))
+                    return False
+                target_hash = analysis.sha256
+                logging.debug("Got file sha256 of {}".format(target_hash))
+            result = self.search(target_hash)
+            if not result:
+                logging.info("Result not found in Falcon sandbox for {}".format(target))
+                return False
+            try:
+                analysis.job_id = result['job_id']
+                analysis.sha1 = result['sha1']
+                analysis.md5 = result['md5']
+                analysis.sha256 = result['sha256']
+            except KeyError as e:
+                logging.warning("Problem with Falcon Search results: {}".format(e))
+                return False
+            analysis.sandbox_link = '{}/sample/{}?environmentId={}'.format(self.base_gui_uri,
+                                                                           analysis.sha256,
+                                                                           self.environment_id)
 
         logging.debug("Using job_id {} for target hash {}".format(analysis.job_id, target.value))
         status = self.vx._request("/report/{}/state".format(analysis.job_id)).json()
@@ -1167,7 +1160,6 @@ class FalconAnalyzer(SandboxAnalysisModule):
             logging.error("unknown vxstream status {} for sample {}".format(analysis.status, target))
             return False
 
-        logging.error("Analysis status : {}".format(analysis.status))
         # the analysis is assumed to be complete here
         analysis.complete_date = datetime.datetime.now()
 
@@ -1363,8 +1355,8 @@ class FalconFileAnalyzer(FalconAnalyzer):
     def execute_analysis(self, target):
         # we want to sandbox the root file which this file originated from
         while target.redirection:
+            logging.debug("Performing target redirection to origional file")
             target = target.redirection
-        #path = os.path.join(self.root.storage_dir, target.value)
 
         analysis = target.get_analysis(FalconFileAnalysis)
         if analysis is None:
@@ -1383,16 +1375,15 @@ class FalconFileAnalyzer(FalconAnalyzer):
 
                 hash_vx_analysis = self.wait_for_analysis(sha256_observable, FalconHashAnalysis)
                 if hash_vx_analysis is None:
-                    logging.warning("vxstream analysis for {} returned nothing".format(sha256_observable))
+                    logging.warning("Falcon analysis for {} returned nothing".format(sha256_observable))
                     break
 
-                logging.error("Analysis status {} : {}".format(hash_vx_analysis, hash_vx_analysis.status))
                 # if we've already analyzed the hash then we're done (the analysis will be listed under the hash)
                 if hash_vx_analysis.status in [ VXSTREAM_STATUS_ERROR, VXSTREAM_STATUS_SUCCESS ]:
                     return False
 
                 # we're expecting the state to be UNKNOWN at this point
-                if hash_vx_analysis.status != VXSTREAM_STATUS_UNKNOWN:
+                if hash_vx_analysis.status not in [VXSTREAM_STATUS_UNKNOWN, None]:
                     logging.error("unexpected state {}".format(hash_vx_analysis.status))
                     return False
 
@@ -1406,27 +1397,26 @@ class FalconFileAnalyzer(FalconAnalyzer):
 
             # should we be sandboxing this type of file?
             if not self.is_sandboxable_file(local_path):
-                logging.debug("{} is not a supported file type for vx analysis".format(local_path))
+                logging.debug("{} is not a supported file type for Falcon vx analysis".format(local_path))
                 return False
 
             analysis = self.create_analysis(target)
 
             # this sample needs to be submitted
-            #submission = self.vx.submit(local_path, self.environment_id)
-            submission = None
-            with open(local_path, 'rb') as fb:
-                submission = self.vx.analyze(fp, target.value)
-            if submission is None:
+            job_id = None
+            with open(local_path, 'rb') as fp:
+                job_id = self.vx.analyze(fp, target.value)
+            if job_id is None:
                 logging.error("submission of {} failed".format(local_path))
                 return False
+            # should be a string 
+            assert isinstance(job_id, str)
 
-            if not submission.sha256:
-                logging.error("submission of {} failed to return sha256".format(target))
-                return False
-
-            analysis.sha256 = submission.sha256
-            analysis.environment_id = submission.environment_id
+            analysis.job_id = job_id 
             analysis.submit_date = datetime.datetime.now()
+
+        else:
+            logging.debug("FalconFileAnalysis exists with status {} for target: {}".format(analysis.status, target))
 
         # at this point we have analysis for a file that has been submitted
         return self.execute_vxstream_analysis(target, analysis)
