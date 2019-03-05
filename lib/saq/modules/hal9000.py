@@ -153,6 +153,11 @@ class HAL9000Analyzer(AnalysisModule):
             STATE_KEY_ID_TRACKING: {}, # key = return value of _compute_hal9000_md5, value = { } (see below) 
             STATE_KEY_PREVIOUS_DISPOSITION: None})
 
+        # there is nothing to do if there are no observables
+        if not self.root.all_observables:
+            logging.debug(f"no observables to track in {self.root}")
+            return
+
         # start tracking what we do with all the observables
         for observable in self.root.all_observables:
             hal9000_id = _compute_hal9000_md5(observable)
