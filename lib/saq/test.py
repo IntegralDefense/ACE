@@ -476,6 +476,10 @@ class ACEBasicTestCase(TestCase):
         self.app_context.push()                           
         self.client = self.app.test_client()
 
+        # Hopefully temporary hack to ensure session is cleared after each test
+        import api
+        api.db.session.close()
+
     def tearDown(self):
         close_test_comms()
 
@@ -678,6 +682,7 @@ class ACEBasicTestCase(TestCase):
         c.execute("DELETE FROM locks")
         c.execute("DELETE FROM delayed_analysis")
         c.execute("DELETE FROM users")
+        c.execute("DELETE FROM malware")
 
         from app.models import User
         u = User()
