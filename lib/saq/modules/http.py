@@ -161,24 +161,28 @@ class BroHTTPStreamAnalyzer(AnalysisModule):
         reply_port = None
 
         if os.path.exists(reply_path):
-            with open(reply_path, 'r') as fp:
-                first_line = fp.readline()
-                self.root.details[HTTP_DETAILS_REPLY].append(first_line)
-                reply_ipv4, reply_port = [_.strip() for _ in first_line.split('\t')]
-                reply_port = int(reply_port)
-                reply_version = fp.readline().strip()
-                reply_code = fp.readline().strip()
-                reply_reason = fp.readline().strip()
+            try:
+                with open(reply_path, 'r') as fp:
+                    first_line = fp.readline()
+                    self.root.details[HTTP_DETAILS_REPLY].append(first_line)
+                    reply_ipv4, reply_port = [_.strip() for _ in first_line.split('\t')]
+                    reply_port = int(reply_port)
+                    reply_version = fp.readline().strip()
+                    reply_code = fp.readline().strip()
+                    reply_reason = fp.readline().strip()
 
-                self.root.details[HTTP_DETAILS_REPLY].append(reply_version)
-                self.root.details[HTTP_DETAILS_REPLY].append(reply_code)
-                self.root.details[HTTP_DETAILS_REPLY].append(reply_reason)
+                    self.root.details[HTTP_DETAILS_REPLY].append(reply_version)
+                    self.root.details[HTTP_DETAILS_REPLY].append(reply_code)
+                    self.root.details[HTTP_DETAILS_REPLY].append(reply_reason)
 
-                for line in fp:
-                    self.root.details[HTTP_DETAILS_REPLY].append(line.strip())
-                    key, value = [_.strip() for _ in line.split('\t')]
-                    reply_headers.append((key, value))
-                    reply_headers_lookup[key.lower()] = value
+                    for line in fp:
+                        self.root.details[HTTP_DETAILS_REPLY].append(line.strip())
+                        key, value = [_.strip() for _ in line.split('\t')]
+                        reply_headers.append((key, value))
+                        reply_headers_lookup[key.lower()] = value
+            except UnicodeDecodeError as e:
+                logging.info(f"{stream_prefix} contains binary content in headers - skipping")
+                return False
 
         self.root.description = 'BRO HTTP Scanner Detection - {} {}'.format(request_method, request_original_uri)
         self.root.event_time = datetime.datetime.now() if stream_time is None else stream_time
