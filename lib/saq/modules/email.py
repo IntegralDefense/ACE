@@ -1910,7 +1910,7 @@ class EmailArchiveAction(AnalysisModule):
             return False
 
         email_analysis = self.wait_for_analysis(_file, EmailAnalysis)
-        if email_analysis is None:
+        if not email_analysis:
             return None
 
         email_md5 = self._get_email_md5(_file)
