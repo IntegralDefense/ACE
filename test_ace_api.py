@@ -740,3 +740,50 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
         submission_result = ace_api.cloudphish_submit(TEST_URL)
         self.assertEquals(submission_result[saq.cloudphish.KEY_ANALYSIS_RESULT], saq.cloudphish.SCAN_RESULT_CLEAR)
 
+
+class EventsAPITestCase(ACEEngineTestCase):
+
+    def setUp(self, *args, **kwargs):
+        super().setUp(*args, **kwargs)
+        self.start_api_server()
+
+        ace_api.set_default_remote_host(saq.API_PREFIX)
+        ace_api.set_default_ssl_ca_path(saq.CONFIG['SSL']['ca_chain_path'])
+
+    def test_get_open_events(self):
+        result = ace_api.get_open_events()
+        self.assertIsNotNone(result)
+        self.assertEquals(result, [])
+
+    @use_db
+    def test_update_event_status(self, db, c):
+        # Create an event
+        c.execute("""
+            INSERT INTO `events`
+            (`creation_date`,
+            `name`,
+            `type`,
+            `vector`,
+            `prevention_tool`,
+            `remediation`,
+            `status`,
+            `comment`,
+            `campaign_id`)
+            VALUES
+            ("2019-03-06",
+            "test event",
+            "phish",
+            "corporate email",
+            "response team",
+            "not remediated",
+            "OPEN",
+            "blah blah blah",
+            1);""")
+        db.commit()
+
+        c.execute("SELECT id FROM events WHERE name='test event'")
+        event_id = c.fetchone()[0]
+
+        result = ace_api.update_event_status(event_id, 'CLOSED')
+        self.assertIsNotNone(result)
+        self.assertEqual(result['status'], 'CLOSED')
