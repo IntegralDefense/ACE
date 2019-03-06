@@ -46,6 +46,7 @@ then
         api.analysis.test \
         api.engine.test \
         api.cloudphish.test \
+	api.events.test \
         test_ace_api \
 
         #saq.collectors.test_cb_binaries \
