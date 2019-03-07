@@ -2,4 +2,4 @@
 source $(dirname "$0")/common.sh
 cd $SAQ_HOME
 
-python3 ace --start --daemon -L etc/cb_collector_logging.ini cb-binary-collector
+python3 ace --start --daemon -L etc/cb_collector_logging.ini -c etc/saq.ini -c etc/saq.cb.ini cb-binary-collector
