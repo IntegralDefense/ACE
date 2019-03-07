@@ -18,8 +18,9 @@ import requests.exceptions
 import pytz
 
 class CarbonBlackBinarySubmission(Submission):
-    def success(self, result):
+    def success(self, group, result):
         # we save the results of the submission to indicate we've submitted it for analysis
+        # NOTE that this can get called multiple times if there is more than one remote group node defined
         binary_path = self.files[0]
         submit_path = '{}.submit'.format(binary_path)
 
