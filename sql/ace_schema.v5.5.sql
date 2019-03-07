@@ -552,7 +552,7 @@ DROP TABLE IF EXISTS `work_distribution`;
 CREATE TABLE `work_distribution` (
   `group_id` int(11) NOT NULL,
   `work_id` bigint(20) NOT NULL,
-  `status` enum('READY','COMPLETED') NOT NULL DEFAULT 'READY' COMMENT 'The status of the submission. Defaults to READY until the work has been either submitted, or it has failed to submit (in either case it gets set to COMPLETED.)',
+  `status` enum('READY','COMPLETED','ERROR') NOT NULL DEFAULT 'READY' COMMENT 'The status of the submission. Defaults to READY until the work has been submitted. \nOn a successful submission the status changes to COMPLETED.\nIf an error is detected, the status will change to ERROR.',
   PRIMARY KEY (`group_id`,`work_id`),
   KEY `fk_work_id_idx` (`work_id`),
   KEY `fk_work_status` (`work_id`,`status`),
@@ -613,4 +613,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-02-18 15:08:23
+-- Dump completed on 2019-03-07 15:03:33
