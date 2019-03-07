@@ -37,11 +37,11 @@ class _custom_submission(Submission):
         tags=[],
         files=[])
 
-    def success(self, result):
+    def success(self, group, result):
         global success_event
         success_event.set()
 
-    def fail(self):
+    def fail(self, group):
         global fail_event
         fail_event.set()
 
@@ -56,6 +56,7 @@ class CollectorBaseTestCase(ACEBasicTestCase):
             c.execute("DELETE FROM workload")
             c.execute("UPDATE nodes SET last_update = SUBTIME(NOW(), '01:00:00')")
             db.commit()
+
 
         # default engines to support any analysis mode
         saq.CONFIG['engine']['local_analysis_modes'] = ''
@@ -193,6 +194,7 @@ class CollectorTestCase(CollectorBaseTestCase):
         # we should see 1 of these
         wait_for_log_count('scheduled test_description mode analysis', 1, 5)
         wait_for_log_count('submitting 1 items', 1, 5)
+        wait_for_log_count('completed work item', 1, 5)
 
         collector.stop()
         collector.wait()
@@ -240,6 +242,8 @@ class CollectorTestCase(CollectorBaseTestCase):
         wait_for_log_count('scheduled test_description mode analysis', 1, 5)
         # and then 16 of these
         wait_for_log_count('got submission result', 16, 5)
+        # and 10 of these
+        wait_for_log_count('completed work item', 10, 5)
 
         collector.stop()
         collector.wait()
@@ -351,6 +355,9 @@ class CollectorTestCase(CollectorBaseTestCase):
         # watch for the failure
         wait_for_log_count('unable to submit work item', 1, 5)
 
+        # wait for the queue to clear
+        wait_for_log_count('completed work item', 1, 5)
+
         collector.stop()
         collector.wait()
 
@@ -364,6 +371,132 @@ class CollectorTestCase(CollectorBaseTestCase):
         # and we should have 0 in the engine workload
         c.execute("SELECT COUNT(*) FROM workload ")
         self.assertEquals(c.fetchone()[0], 0)
+
+    @use_db
+    def test_no_coverage_missing_node(self, db, c):
+        class _custom_collector(TestCollector):
+            def __init__(_self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.available_work = [self.create_submission() for _ in range(1)]
+
+            def get_next_submission(_self):
+                if not self.available_work:
+                    return None
+
+                return self.available_work.pop()
+
+        # enable the second ace database schema built that is entirely empty
+        # this is where we look for nodes in the "ace_2" remote node group (see below)
+        saq.CONFIG['database_ace_2'] = {
+            'hostname': saq.CONFIG['database_ace']['hostname'],
+            'unix_socket': saq.CONFIG['database_ace']['unix_socket'],
+            'database': 'ace-unittest-2',
+            'username': saq.CONFIG['database_ace']['username'],
+            'password': saq.CONFIG['database_ace']['password'],
+            'ssl_ca': saq.CONFIG['database_ace']['ssl_ca'],
+        }
+
+        # start an engine to get a node created for the "ace" node (but not the ace_2 node)
+        engine = Engine()
+        engine.start()
+        wait_for_log_count('updated node', 1, 5)
+        engine.controlled_stop()
+        engine.wait()
+
+        self.start_api_server()
+
+        collector = _custom_collector()
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage, full_coverage = yes
+        tg2 = collector.add_group('test_group_2', 100, False, saq.COMPANY_ID, 'ace_2') # 100% coverage, full_coverage = no
+        collector.start()
+
+        # we should see 1 of these
+        wait_for_log_count('scheduled test_description mode analysis', 1, 5)
+
+        # watch for the failure
+        wait_for_log_count('no remote nodes are avaiable for all analysis modes', 1, 5)
+
+        # wait for the queue to clear
+        wait_for_log_count('completed work item', 1, 5)
+
+        collector.stop()
+        collector.wait()
+
+        # everything should be empty at this point since we do not have full coverage
+        c.execute("SELECT COUNT(*) FROM work_distribution WHERE group_id = %s", (tg1.group_id,))
+        self.assertEquals(c.fetchone()[0], 0)
+        # both the incoming_workload and work_distribution tables should be empty
+        c.execute("SELECT COUNT(*) FROM incoming_workload")
+        self.assertEquals(c.fetchone()[0], 0)
+
+        # and we should have 1 in the engine workload
+        c.execute("SELECT COUNT(*) FROM workload ")
+        self.assertEquals(c.fetchone()[0], 1)
+
+    @use_db
+    def test_full_coverage_missing_node(self, db, c):
+        class _custom_collector(TestCollector):
+            def __init__(_self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.available_work = [self.create_submission() for _ in range(1)]
+
+            def get_next_submission(_self):
+                if not self.available_work:
+                    return None
+
+                return self.available_work.pop()
+
+        # enable the second ace database schema built that is entirely empty
+        # this is where we look for nodes in the "ace_2" remote node group (see below)
+        saq.CONFIG['database_ace_2'] = {
+            'hostname': saq.CONFIG['database_ace']['hostname'],
+            'unix_socket': saq.CONFIG['database_ace']['unix_socket'],
+            'database': 'ace-unittest-2',
+            'username': saq.CONFIG['database_ace']['username'],
+            'password': saq.CONFIG['database_ace']['password'],
+            'ssl_ca': saq.CONFIG['database_ace']['ssl_ca'],
+        }
+
+        # start an engine to get a node created for the "ace" node (but not the ace_2 node)
+        engine = Engine()
+        engine.start()
+        wait_for_log_count('updated node', 1, 5)
+        engine.controlled_stop()
+        engine.wait()
+
+        self.start_api_server()
+
+        collector = _custom_collector()
+        tg1 = collector.add_group('test_group_1', 100, True, saq.COMPANY_ID, 'ace') # 100% coverage, full_coverage = yes
+        tg2 = collector.add_group('test_group_2', 100, True, saq.COMPANY_ID, 'ace_2') # 100% coverage, full_coverage = no
+        collector.start()
+
+        # we should see 1 of these
+        wait_for_log_count('scheduled test_description mode analysis', 1, 5)
+
+        # watch for the failure
+        wait_for_log_count('no remote nodes are avaiable for all analysis modes', 1, 5)
+
+        # this should time out
+        with self.assertRaises(WaitTimedOutError):
+            wait_for_log_count('completed work item', 1, 3)
+
+        collector.stop()
+        collector.wait()
+
+        # the first group assignment should have completed
+        c.execute("SELECT COUNT(*) FROM work_distribution WHERE group_id = %s AND status = 'COMPLETED'", (tg1.group_id,))
+        self.assertEquals(c.fetchone()[0], 1)
+        # the second group assignment should still be in ready status
+        c.execute("SELECT COUNT(*) FROM work_distribution WHERE group_id = %s AND status = 'READY'", (tg2.group_id,))
+        self.assertEquals(c.fetchone()[0], 1)
+        # and we should still have our workload item
+        c.execute("SELECT COUNT(*) FROM incoming_workload")
+        self.assertEquals(c.fetchone()[0], 1)
+
+        # and we should have 1 in the engine workload
+        c.execute("SELECT COUNT(*) FROM workload ")
+        self.assertEquals(c.fetchone()[0], 1)
 
     @use_db
     def test_submission_success_fail(self, db, c):
