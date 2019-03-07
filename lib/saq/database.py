@@ -286,21 +286,21 @@ def _get_db_connection(name='ace'):
     if 'ssl_ca' in _section or 'ssl_key' in _section or 'ssl_cert' in _section:
         kwargs['ssl'] = {}
 
-        if 'ssl_ca' in _section:
+        if 'ssl_ca' in _section and _section['ssl_ca']:
             path = abs_path(_section['ssl_ca'])
             if not os.path.exists(path):
                 logging.error("ssl_ca file {} does not exist (specified in {})".format(path, config_section))
             else:
                 kwargs['ssl']['ca'] = path
 
-        if 'ssl_key' in _section:
+        if 'ssl_key' in _section and _section['ssl_key']:
             path = abs_path(_section['ssl_key'])
             if not os.path.exists(path):
                 logging.error("ssl_key file {} does not exist (specified in {})".format(path, config_section))
             else:
                 kwargs['ssl']['key'] = path
 
-        if 'ssl_cert' in _section:
+        if 'ssl_cert' in _section and _section['ssl_cert']:
             path = _section['ssl_cert']
             if not os.path.exists(path):
                 logging.error("ssl_cert file {} does not exist (specified in {})".format(path, config_section))
