@@ -500,6 +500,34 @@ class Event(Base):
     companies = relationship("saq.database.CompanyMapping", passive_deletes=True, passive_updates=True)
 
     @property
+    def json(self):
+        return {
+            'id': self.id,
+            'alerts': self.alerts,
+            'campaign': self.campaign.name if self.campaign else None,
+            'comment': self.comment,
+            'companies': self.company_names,
+            'creation_date': str(self.creation_date),
+            'disposition': self.disposition,
+            'malware': [{mal.name: [t.type for t in mal.threats]} for mal in self.malware],
+            'name': self.name,
+            'prevention_tool': self.prevention_tool,
+            'remediation': self.remediation,
+            'status': self.status,
+            'tags': self.sorted_tags,
+            'type': self.type,
+            'vector': self.vector,
+            'wiki': self.wiki
+        }
+
+    @property
+    def alerts(self):
+        uuids = []
+        for alert_mapping in self.alert_mappings:
+            uuids.append(alert_mapping.alert.uuid)
+        return uuids
+
+    @property
     def malware_names(self):
         names = []
         for mal in self.malware:
