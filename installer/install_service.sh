@@ -31,6 +31,7 @@ then
 	echo "Restart=always" | sudo tee -a /etc/systemd/system/ace.service
 	echo "WorkingDirectory=$SAQ_HOME" | sudo tee -a /etc/systemd/system/ace.service
 	echo "ExecStart=$SAQ_HOME/aced" | sudo tee -a /etc/systemd/system/ace.service
+	echo "Environment=\"SAQ_HOME=$SAQ_HOME\"" | sudo tee -a /etc/systemd/system/ace.service
 	echo "" | sudo tee -a /etc/systemd/system/ace.service
 	echo "[Install]" | sudo tee -a /etc/systemd/system/ace.service
 	echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/ace.service

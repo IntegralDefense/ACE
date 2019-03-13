@@ -286,21 +286,21 @@ def _get_db_connection(name='ace'):
     if 'ssl_ca' in _section or 'ssl_key' in _section or 'ssl_cert' in _section:
         kwargs['ssl'] = {}
 
-        if 'ssl_ca' in _section:
+        if 'ssl_ca' in _section and _section['ssl_ca']:
             path = abs_path(_section['ssl_ca'])
             if not os.path.exists(path):
                 logging.error("ssl_ca file {} does not exist (specified in {})".format(path, config_section))
             else:
                 kwargs['ssl']['ca'] = path
 
-        if 'ssl_key' in _section:
+        if 'ssl_key' in _section and _section['ssl_key']:
             path = abs_path(_section['ssl_key'])
             if not os.path.exists(path):
                 logging.error("ssl_key file {} does not exist (specified in {})".format(path, config_section))
             else:
                 kwargs['ssl']['key'] = path
 
-        if 'ssl_cert' in _section:
+        if 'ssl_cert' in _section and _section['ssl_cert']:
             path = _section['ssl_cert']
             if not os.path.exists(path):
                 logging.error("ssl_cert file {} does not exist (specified in {})".format(path, config_section))
@@ -498,6 +498,34 @@ class Event(Base):
     malware = relationship("saq.database.MalwareMapping", passive_deletes=True, passive_updates=True)
     alert_mappings = relationship("saq.database.EventMapping", passive_deletes=True, passive_updates=True)
     companies = relationship("saq.database.CompanyMapping", passive_deletes=True, passive_updates=True)
+
+    @property
+    def json(self):
+        return {
+            'id': self.id,
+            'alerts': self.alerts,
+            'campaign': self.campaign.name if self.campaign else None,
+            'comment': self.comment,
+            'companies': self.company_names,
+            'creation_date': str(self.creation_date),
+            'disposition': self.disposition,
+            'malware': [{mal.name: [t.type for t in mal.threats]} for mal in self.malware],
+            'name': self.name,
+            'prevention_tool': self.prevention_tool,
+            'remediation': self.remediation,
+            'status': self.status,
+            'tags': self.sorted_tags,
+            'type': self.type,
+            'vector': self.vector,
+            'wiki': self.wiki
+        }
+
+    @property
+    def alerts(self):
+        uuids = []
+        for alert_mapping in self.alert_mappings:
+            uuids.append(alert_mapping.alert.uuid)
+        return uuids
 
     @property
     def malware_names(self):
@@ -1462,6 +1490,53 @@ WHERE
     def node_location(self):
         return self.nodes.location
 
+def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
+    """Utility function to the set disposition of many Alerts at once.
+       :param alert_uuids: A list of UUIDs of Alert objects to set.
+       :param disposition: The disposition to set the Alerts.
+       :param user_id: The id of the User that is setting the disposition.
+       :param user_comment: Optional comment the User is providing as part of the disposition."""
+
+    with get_db_connection() as db:
+        c = db.cursor()
+        # update dispositions
+        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
+        sql = f"""UPDATE alerts SET 
+                      disposition = %s, disposition_user_id = %s, disposition_time = NOW(),
+                      owner_id = %s, owner_time = NOW()
+                  WHERE 
+                      (disposition IS NULL OR disposition != %s) AND uuid IN ( {uuid_placeholders} )"""
+        parameters = [disposition, user_id, user_id, disposition]
+        parameters.extend(alert_uuids)
+        c.execute(sql, parameters)
+        
+        # add the comment if it exists
+        if user_comment:
+            for uuid in alert_uuids:
+                c.execute("""
+                          INSERT INTO comments ( user_id, uuid, comment ) 
+                          VALUES ( %s, %s, %s )""", ( user_id, uuid, user_comment))
+
+        # now we need to insert each of these alert back into the workload
+        sql = f"""
+INSERT IGNORE INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
+SELECT 
+    alerts.uuid, 
+    nodes.id,
+    %s, 
+    NOW(),
+    alerts.company_id, 
+    NULL, 
+    alerts.storage_dir 
+FROM 
+    alerts JOIN nodes ON alerts.location = nodes.name
+WHERE 
+    uuid IN ( {uuid_placeholders} )"""
+        params = [ saq.constants.ANALYSIS_MODE_DISPOSITIONED ]
+        params.extend(alert_uuids)
+        c.execute(sql, tuple(params))
+        db.commit()
+
 class Similarity:
     def __init__(self, uuid, disposition, percent):
         self.uuid = uuid
@@ -1774,7 +1849,8 @@ def add_workload(root, exclusive_uuid=None, db=None, c=None):
     # if we don't specify an analysis mode then we default to whatever the engine default is
     # NOTE you should always specify an analysis mode
     if root.analysis_mode is None:
-        logging.warning("missing analysis mode for call to add_workload({}) - using engine default".format(root))
+        logging.warning(f"missing analysis mode for call to add_workload({root}) - "
+                        f"using engine default {saq.CONFIG['engine']['default_analysis_mode']}")
         root.analysis_mode = saq.CONFIG['engine']['default_analysis_mode']
 
     # make sure we've initialized our node id
