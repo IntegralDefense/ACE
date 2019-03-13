@@ -104,6 +104,9 @@ def create_app(testing=False):
     from .cloudphish import cloudphish_bp as cloudphish_blueprint
     app.register_blueprint(cloudphish_blueprint)
 
+    from .events import events_bp as events_blueprint
+    app.register_blueprint(events_blueprint)
+
     # turn on database connection caching
     app.before_request(enable_cached_db_connections)
 

@@ -48,7 +48,7 @@ from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Eve
                          Workload, DelayedAnalysis, \
                          acquire_lock, release_lock, \
                          ProfilePointAlertMapping, ProfilePoint, ProfilePointTagMapping, \
-                         get_available_nodes, use_db
+                         get_available_nodes, use_db, set_dispositions, add_workload
 from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
 from saq.gui import GUIAlert
@@ -735,12 +735,17 @@ def add_observable():
 
         alert.add_observable(o_type, o_value, None if o_time == '' else o_time)
 
+        # switch back into correlation mode (we may be in a different post-correlation mode at this point)
+        alert.analysis_mode = ANALYSIS_MODE_CORRELATION
+
         try:
             alert.sync()
         except Exception as e:
             logging.error("unable to sync alert: {0}".format(str(e)))
             flash("internal error")
             return redirection
+
+        add_workload(alert)
 
         flash("added observable")
         return redirection
@@ -1209,7 +1214,7 @@ def add_to_event():
 
         if len(alert_uuids) > 0:
             try:
-                set_dispositions(alert_uuids, event_disposition)
+                set_dispositions(alert_uuids, event_disposition, current_user.id)
             except Exception as e:
                 flash("unable to set disposition (review error logs)")
                 logging.error("unable to set disposition for {} alerts: {}".format(len(alert_uuids), e))
@@ -1226,46 +1231,6 @@ def add_to_event():
         del session['checked']
 
     return redirect(url_for('analysis.manage'))
-
-def set_dispositions(alert_uuids, disposition, user_comment=None):
-    with get_db_connection() as db:
-        c = db.cursor()
-        # update dispositions
-        uuid_where_clause = ' , '.join(["'{}'".format(u) for u in alert_uuids])
-        c.execute("""
-                  UPDATE alerts 
-                  SET disposition = %s, disposition_user_id = %s, disposition_time = NOW(),
-                  owner_id = %s, owner_time = NOW()
-                  WHERE uuid IN ( {} ) and (disposition is NULL or disposition != %s)""".format(uuid_where_clause),
-                  (disposition, current_user.id, current_user.id, disposition))
-        
-        # add the comment if it exists
-        if user_comment:
-            for uuid in alert_uuids:
-                c.execute("""
-                          INSERT INTO comments ( user_id, uuid, comment ) 
-                          VALUES ( %s, %s, %s )""", ( current_user.id, uuid, user_comment))
-
-        # now we need to insert each of these alert back into the workload
-        uuid_placeholders = ','.join(['%s' for _ in alert_uuids])
-        sql = f"""
-INSERT IGNORE INTO workload ( uuid, node_id, analysis_mode, insert_date, company_id, exclusive_uuid, storage_dir ) 
-SELECT 
-    alerts.uuid, 
-    nodes.id,
-    %s, 
-    NOW(),
-    alerts.company_id, 
-    NULL, 
-    alerts.storage_dir 
-FROM 
-    alerts JOIN nodes ON alerts.location = nodes.name
-WHERE 
-    uuid IN ( {uuid_placeholders} )"""
-        params = [ ANALYSIS_MODE_CORRELATION ]
-        params.extend(alert_uuids)
-        c.execute(sql, tuple(params))
-        db.commit()
 
 @analysis.route('/set_disposition', methods=['POST'])
 @login_required
@@ -1304,7 +1269,7 @@ def set_disposition():
     # update the database
     logging.debug("user {} updating {} alerts to {}".format(current_user.username, len(alert_uuids), disposition))
     try:
-        set_dispositions(alert_uuids, disposition, user_comment=user_comment)
+        set_dispositions(alert_uuids, disposition, current_user.id, user_comment=user_comment)
         flash("disposition set for {} alerts".format(len(alert_uuids)))
     except Exception as e:
         flash("unable to set disposition (review error logs)")
@@ -3172,7 +3137,7 @@ def edit_event():
             alert_uuids.append(row[0])
 
         try:
-            set_dispositions(alert_uuids, event_disposition)
+            set_dispositions(alert_uuids, event_disposition, current_user.id)
         except Exception as e:
             flash("unable to set disposition (review error logs)")
             logging.error("unable to set disposition for {} alerts: {}".format(len(alert_uuids), e))

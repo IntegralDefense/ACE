@@ -1,14 +1,33 @@
 #!/usr/bin/env bash
 
+defaults_file=""
+if [ -f etc/mysql_defaults.root ]
+then
+    defaults_file="--defaults-file=etc/mysql_defaults.root"
+fi
+
 # reset or create the unittest database
-for db in ace ace-workload brocess email-archive hal9000 cloudphish vt-hash-cache
+for db in ace brocess email-archive hal9000 vt-hash-cache
 do
 	echo "resetting db $db-unittest"
-	mysqladmin drop -f $db-unittest > /dev/null 2>&1
-	mysqladmin create $db-unittest 
-	mysql --database=$db-unittest < sql/$db\_schema.sql
+	mysqladmin $defaults_file drop -f $db-unittest > /dev/null 2>&1
+	mysqladmin $defaults_file create $db-unittest 
+	mysql $defaults_file --database=$db-unittest < sql/$db\_schema.sql
 	if [ -e sql/$db\_init.sql ]
 	then
-		mysql --database=$db-unittest < sql/$db\_init.sql || fail "unable to initialize database $db"
+		mysql $defaults_file --database=$db-unittest < sql/$db\_init.sql || fail "unable to initialize database $db-unittest"
+	fi
+done
+
+# reset or create the unittest database
+for db in ace brocess email-archive hal9000 vt-hash-cache
+do
+	echo "resetting db $db-unittest-2"
+	mysqladmin $defaults_file drop -f $db-unittest-2 > /dev/null 2>&1
+	mysqladmin $defaults_file create $db-unittest-2
+	mysql $defaults_file --database=$db-unittest-2 < sql/$db\_schema.sql
+	if [ -e sql/$db\_init.sql ]
+	then
+		mysql $defaults_file --database=$db-unittest-2 < sql/$db\_init.sql || fail "unable to initialize database $db-unittest-2"
 	fi
 done
