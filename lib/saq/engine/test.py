@@ -675,7 +675,7 @@ class TestCase(ACEEngineTestCase):
         engine.wait()
 
         # we should see a warning message about taking up too much memory
-        wait_for_log_count('used too much memory', 1)
+        wait_for_log_count('used too much memory', 1, 10)
 
         # we should NOT see a workload item or a lock left
         self.assertEquals(saq.db.query(Workload.id).count(), 0)

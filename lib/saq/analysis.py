@@ -5,6 +5,7 @@ import collections
 import copy
 import datetime
 import gc
+import hashlib
 import importlib
 import json
 import logging
@@ -1400,6 +1401,17 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     @value.setter
     def value(self, value):
         self._value = value
+
+    @property
+    def md5_hex(self):
+        """Returns the hexidecimal MD5 hash of the value of this observable."""
+        md5_hasher = hashlib.md5()
+        if isinstance(self.value, str):
+            md5_hasher.update(self.value.encode('utf8', errors='ignore'))
+        else:
+            md5_hasher.update(self.value)
+
+        return md5_hasher.hexdigest()
 
     @property
     def time(self):
