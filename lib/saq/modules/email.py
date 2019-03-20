@@ -2224,6 +2224,67 @@ class EmailConversationAttachmentAnalyzer(AnalysisModule):
         analysis = self.create_analysis(_file)
         return True
 
+class EmailConversationLinkAnalysis(Analysis):
+    """Has someone who has never sent us an email before sent us a potentially malicious link?"""
+    def initialize_details(self):
+        self.details = None # not used
+
+class EmailConversationLinkAnalyzer(AnalysisModule):
+
+    url_filter = None
+
+    @property
+    def generated_analysis_type(self):
+        return EmailConversationLinkAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return F_URL
+
+    def initialize_url_filter(self):
+        if self.url_filter:
+            return
+
+        from saq.crawlphish import CrawlphishURLFilter
+        self.url_filter = CrawlphishURLFilter()
+        self.url_filter.load()
+
+    def execute_analysis(self, url):
+
+        self.initialize_url_filter()
+
+        # is this url something we're interested in? (would we crawl it?)
+        filter_result = self.url_filter.filter(url.value)
+        if filter_result.filtered:
+            logging.debug(f"url {url} was filtered: {filter_result}")
+            return False
+
+        logging.debug(f"MARKER: checking {url} for email root...")
+
+        # get the email this url came from
+        def _is_email(_file):
+            if isinstance(_file, Observable):
+                if _file.type == F_FILE:
+                    if self.wait_for_analysis(_file, EmailAnalysis):
+                        return True
+
+        email = search_down(url, _is_email)
+        if not email:
+            return False
+
+        email_analysis = email.get_analysis(EmailAnalysis)
+
+        # are any of the email conversations tagged as new sender?
+        for ec in email_analysis.get_observables_by_type(F_EMAIL_CONVERSATION):
+            if self.wait_for_analysis(ec, EmailConversationFrequencyAnalysis):
+                if ec.has_tag('new_sender'):
+                    # this is a url we would crawl AND it's from a new sender
+                    # go ahead and generate the alert
+                    url.add_detection_point("A URL we would crawl was sent by a new sender.")
+
+        analysis = self.create_analysis(_file)
+        return True
+
 # DEPRECATED
 class EmailHistoryAnalysis_v1(Analysis):
     """How many emails did this user receive?  What is the general summary of them?"""
