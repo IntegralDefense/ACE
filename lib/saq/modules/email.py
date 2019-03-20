@@ -2231,7 +2231,14 @@ class EmailConversationLinkAnalysis(Analysis):
 
 class EmailConversationLinkAnalyzer(AnalysisModule):
 
-    url_filter = None
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # load the list of url patterns we want to alert on
+        self.url_patterns = []
+        for key in self.self.config.keys():
+            if key.startswith('url_pattern_'):
+                self.url_patterns.append(re.compile(self.config[key.value]))
 
     @property
     def generated_analysis_type(self):
@@ -2241,25 +2248,17 @@ class EmailConversationLinkAnalyzer(AnalysisModule):
     def valid_observable_types(self):
         return F_URL
 
-    def initialize_url_filter(self):
-        if self.url_filter:
-            return
-
-        from saq.crawlphish import CrawlphishURLFilter
-        self.url_filter = CrawlphishURLFilter()
-        self.url_filter.load()
-
     def execute_analysis(self, url):
 
-        self.initialize_url_filter()
+        # does this URL match one of our patterns?
+        matches = False
+        for pattern in self.url_patterns:
+            if pattern.search(url.value):
+                matches = True
+                break
 
-        # is this url something we're interested in? (would we crawl it?)
-        filter_result = self.url_filter.filter(url.value)
-        if filter_result.filtered:
-            logging.debug(f"url {url} was filtered: {filter_result}")
+        if not matches:
             return False
-
-        logging.debug(f"MARKER: checking {url} for email root...")
 
         # get the email this url came from
         def _is_email(_file):
@@ -2279,10 +2278,9 @@ class EmailConversationLinkAnalyzer(AnalysisModule):
             if self.wait_for_analysis(ec, EmailConversationFrequencyAnalysis):
                 if ec.has_tag('new_sender'):
                     # this is a url we would crawl AND it's from a new sender
-                    # go ahead and generate the alert
-                    url.add_detection_point("A URL we would crawl was sent by a new sender.")
+                    url.add_detection_point("Suspect URL sent from new sender.")
 
-        analysis = self.create_analysis(_file)
+        analysis = self.create_analysis(url)
         return True
 
 # DEPRECATED
