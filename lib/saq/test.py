@@ -673,7 +673,6 @@ class ACEBasicTestCase(TestCase):
         c.execute("DELETE FROM workload")
         c.execute("DELETE FROM observables")
         c.execute("DELETE FROM tags")
-        c.execute("DELETE FROM profile_points")
         c.execute("DELETE FROM events")
         c.execute("DELETE FROM remediation")
         c.execute("DELETE FROM company WHERE name != 'default'")

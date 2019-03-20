@@ -30,7 +30,7 @@ import saq
 import saq.analysis
 import saq.database
 
-from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, ProfilePointAnalyzer
+from saq.analysis import Observable, Analysis, RootAnalysis
 from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
