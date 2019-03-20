@@ -121,14 +121,6 @@ def display_analysis(root):
         for detection in detections:
             print('* {}'.format(detection))
 
-    if root.profile_points:
-        print("{} PROFILE POINTS MATCHED".format(len(root.profile_points)))
-        for profile_point in root.profile_points:
-            output = '* {}'.format(profile_point.description)
-            if profile_point.notes:
-                output = '* {} ({})'.format(profile_point.description, profile_point.notes)
-            print(output)
-
 def kill_daemon(daemon_name):
 
     import psutil
@@ -1436,7 +1428,7 @@ network_semaphore_test.set_defaults(func=test_network_semaphore)
 #
 
 def resync_alert(args):
-    """Remaps observables, tags, and profile points to the alert."""
+    """Remaps observables and tags to the alert."""
     from saq.database import Alert, DatabaseSession
     from saq.error import report_exception
 

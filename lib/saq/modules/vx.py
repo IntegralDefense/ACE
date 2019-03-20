@@ -12,7 +12,7 @@ import shutil
 
 import saq
 
-from saq.analysis import Analysis, Observable, ProfilePointTarget
+from saq.analysis import Analysis, Observable
 from saq.constants import *
 from saq.error import report_exception
 from saq.modules import AnalysisModule
@@ -273,30 +273,6 @@ class VxStreamAnalysis(Analysis):
         self.details[KEY_VXSTREAM_THREAT_LEVEL] = value
         self.set_modified()
 
-    @property
-    def targets(self):
-        if self.details is None:
-            return
-
-        if self.json_path is None:
-            return
-
-        try:
-            results = None
-            with open(self.json_path, 'r') as fp:
-                results = json.load(fp)
-
-            try:
-                yield ProfilePointTarget(TARGET_VX_IPDOMAINSTREAMS, 
-                      json.dumps(results['analysis']['hybridanalysis']['ipdomainstreams']['stream'],
-                      indent=2, sort_keys=True))
-            except KeyError as e:
-                logging.debug("{} missing key: {}".format(self, e))
-                
-        except Exception as e:
-            logging.error("unable to parse vxstream json at {}: {}".format(self.json_path, e))
-            #report_exception()
-
 # abstract class for both vxstream analyzers
 class VxStreamAnalyzer(SandboxAnalysisModule):
     
@@ -477,13 +453,6 @@ class VxStreamAnalyzer(SandboxAnalysisModule):
 
                     for http_request in http_list:
                         analysis.add_observable(F_URL, http_request['request_url'])
-
-                # pull profile point target information
-                #try:
-                    #for stream in results['analysis']['hybridanalysis']['ipdomainstreams']['stream']:
-                        #analysis.add_profile_point_data(
-                #except KeyError:
-                    #logging.debug("unable to extract stream data from ipdomainstreams of {}".format(_hash.value))
 
         except KeyError as e:
             logging.warning("vxstream report for {} missing or incomplete: {}".format(analysis.sha256, e))

@@ -19,7 +19,7 @@ import uuid
 
 import saq
 
-from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree, search_down
+from saq.analysis import Analysis, Observable, recurse_tree, search_down
 from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_source_email
 from saq.constants import *
 from saq.crypto import encrypt, decrypt
@@ -1119,25 +1119,6 @@ class EmailAnalysis(Analysis):
             result.append(_file)
 
         return result
-
-    @property
-    def targets(self):
-        if self.received:
-            yield ProfilePointTarget(TARGET_EMAIL_RECEIVED, '\n'.join(self.received))
-        if self.x_mailer:
-            yield ProfilePointTarget(TARGET_EMAIL_XMAILER, self.x_mailer)
-        if self.message_id:
-            yield ProfilePointTarget(TARGET_EMAIL_MESSAGE_ID, self.message_id)
-        if self.env_rcpt_to:
-            for rcpt_to in self.env_rcpt_to:
-                yield ProfilePointTarget(TARGET_EMAIL_RCPT_TO, rcpt_to)
-
-        body = self.body
-        if body:
-            with open(os.path.join(self.storage_dir, body.value), 'rb') as fp:
-                body_content = fp.read()
-
-            yield ProfilePointTarget(TARGET_EMAIL_BODY, body_content)
 
     @property
     def jinja_template_path(self):
