@@ -2236,9 +2236,13 @@ class EmailConversationLinkAnalyzer(AnalysisModule):
         
         # load the list of url patterns we want to alert on
         self.url_patterns = []
-        for key in self.self.config.keys():
+        for key in self.config.keys():
             if key.startswith('url_pattern_'):
-                self.url_patterns.append(re.compile(self.config[key.value]))
+                try:
+                    pattern = self.config[key]
+                    self.url_patterns.append(re.compile(pattern))
+                except Exception as e:
+                    logging.error(f"unable to add pattern {self.config[key.value]}: {e}")
 
     @property
     def generated_analysis_type(self):
