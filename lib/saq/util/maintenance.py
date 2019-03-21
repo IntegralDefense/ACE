@@ -58,7 +58,7 @@ def cleanup_alerts(fp_days_old=None, ignore_days_old=None, dry_run=False):
 
         # delete the alert from the database
         logging.info(f"deleting database entry {alert_id}")
-        retry_sql_on_deadlock(delete(Alert).where(Alert.id == alert_id), session=saq.db(), commit=True)
+        retry_sql_on_deadlock(delete(Alert).where(Alert.id == alert_id), commit=True)
 
     if dry_run:
         logging.info(f"{dry_run_count} ignored alerts would be deleted")
