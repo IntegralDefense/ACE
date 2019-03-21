@@ -100,3 +100,11 @@ class RootAnalysisTestCase(ACEBasicTestCase):
         self.assertTrue(root.find_observable(lambda o: o.type == F_TEST).id in [ o.id for o in o_all])
         # search by lambda, multi observable
         self.assertEquals(sorted(root.find_observables(lambda o: o.type == F_TEST)), o_all)
+
+    def test_observable_md5(self):
+        
+        root = create_root_analysis()
+        root.initialize_storage()
+
+        o1 = root.add_observable(F_TEST, 'test_1')
+        self.assertEquals(o1.md5_hex, '4e70ffa82fbe886e3c4ac00ac374c29b')

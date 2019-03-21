@@ -1435,7 +1435,6 @@ network_semaphore_test.set_defaults(func=test_network_semaphore)
 # alert management
 #
 
-# XXX FIX ME
 def resync_alert(args):
     """Remaps observables, tags, and profile points to the alert."""
     from saq.database import Alert, DatabaseSession
@@ -1443,8 +1442,7 @@ def resync_alert(args):
 
     storage_dirs = []
     if args.resync_all:
-        session = DatabaseSession()
-        for alert in session.query(Alert).with_entities(Alert.storage_dir).filter(Alert.location == saq.SAQ_NODE):
+        for alert in saq.db.query(Alert).with_entities(Alert.storage_dir).filter(Alert.location == saq.SAQ_NODE):
             storage_dirs.append(alert.storage_dir)
     else:
         storage_dirs = args.dirs
@@ -1460,16 +1458,8 @@ def resync_alert(args):
 
         # load the alert
         alert = None
-        session = None
 
-        try:
-            session = DatabaseSession()
-            alert = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
-        except Exception as e:
-            logging.error("unable to load alert from database with storage_dir {}: {}".format(storage_dir, e))
-        finally:
-            if session:
-                session.close()
+        alert = saq.db.query(Alert).filter(Alert.storage_dir==storage_dir).one()
 
         try:
             if not alert.load():
