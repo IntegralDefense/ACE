@@ -2004,7 +2004,7 @@ def manage():
                 continue
 
             observable_filters_english.append(
-                "with observable type {0} value {1}".format(observable.type, observable.value))
+                "with observable type {0} value {1}".format(observable.type, observable.value.decode('utf8', errors='ignore')))
             observables.append(observable)
 
     if len(observables) > 0:
