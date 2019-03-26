@@ -123,7 +123,7 @@ class AdvancedLinkAnalyzer(AnalysisModule):
         from saq.cloudphish import SCAN_RESULT_ERROR, SCAN_RESULT_PASS
 
         cloudphish_analysis = self.wait_for_analysis(url, CloudphishAnalysis)
-        if cloudphish_analysis is None:
+        if not cloudphish_analysis:
             return False
 
         # is this a URL to an IP address to a single file in the root directory?
