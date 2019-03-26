@@ -2056,7 +2056,8 @@ class EmailArchiveAction(AnalysisModule):
                     transactions.append(('url', target.value))
 
                 if isinstance(target, FileHashAnalysis):
-                    transactions.append(('content', target.md5))
+                    if target.md5:
+                        transactions.append(('content', target.md5))
                     
             recurse_tree(_file, _callback)
 
