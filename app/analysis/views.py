@@ -997,7 +997,7 @@ def new_alert(db, c):
                 }
 
                 if o_time:
-                    otime = datetime.datetime.strptime(otime, '%m-%d-%Y %H:%M:%S')
+                    o_time = datetime.datetime.strptime(o_time, '%m-%d-%Y %H:%M:%S')
                     observable['time'] = timezone.localize(o_time)
 
                 if o_type == F_FILE:
