@@ -255,17 +255,33 @@ class CrawlphishURLFilter(object):
 
         return False
 
+    def is_in_intel_db(self, value):
+        """Returns True if the given value is in your intel database, False otherwise."""
+        result = False
+        if saq.CONFIG['crits'].getboolean('enabled'):
+            result |= self.is_in_crits(value)
+        
+        if saq.CONFIG['sip'].getboolean('enabled'):
+            result |= self.is_in_sip(value)
+
+        return result
+
     def is_in_crits(self, value):
         try:
-            return self._is_in_crits(value)
+            return self.is_in_cache_db(value, os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path']))
         except Exception as e:
-            logging.error("is_in_crits failed: {}".format(e))
+            logging.error(f"is_in_crits failed: {e}")
 
-    def _is_in_crits(self, value):
+    def is_in_sip(self, value):
+        try:
+            return self.is_in_cache_db(value, os.path.join(saq.DATA_DIR, saq.CONFIG['sip']['cache_db_path']))
+        except Exception as e:
+            logging.error(f"is_in_sip failed: {e}")
+
+    def is_in_cache_db(self, value, cache_path):
         """Is this URL in crits?  value is the result of calling process_url on a URL."""
         assert isinstance(value, ParseResult)
 
-        cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path'])
         with sqlite3.connect('file:{}?mode=ro'.format(cache_path), uri=True) as db:
             db_cursor = db.cursor()
             row = None
@@ -277,7 +293,7 @@ class CrawlphishURLFilter(object):
 
                 row = db_cursor.fetchone()
                 if row:
-                    logging.debug("{} matched crits ipv4 indicator {}".format(value.hostname, row[0]))
+                    logging.debug("{} matched ipv4 indicator {}".format(value.hostname, row[0]))
                     return True
             else:
                 # check fqdn
@@ -288,7 +304,7 @@ class CrawlphishURLFilter(object):
 
                     row = db_cursor.fetchone()
                     if row:
-                        logging.debug("{} matched crits fqdn indicator {}".format(partial_fqdn, row[0]))
+                        logging.debug("{} matched fqdn indicator {}".format(partial_fqdn, row[0]))
                         return True
                         
             # check full url
@@ -297,7 +313,7 @@ class CrawlphishURLFilter(object):
 
             row = db_cursor.fetchone()
             if row:
-                logging.debug("{} matched crits url indicator{}".format(value.geturl(), row[0]))
+                logging.debug("{} matched url indicator{}".format(value.geturl(), row[0]))
                 return True
 
             # check url path
@@ -308,7 +324,7 @@ class CrawlphishURLFilter(object):
 
                 row = db_cursor.fetchone()
                 if row:
-                    logging.debug("{} matched crits url_path indicator {}".format(value.path, row[0]))
+                    logging.debug("{} matched url_path indicator {}".format(value.path, row[0]))
                     return True
 
             # check url file name
@@ -320,10 +336,9 @@ class CrawlphishURLFilter(object):
 
                     row = db_cursor.fetchone()
                     if row:
-                        logging.debug("{} matched crits file_name indicator {}".format(file_name, row[0]))
+                        logging.debug("{} matched file_name indicator {}".format(file_name, row[0]))
                         return True
 
-            #logging.debug("{} {} in crits".format(value, 'is' if result else 'is not'))
             return False
 
     def _is_uncommon_fqdn(self, fqdn):
@@ -399,7 +414,7 @@ class CrawlphishURLFilter(object):
                 result.filtered = False
                 return result
             
-        if self.is_in_crits(result.parsed_url):
+        if self.is_in_intel_db(result.parsed_url):
             result.reason = REASON_CRITS
             result.filtered = False
             return result

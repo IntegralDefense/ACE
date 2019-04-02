@@ -2,7 +2,11 @@
 #
 # utility functions and constants for intel (SIP) support
 
+import logging
+import os
+import os.path
 import saq
+import sqlite3
 
 indicator_type_mapping = None
 observable_type_mapping = None
@@ -265,3 +269,79 @@ def load_observable_type_mapping():
 def get_observables_by_type_mapping(indicator_type):
     return observable_type_mapping[indicator_type] 
 
+def update_local_cache():
+
+    import pysip
+
+    # XXX remove verify=False
+    sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
+    cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['sip']['cache_db_path'])
+
+    # the actual file should be a symlink
+    if os.path.exists(cache_path) and not os.path.islink(cache_path):
+        logging.error("{} should be a symlink but it's not!".format(cache_path))
+        return False
+
+    # get the file the symlink points to
+    current_cache_path = None
+    if os.path.exists(cache_path):
+        current_cache_path = os.path.realpath(cache_path)
+    else:
+        current_cache_path = '{}.b'.format(cache_path)
+    
+    # there are two files that end with .a and .b
+    if not current_cache_path.endswith('.a') and not current_cache_path.endswith('.b'):
+        logging.error("expecting {} to end with .a or .b!".format(current_cache_path))
+        return False
+
+    # we edit the other one
+    base_cache_path = current_cache_path[:-2]
+    if current_cache_path.endswith('.a'):
+        target_cache_path = '{}.b'.format(base_cache_path)
+    else:
+        target_cache_path = '{}.a'.format(base_cache_path)
+
+    logging.info("updating {}".format(target_cache_path))
+    
+    if os.path.exists(target_cache_path):
+        try:
+            logging.info("deleting existing crits cache {}".format(target_cache_path))
+            os.remove(target_cache_path)
+        except Exception as e:
+            logging.error("unable to delete {}: {}".format(target_cache_path, e))
+            return False
+
+    cache_db = sqlite3.connect(target_cache_path)
+    db_cursor = cache_db.cursor()
+    db_cursor.execute("""CREATE TABLE indicators ( 
+                           id TEXT PRIMARY KEY, 
+                           type TEXT NOT NULL,
+                           value TEXT NOT NULL )""")
+    db_cursor.execute("CREATE INDEX i_type_value_index ON indicators ( type, value )")
+
+    logging.info("caching indicators...")
+    c = 0
+    for indicator in sip_client.get('/api/indicators?status=Analyzed&bulk=True'):
+        db_cursor.execute("INSERT INTO indicators ( id, type, value ) VALUES ( ?, ?, LOWER(?) )", 
+                         (str(indicator['id']), indicator['type'], indicator['value']))
+        c += 1
+
+    logging.info("comitting changes to database...")
+    cache_db.commit()
+    logging.info("updating symlink...")
+    # now point current link to our new database
+    # leaving the old one in place for current processes to keep using
+    try:
+        try:
+            os.remove(cache_path)
+        except:
+            pass
+
+        os.symlink(os.path.basename(target_cache_path), cache_path)
+
+    except Exception as e:
+        logging.error("failed to update symlink: {}".format(e))
+
+    logging.info("done")
+    logging.debug("loaded {} indicators".format(c))
+    return True

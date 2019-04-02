@@ -4,6 +4,9 @@
 
 import json
 import logging
+import os
+import os.path
+import sqlite3
 
 import saq
 from saq.constants import *
@@ -196,3 +199,91 @@ def sync_crits_activity(alert):
         else:
             logging.error("activity not added to {} for alert {}, status {}".format(crits_id, alert.uuid, str(r.status_code)))
             logging.error("     : {}{}{}".format(activity_url,crits_id, data))
+
+def update_local_cache():
+    """Updates the local sqlite database with a complete indexed copy of the important CRITS indicator database."""
+
+    from pymongo import MongoClient
+
+    cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path'])
+
+    # the actual file should be a symlink
+    if os.path.exists(cache_path) and not os.path.islink(cache_path):
+        logging.error("{} should be a symlink but it's not!".format(cache_path))
+        return False
+
+    # get the file the symlink points to
+    current_cache_path = None
+    if os.path.exists(cache_path):
+        current_cache_path = os.path.realpath(cache_path)
+    else:
+        current_cache_path = '{}.b'.format(cache_path)
+    
+    # there are two files that end with .a and .b
+    if not current_cache_path.endswith('.a') and not current_cache_path.endswith('.b'):
+        logging.error("expecting {} to end with .a or .b!".format(current_cache_path))
+        return False
+
+    # we edit the other one
+    base_cache_path = current_cache_path[:-2]
+    if current_cache_path.endswith('.a'):
+        target_cache_path = '{}.b'.format(base_cache_path)
+    else:
+        target_cache_path = '{}.a'.format(base_cache_path)
+
+    logging.info("updating {}".format(target_cache_path))
+    
+    if os.path.exists(target_cache_path):
+        try:
+            logging.info("deleting existing crits cache {}".format(target_cache_path))
+            os.remove(target_cache_path)
+        except Exception as e:
+            logging.error("unable to delete {}: {}".format(target_cache_path, e))
+            return False
+
+    cache_db = sqlite3.connect(target_cache_path)
+    db_cursor = cache_db.cursor()
+    db_cursor.execute("""CREATE TABLE indicators ( 
+                           id TEXT PRIMARY KEY, 
+                           type TEXT NOT NULL,
+                           value TEXT NOT NULL )""")
+    db_cursor.execute("CREATE INDEX i_type_value_index ON indicators ( type, value )")
+
+    client = MongoClient(saq.CONFIG['crits']['mongodb_uri'])
+    db = client['crits']
+    collection = db['indicators']
+    c = 0
+
+    logging.info("caching indicators...")
+    for indicator in collection.find({'status': 'Analyzed'}):
+        value = indicator['value']
+        """
+        # Doing this invalidates many of our URI - Path indicators
+        # need to fix this on the fly
+        if indicator['type'] == 'URI - Path':
+            if not value.startswith('/'):
+                value = '/{}'.format(value)
+        """
+        db_cursor.execute("INSERT INTO indicators ( id, type, value ) VALUES ( ?, ?, LOWER(?) )", 
+                         (str(indicator['_id']), indicator['type'], value))
+        c += 1
+
+    logging.info("comitting changes to database...")
+    cache_db.commit()
+    logging.info("updating symlink...")
+    # now point current link to our new database
+    # leaving the old one in place for current processes to keep using
+    try:
+        try:
+            os.remove(cache_path)
+        except:
+            pass
+
+        os.symlink(os.path.basename(target_cache_path), cache_path)
+
+    except Exception as e:
+        logging.error("failed to update symlink: {}".format(e))
+
+    logging.info("done")
+    logging.debug("loaded {} indicators".format(c))
+    return True
