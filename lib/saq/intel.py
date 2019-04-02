@@ -1,121 +1,13 @@
+# vim: sw=4:ts=4:et
+#
+# utility functions and constants for intel (SIP) support
+
+import saq
+
+indicator_type_mapping = None
+observable_type_mapping = None
+
 # the list of valid indicator types
-
-__all__ = [
-    'I_ADJUST_TOKEN',
-    'I_API_KEY',
-    'I_AS_NUMBER',
-    'I_AS_NAME',
-    'I_BANK_ACCOUNT',
-    'I_BITCOIN_ACCOUNT',
-    'I_CERTIFICATE_FINGERPRINT',
-    'I_CERTIFICATE_NAME',
-    'I_CHECKSUM_CRC16',
-    'I_CMD_LINE',
-    'I_COMPANY_NAME',
-    'I_COOKIE_NAME',
-    'I_COUNTRY',
-    'I_CRX',
-    'I_DEBUG_PATH',
-    'I_DEBUG_STRING',
-    'I_DEST_PORT',
-    'I_DEVICE_IO',
-    'I_DOC_FROM_URL',
-    'I_DOMAIN',
-    'I_EMAIL_BOUNDARY',
-    'I_EMAIL_ADDRESS',
-    'I_EMAIL_FROM',
-    'I_EMAIL_HEADER_FIELD',
-    'I_EMAIL_HELO',
-    'I_EMAIL_MESSAGE_ID',
-    'I_EMAIL_ORIGINATING_IP',
-    'I_EMAIL_REPLY_TO',
-    'I_EMAIL_SENDER',
-    'I_EMAIL_SUBJECT',
-    'I_EMAIL_X_MAILER',
-    'I_EMAIL_X_ORIGINATING_IP',
-    'I_FILE_CREATED',
-    'I_FILE_DELETED',
-    'I_FILE_MOVED',
-    'I_FILE_NAME',
-    'I_FILE_OPENED',
-    'I_FILE_PATH',
-    'I_FILE_READ',
-    'I_FILE_WRITTEN',
-    'I_GET_PARAM',
-    'I_HEX_STRING',
-    'I_HTML_ID',
-    'I_HTTP_REQUEST',
-    'I_HTTP_RESP_CODE',
-    'I_IMPHASH',
-    'I_IPV4_ADDRESS',
-    'I_IPV4_SUBNET',
-    'I_IPV6_ADDRESS',
-    'I_IPV6_SUBNET',
-    'I_LATITUDE',
-    'I_LAUNCH_AGENT',
-    'I_LOCATION',
-    'I_LONGITUDE',
-    'I_MAC_ADDRESS',
-    'I_MALWARE_NAME',
-    'I_MD5',
-    'I_MEMORY_ALLOC',
-    'I_MEMORY_PROTECT',
-    'I_MEMORY_READ',
-    'I_MEMORY_WRITTEN',
-    'I_MUTANT_CREATED',
-    'I_MUTEX',
-    'I_NAME_SERVER',
-    'I_OTHER_FILE_OP',
-    'I_PASSWORD',
-    'I_PASSWORD_SALT',
-    'I_PAYLOAD_DATA',
-    'I_PAYLOAD_TYPE',
-    'I_PIPE',
-    'I_POST_DATA',
-    'I_PROCESS_NAME',
-    'I_PROTOCOL',
-    'I_REFERER',
-    'I_REFERER_OF_REFERER',
-    'I_REGISTRAR',
-    'I_REGISTRY_KEY',
-    'I_REG_KEY_CREATED',
-    'I_REG_KEY_DELETED',
-    'I_REG_KEY_ENUMERATED',
-    'I_REG_KEY_MONITORED',
-    'I_REG_KEY_OPENED',
-    'I_REG_KEY_VALUE_CREATED',
-    'I_REG_KEY_VALUE_DELETED',
-    'I_REG_KEY_VALUE_MODIFIED',
-    'I_REG_KEY_VALUE_QUERIED',
-    'I_SERVICE_NAME',
-    'I_SHA1',
-    'I_SHA256',
-    'I_SMS_ORIGIN',
-    'I_SOURCE_PORT',
-    'I_SSDEEP',
-    'I_TELEPHONE',
-    'I_TIME_CREATED',
-    'I_TIME_UPDATED',
-    'I_TRACKING_ID',
-    'I_TS_END',
-    'I_TS_START',
-    'I_URI',
-    'I_URI_PATH',
-    'I_USER_AGENT',
-    'I_USER_ID',
-    'I_VICTIM_IP',
-    'I_VOLUME_QUERIED',
-    'I_WEBSTORAGE_KEY',
-    'I_WEB_PAYLOAD',
-    'I_WHOIS_NAME',
-    'I_WHOIS_ADDR1',
-    'I_WHOIS_ADDR2',
-    'I_WHOIS_REGISTRANT_EMAIL_ADDRESS',
-    'I_WHOIS_TELEPHONE',
-    'I_XPI',
-    'valid_indicator_type',
-]
-
 I_ADJUST_TOKEN = 'adjust_token'
 I_API_KEY = 'api_key'
 I_AS_NUMBER = 'as_number'
@@ -346,3 +238,30 @@ all_indicator_types = [
 
 def valid_indicator_type(indicator_type):
     return indicator_type in all_indicator_types
+
+def load_indicator_type_mapping():
+    global indicator_type_mapping
+    if indicator_type_mapping is None:
+        indicator_type_mapping = {}
+        for k in saq.CONFIG['sip_indicator_type_mapping'].keys():
+            indicator_type_mapping[k] = saq.CONFIG['sip_indicator_type_mapping'][k]
+
+def get_indicator_type_mapping(indicator_type):
+    load_indicator_type_mapping()
+    try:
+        # return the internal SIP indicator type for the given default type
+        return indicator_type_mapping[indicator_type]
+    except KeyError:
+        # or just return the indicator type if it's not a default type
+        return indicator_type
+
+def load_observable_type_mapping():
+    global observable_type_mapping
+    if observable_type_mapping is None:
+        observable_type_mapping = {}
+        for k in saq.CONFIG['sip_observable_type_mappping'].keys():
+            observable_type_mapping[k] = saq.CONFIG['sip_observable_type_mappping'][k]
+
+def get_observables_by_type_mapping(indicator_type):
+    return observable_type_mapping[indicator_type] 
+
