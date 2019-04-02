@@ -450,3 +450,7 @@ ANALYSIS_TYPE_BRO_HTTP = 'bro - http'
 ANALYSIS_TYPE_CLOUDPHISH = 'cloudphish'
 ANALYSIS_TYPE_MANUAL = 'manual'
 ANALYSIS_TYPE_FAQUEUE = 'faqueue'
+
+# supported intelligence databases
+INTEL_DB_SIP = 'sip'
+INTEL_DB_CRITS = 'crits'

@@ -2225,177 +2225,22 @@ update_organization_parsers = subparsers.add_parser('update-organization',
 update_organization_parsers.set_defaults(func=update_organization)
 
 def update_crits_cache(args):
+    from saq.crits import update_local_cache
+    if update_local_cache():
+        sys.exit(0)
 
-    import saq
-    import sqlite3
-    from pymongo import MongoClient
-
-    cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path'])
-
-    # the actual file should be a symlink
-    if os.path.exists(cache_path) and not os.path.islink(cache_path):
-        logging.error("{} should be a symlink but it's not!".format(cache_path))
-        sys.exit(1)
-
-    # get the file the symlink points to
-    current_cache_path = None
-    if os.path.exists(cache_path):
-        current_cache_path = os.path.realpath(cache_path)
-    else:
-        current_cache_path = '{}.b'.format(cache_path)
-    
-    # there are two files that end with .a and .b
-    if not current_cache_path.endswith('.a') and not current_cache_path.endswith('.b'):
-        logging.error("expecting {} to end with .a or .b!".format(current_cache_path))
-        sys.exit(1)
-
-    # we edit the other one
-    base_cache_path = current_cache_path[:-2]
-    if current_cache_path.endswith('.a'):
-        target_cache_path = '{}.b'.format(base_cache_path)
-    else:
-        target_cache_path = '{}.a'.format(base_cache_path)
-
-    logging.info("updating {}".format(target_cache_path))
-    
-    if os.path.exists(target_cache_path):
-        try:
-            logging.info("deleting existing crits cache {}".format(target_cache_path))
-            os.remove(target_cache_path)
-        except Exception as e:
-            logging.error("unable to delete {}: {}".format(target_cache_path, e))
-            sys.exit(1)
-
-    cache_db = sqlite3.connect(target_cache_path)
-    db_cursor = cache_db.cursor()
-    db_cursor.execute("""CREATE TABLE indicators ( 
-                           id TEXT PRIMARY KEY, 
-                           type TEXT NOT NULL,
-                           value TEXT NOT NULL )""")
-    db_cursor.execute("CREATE INDEX i_type_value_index ON indicators ( type, value )")
-
-    client = MongoClient(saq.CONFIG['crits']['mongodb_uri'])
-    db = client['crits']
-    collection = db['indicators']
-    c = 0
-
-    logging.info("caching indicators...")
-    for indicator in collection.find({'status': 'Analyzed'}):
-        value = indicator['value']
-        """
-        # Doing this invalidates many of our URI - Path indicators
-        # need to fix this on the fly
-        if indicator['type'] == 'URI - Path':
-            if not value.startswith('/'):
-                value = '/{}'.format(value)
-        """
-        db_cursor.execute("INSERT INTO indicators ( id, type, value ) VALUES ( ?, ?, LOWER(?) )", 
-                         (str(indicator['_id']), indicator['type'], value))
-        c += 1
-
-    logging.info("comitting changes to database...")
-    cache_db.commit()
-    logging.info("updating symlink...")
-    # now point current link to our new database
-    # leaving the old one in place for current processes to keep using
-    try:
-        try:
-            os.remove(cache_path)
-        except:
-            pass
-
-        os.symlink(os.path.basename(target_cache_path), cache_path)
-
-    except Exception as e:
-        logging.error("failed to update symlink: {}".format(e))
-
-    logging.info("done")
-
-    logging.debug("loaded {} indicators".format(c))
-    sys.exit(0)
+    sys.exit(1)
 
 update_crits_cache_parser = subparsers.add_parser('update-crits-cache',
     help="Updates the local CRITS cache used by the analysis modules.")
 update_crits_cache_parser.set_defaults(func=update_crits_cache)
 
 def update_sip_cache(args):
+    from saq.intel import update_local_cache
+    if update_local_cache():
+        sys.exit(0)
 
-    import saq
-    import sqlite3
-    import pysip
-
-    sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
-    cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['sip']['cache_db_path'])
-
-    # the actual file should be a symlink
-    if os.path.exists(cache_path) and not os.path.islink(cache_path):
-        logging.error("{} should be a symlink but it's not!".format(cache_path))
-        sys.exit(1)
-
-    # get the file the symlink points to
-    current_cache_path = None
-    if os.path.exists(cache_path):
-        current_cache_path = os.path.realpath(cache_path)
-    else:
-        current_cache_path = '{}.b'.format(cache_path)
-    
-    # there are two files that end with .a and .b
-    if not current_cache_path.endswith('.a') and not current_cache_path.endswith('.b'):
-        logging.error("expecting {} to end with .a or .b!".format(current_cache_path))
-        sys.exit(1)
-
-    # we edit the other one
-    base_cache_path = current_cache_path[:-2]
-    if current_cache_path.endswith('.a'):
-        target_cache_path = '{}.b'.format(base_cache_path)
-    else:
-        target_cache_path = '{}.a'.format(base_cache_path)
-
-    logging.info("updating {}".format(target_cache_path))
-    
-    if os.path.exists(target_cache_path):
-        try:
-            logging.info("deleting existing crits cache {}".format(target_cache_path))
-            os.remove(target_cache_path)
-        except Exception as e:
-            logging.error("unable to delete {}: {}".format(target_cache_path, e))
-            sys.exit(1)
-
-    cache_db = sqlite3.connect(target_cache_path)
-    db_cursor = cache_db.cursor()
-    db_cursor.execute("""CREATE TABLE indicators ( 
-                           id TEXT PRIMARY KEY, 
-                           type TEXT NOT NULL,
-                           value TEXT NOT NULL )""")
-    db_cursor.execute("CREATE INDEX i_type_value_index ON indicators ( type, value )")
-
-    logging.info("caching indicators...")
-    c = 0
-    for indicator in sip_client.get('/api/indicators?status=Analyzed&bulk=True'):
-        db_cursor.execute("INSERT INTO indicators ( id, type, value ) VALUES ( ?, ?, LOWER(?) )", 
-                         (str(indicator['id']), indicator['type'], indicator['value']))
-        c += 1
-
-    logging.info("comitting changes to database...")
-    cache_db.commit()
-    logging.info("updating symlink...")
-    # now point current link to our new database
-    # leaving the old one in place for current processes to keep using
-    try:
-        try:
-            os.remove(cache_path)
-        except:
-            pass
-
-        os.symlink(os.path.basename(target_cache_path), cache_path)
-
-    except Exception as e:
-        logging.error("failed to update symlink: {}".format(e))
-
-    logging.info("done")
-
-    logging.debug("loaded {} indicators".format(c))
-    sys.exit(0)
+    sys.exit(1)
 
 update_sip_cache_parser = subparsers.add_parser('update-sip-cache',
     help="Updates the local SIP cache used by the analysis modules.")
