@@ -43,10 +43,11 @@ then
         saq.modules.test_http \
         saq.modules.test_hal9000 \
         saq.modules.test_crits \
+        saq.modules.test_intel \
         api.analysis.test \
         api.engine.test \
         api.cloudphish.test \
-	api.events.test \
+        api.events.test \
         test_ace_api \
 
         #saq.collectors.test_cb_binaries \
