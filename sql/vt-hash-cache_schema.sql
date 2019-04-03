@@ -25,7 +25,7 @@ DROP TABLE IF EXISTS `result_cache`;
 CREATE TABLE `result_cache` (
   `result_id` int(11) NOT NULL AUTO_INCREMENT,
   `insert_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `result` mediumtext NOT NULL,
+  `result` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci NOT NULL,
   `md5` char(32) DEFAULT NULL,
   `sha1` char(40) DEFAULT NULL,
   `sha2` char(64) DEFAULT NULL,
@@ -46,4 +46,4 @@ CREATE TABLE `result_cache` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-02-18 15:08:23
+-- Dump completed on 2019-03-22 12:57:35

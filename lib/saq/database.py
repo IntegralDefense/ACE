@@ -1525,6 +1525,10 @@ class Observable(Base):
         BLOB,
         nullable=False)
 
+    @property
+    def display_value(self):
+        return self.value.decode('utf8', errors='ignore')
+
     tags = relationship('saq.database.ObservableTagMapping', passive_deletes=True, passive_updates=True)
 
 class ObservableMapping(Base):
