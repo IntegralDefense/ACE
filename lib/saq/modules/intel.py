@@ -88,9 +88,8 @@ class IntelAnalyzer(AnalysisModule):
             return False
 
         # extract any tags (buckets) associated with the indicator
-        #if 'bucket_list' in mongo_object and isinstance(mongo_object['bucket_list'], list):
-            #for tag in mongo_object['bucket_list']:
-                #indicator.add_tag(tag)
+        for tag in intel['tags']:
+            indicator.add_tag(tag)
 
         # add any associated campaigns as tags as well
         #if 'campaign' in analysis.details:
