@@ -24,7 +24,7 @@ import requests
 from flask import url_for
 
 # part of our sample set of data
-TEST_URL = 'http://localhost:8080/Payment_Advice.pdf'
+TEST_URL = 'http://localhost:8088/Payment_Advice.pdf'
 
 class CloudphishTestCase(TestCase):
     def __init__(self, *args, **kwargs):
@@ -44,7 +44,7 @@ class CloudphishTestCase(TestCase):
 
     def start_http_server(self):
         logging.debug("starting http server")
-        self.http_server = Popen(['python3', '-m', 'http.server', '8080'], 
+        self.http_server = Popen(['python3', '-m', 'http.server', '8088'], 
                            cwd=os.path.join(saq.SAQ_HOME, 'test_data', 'pdf'), stdout=PIPE, stderr=PIPE)
 
         def _reader(p):
