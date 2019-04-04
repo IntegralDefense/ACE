@@ -863,3 +863,31 @@ class TestCase(ACEModuleTestCase):
         # we should have an alert
         alert = saq.db.query(Alert).first()
         self.assertIsNotNone(alert)
+
+    def test_mhtml_analysis(self):
+
+        root = create_root_analysis(analysis_mode='test_groups')
+        root.initialize_storage()
+        shutil.copy(os.path.join('test_data', 'mhtml', 'Invoice_PDF.mht'), root.storage_dir)
+        file_observable = root.add_observable(F_FILE, 'Invoice_PDF.mht')
+        root.save()
+        root.schedule()
+    
+        engine = TestEngine(pool_size_limit=1)
+        engine.enable_alerting()
+        engine.enable_module('analysis_module_mhtml', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+
+        from saq.modules.file_analysis import MHTMLAnalysis
+        analysis = file_observable.get_analysis(MHTMLAnalysis)
+        self.assertIsNotNone(analysis)
+        # should have extracted a single file
+        self.assertEquals(len(analysis.details), 1)
+        self.assertEquals(len(analysis.get_observables_by_type(F_FILE)), 1)

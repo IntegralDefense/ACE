@@ -2972,12 +2972,11 @@ class URLEmailPivotAnalyzer(AnalysisModule):
                 c = db.cursor()
                 c.execute("""
 SELECT 
-    COUNT(DISTINCT(asrch.archive_id))
+    COUNT(DISTINCT(archive_id))
 FROM 
-    archive_search asrch JOIN archive a ON asrch.archive_id = a.archive_id
-    JOIN archive_index ai ON a.archive_id = ai.archive_id
+    archive_index 
 WHERE 
-    ai.field = 'url' AND ai.hash = UNHEX(%s)""", ( url_md5, ))
+    field = 'url' AND hash = UNHEX(%s)""", ( url_md5, ))
 
                 # first we check to see how many of these we've got
                 row = c.fetchone()
