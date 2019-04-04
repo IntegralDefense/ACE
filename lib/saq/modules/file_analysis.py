@@ -1,6 +1,7 @@
 import base64
 import csv
 import datetime
+import email.parser
 import fnmatch
 import gc
 import hashlib
@@ -3987,4 +3988,105 @@ class OfficeFileArchiver(AnalysisModule):
 
         analysis = self.create_analysis(_file)
         analysis.details = target_path
+        return True
+
+class MHTMLAnalysis(Analysis):
+    def initialize_details(self):
+        self.details = [] 
+
+    def generate_summary(self):
+        if not self.details:
+            return None
+
+        return "MHTML Analyssis - extracted {} files".format(len(self.details))
+
+class MHTMLAnalysisModule(AnalysisModule):
+
+    # list of supported file extensions for this module
+    MHTML_FILE_EXTENSIONS = [ '.mhtml', '.mht', '.eml' ]
+
+    # simple regex looking for start of a MIME header
+    RE_HEADER = re.compile(b'^[a-zA-Z0-9-_]+:')
+
+    @property
+    def generated_analysis_type(self):
+        return MHTMLAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return F_FILE
+
+    def verify_environment(self):
+        pass
+
+    def execute_analysis(self, _file):
+        local_file_path = get_local_file_path(self.root, _file)
+        if not os.path.exists(local_file_path):
+            logging.error("cannot find local file path for {}".format(_file.value))
+            return False
+
+        matching_file_ext = False
+        for file_ext in self.MHTML_FILE_EXTENSIONS:
+            if _file.value.lower().endswith(file_ext):
+                matching_file_ext = True
+                break
+
+        if not matching_file_ext:
+            return False
+
+        try:
+            parser = email.parser.BytesFeedParser()
+            state_started_headers = False
+            with open(local_file_path, 'rb') as fp:
+                # skip any garbage at the start of the file
+                for line in fp:
+                    if not state_started_headers:
+                        if not self.RE_HEADER.search(line):
+                            continue
+                        else:
+                            state_started_headers = True
+
+                    parser.feed(line)
+
+            parsed_file = parser.close()
+
+        except Exception as e:
+            logging.warning(f"unable to parse {local_file_path}: {e}")
+            return False
+
+        target_dir = f'{local_file_path}.extracted'
+        if not os.path.exists(target_dir):
+            try:
+                os.mkdir(target_dir)
+            except Exception as e:
+                logging.error(f"unable to create {target_dir}: {e}")
+                return False
+
+        analysis = self.create_analysis(_file)
+
+        part_id = 0
+        for part in parsed_file.walk():
+            if part.get_content_maintype() == 'multipart':
+                continue
+
+            part_name = f'file_{part_id}'
+            part_id += 1
+
+            # TODO try to determine what the file name should be
+            #part_name = part.get_param('name')
+            #if not part_name:
+
+            try:
+                target_path = os.path.join(target_dir, part_name)
+                with open(target_path, 'wb') as fp:
+                    fp.write(part.get_payload(decode=True))
+
+                file_observable = analysis.add_observable(F_FILE, os.path.relpath(target_path, start=self.root.storage_dir))
+                _file.copy_directives_to(file_observable)
+
+                analysis.details.append(file_observable.value)
+
+            except Exception as e:
+                logging.error(f"unable to extract part #{part_id - 1} from {_file.value}: {e}")
+
         return True
