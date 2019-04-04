@@ -20,7 +20,7 @@ from saq.util import *
 
 import requests
 
-TEST_URL = 'http://localhost:8080/Payment_Advice.pdf'
+TEST_URL = 'http://localhost:8088/Payment_Advice.pdf'
 
 class TestCase(CloudphishTestCase, ACEModuleTestCase):
 
@@ -116,7 +116,7 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         self.assertEquals(q[KEY_DETAILS][KEY_DETAILS_CONTEXT]['ignore_filters'], '0')
         self.assertEquals(q[KEY_DETAILS][KEY_DETAILS_CONTEXT]['reprocess'], '0')
 
-        self.assertEquals(q[KEY_DETAILS][KEY_DETAILS_SHA256_URL].upper(), 'B009F8821B162674B819A2365B07A536645A42657E75BB3996C8B6127E993806')
+        self.assertEquals(q[KEY_DETAILS][KEY_DETAILS_SHA256_URL].upper(), '34EA4A6D2BAF9E2AC782ADEB4E6FF71C72791B0D4CDC02DD6204BB073281C3A8')
         self.assertEquals(q[KEY_DETAILS][KEY_DETAILS_URL], TEST_URL)
         
         self.assertEquals(q[KEY_FILE_NAME], 'Payment_Advice.pdf')
@@ -125,7 +125,7 @@ class TestCase(CloudphishTestCase, ACEModuleTestCase):
         self.assertEquals(q[KEY_LOCATION], saq.SAQ_NODE)
         self.assertEquals(q[KEY_RESULT], RESULT_OK)
         self.assertEquals(q[KEY_SHA256_CONTENT].upper(), 'FA13C652534F9207BEEC811A50948860F5B3194AEAE686FCDECAC645FAE65D15')
-        self.assertEquals(q[KEY_SHA256_URL].upper(), 'B009F8821B162674B819A2365B07A536645A42657E75BB3996C8B6127E993806')
+        self.assertEquals(q[KEY_SHA256_URL].upper(), '34EA4A6D2BAF9E2AC782ADEB4E6FF71C72791B0D4CDC02DD6204BB073281C3A8')
         self.assertEquals(q[KEY_STATUS], STATUS_ANALYZED)
         self.assertIsNotNone(q[KEY_UUID])
 
