@@ -1835,7 +1835,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         try:
                             shutil.rmtree(self.root.storage_dir)
                         except Exception as e:
-                            logging.error("unable to clear {}: {}".format(self.root.storage_dir))
+                            logging.error("unable to clear {}: {}".format(self.root.storage_dir, e))
                     else:
                         logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
 
