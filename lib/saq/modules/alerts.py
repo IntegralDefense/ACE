@@ -107,7 +107,7 @@ class ACEAlertsAnalyzer(AnalysisModule):
                             JOIN alerts a
                                 ON a.id = om.alert_id
                         WHERE
-                            o.type = %s AND o.value = %s {avoid_self}
+                            o.type = %s AND o.md5 = UNHEX(MD5(%s)) {avoid_self}
                         ORDER BY
                             a.insert_date DESC"""
 
