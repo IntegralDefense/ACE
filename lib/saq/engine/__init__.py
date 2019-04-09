@@ -681,14 +681,16 @@ class Engine(object):
     @use_db
     def workload_queue_size(self, db, c):
         """Returns the size of the workload queue (for this node.)"""
-        where_clause = [ 'node_id = %s', 'company_id = %s' ]
-        params = [ saq.SAQ_NODE_ID, saq.COMPANY_ID ]
+        where_clause = [ 'node_id = %s' ]
+        params = [ saq.SAQ_NODE_ID ]
 
         if self.is_local:
             where_clause.append('exclusive_uuid = %s')
             params.append(self.exclusive_uuid)
         else:
             where_clause.append('exclusive_uuid IS NULL')
+            where_clause.append('company_id = %s')
+            params.append(saq.COMPANY_ID)
 
         if self.local_analysis_modes:
             where_clause.append('workload.analysis_mode IN ( {} )'.format(','.join(['%s' for _ in self.local_analysis_modes])))
@@ -2252,6 +2254,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
     
         # MAIN LOOP
         # keep going until there is nothing to analyze
+        logging.info(f"starting analysis on {self.root} with a workload of {len(work_stack)}")
         while not self.cancel_analysis_flag:
             # the current WorkTarget
             work_item = None
