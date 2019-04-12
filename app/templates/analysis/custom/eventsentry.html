@@ -1,0 +1,18 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+<div class="panel panel-default">
+    <div class="panel-heading">Event Details</div>
+    <div class="panel-body">
+        <table class="table">
+        <tr>
+            <td><b>Event Name</b></td>
+            <td>{{analysis.details['event_name']}}</td>
+        </tr>
+        <tr>
+            <td><b>Wiki Link</b></td>
+            <td><a href="{{analysis.details['wiki_url']}}">{{analysis.details['wiki_url']}}</a></td>
+        </tr>
+        </table>
+    </div>
+</div>
+{% endblock %}
