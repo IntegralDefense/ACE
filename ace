@@ -392,6 +392,7 @@ def correlate(args):
 
     engine = Engine(single_threaded_mode=args.single_threaded)
     engine.set_local()
+    engine.disable_alerting()
 
     def _cleanup():
         nonlocal engine
@@ -468,6 +469,10 @@ def correlate(args):
 
     if args.load:
         root.load()
+
+        # we override whatever previous analysis mode it had
+        root.analysis_mode = ANALYSIS_MODE_CLI if args.analysis_mode is None else args.analysis_mode
+
     else:
         # set all of the properties individually
         # XXX only require company_id in RootAnalysis
@@ -480,11 +485,15 @@ def correlate(args):
         root.analysis_mode = ANALYSIS_MODE_CLI if args.analysis_mode is None else args.analysis_mode
         root.description = args.description if args.description else 'Command Line Correlation'
         root.event_time = datetime.datetime.now() if reference_time is None else reference_time
-        root.details = { 
-            'local_user': pwd.getpwuid(os.getuid())[0],
-            'local_user_uid': os.getuid(),
-            'comment': args.comment
-        }
+        if args.load_details:
+            with open(args.load_details, 'r') as fp:
+                root.details = json.load(fp)
+        else:
+            root.details = { 
+                'local_user': pwd.getpwuid(os.getuid())[0],
+                'local_user_uid': os.getuid(),
+                'comment': args.comment
+            }
 
     # create the list of observables to add to the alert for analysis
     index = 0
@@ -702,6 +711,8 @@ correlate_parser.add_argument('--stdin-type', required=False, dest='stdin_type',
     #help="Skip analyzing the alert. Useful if you just want to send a bunch of stuff to ACE for analysis.")
 correlate_parser.add_argument('--load', required=False, dest='load', action='store_true', default=False,
     help="Instead of creating a new analysis, load the existing analysis stored at --storage-dir.")
+correlate_parser.add_argument('--load-details', required=False, dest='load_details', default=None,
+    help="Load the given JSON file as the details of the alert.")
 correlate_parser.add_argument('targets', nargs="*",
     help="One or more pairs of indicator types and values.")
 correlate_parser.set_defaults(func=correlate)
@@ -1434,7 +1445,6 @@ network_semaphore_test.set_defaults(func=test_network_semaphore)
 # alert management
 #
 
-# XXX FIX ME
 def resync_alert(args):
     """Remaps observables, tags, and profile points to the alert."""
     from saq.database import Alert, DatabaseSession
@@ -1442,8 +1452,7 @@ def resync_alert(args):
 
     storage_dirs = []
     if args.resync_all:
-        session = DatabaseSession()
-        for alert in session.query(Alert).with_entities(Alert.storage_dir).filter(Alert.location == saq.SAQ_NODE):
+        for alert in saq.db.query(Alert).with_entities(Alert.storage_dir).filter(Alert.location == saq.SAQ_NODE):
             storage_dirs.append(alert.storage_dir)
     else:
         storage_dirs = args.dirs
@@ -1459,16 +1468,8 @@ def resync_alert(args):
 
         # load the alert
         alert = None
-        session = None
 
-        try:
-            session = DatabaseSession()
-            alert = session.query(Alert).filter(Alert.storage_dir==storage_dir).one()
-        except Exception as e:
-            logging.error("unable to load alert from database with storage_dir {}: {}".format(storage_dir, e))
-        finally:
-            if session:
-                session.close()
+        alert = saq.db.query(Alert).filter(Alert.storage_dir==storage_dir).one()
 
         try:
             if not alert.load():

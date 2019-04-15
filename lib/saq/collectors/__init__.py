@@ -8,6 +8,7 @@ import logging
 import os, os.path
 import pickle
 import shutil
+import signal
 import socket
 import threading
 import uuid
@@ -76,15 +77,13 @@ class Submission(object):
     def __str__(self):
         return "{} ({})".format(self.description, self.analysis_mode)
 
-    def success(self, result):
-        """Called by the RemoteNodeGroup when this has been successfully submitted to a remote node.
-           result is the result of the ace_api.submit command for the submission
-           By default this deletes any files submitted."""
+    def success(self, group, result):
+        """Called by the RemoteNodeGroup when this has been successfully submitted to a remote node group.
+           result is the result of the ace_api.submit command for the submission"""
         pass
 
-    def fail(self):
-        """Called by the RemoteNodeGroup when this has failed to be submitted and full_delivery is disabled.
-           By default this deletes any files submitted."""
+    def fail(self, group):
+        """Called by the RemoteNodeGroup when this has failed to be submitted and full_delivery is disabled."""
         pass
 
 class RemoteNode(object):
@@ -157,7 +156,7 @@ class RemoteNodeGroup(object):
     """Represents a collection of one or more RemoteNode objects that share the
        same group configuration property."""
 
-    def __init__(self, name, coverage, full_delivery, company_id, database, group_id, workload_type_id, batch_size=32):
+    def __init__(self, name, coverage, full_delivery, company_id, database, group_id, workload_type_id, shutdown_event, batch_size=32):
         assert isinstance(name, str) and name
         assert isinstance(coverage, int) and coverage > 0 and coverage <= 100
         assert isinstance(full_delivery, bool)
@@ -165,6 +164,7 @@ class RemoteNodeGroup(object):
         assert isinstance(database, str)
         assert isinstance(group_id, int)
         assert isinstance(workload_type_id, int)
+        assert isinstance(shutdown_event, threading.Event)
 
         self.name = name
 
@@ -200,8 +200,8 @@ class RemoteNodeGroup(object):
         # main thread of execution for this group
         self.thread = None
 
-        # set this to True to gracefully shut down the group
-        self.shutdown_event = threading.Event()
+        # reference to Controller.shutdown_event, used to synchronize a clean shutdown
+        self.shutdown_event = shutdown_event
 
         # when do we think a node has gone offline
         # each node (engine) should update it's status every [engine][node_status_update_frequency] seconds
@@ -316,8 +316,16 @@ ORDER BY
             node_status = node_c.fetchall()
 
         if not node_status:
-            logging.debug("no remote nodes are avaiable for all analysis modes {} for {}".format(
-                          ','.join(available_modes), self))
+            logging.warning("no remote nodes are avaiable for all analysis modes {} for {}".format(
+                            ','.join(available_modes), self))
+
+            if not self.full_delivery:
+                # if this node group is NOT in full_delivery mode and there are no nodes available at all
+                # then we just clear out the work queue for this group
+                # if this isn't done then the work will pile up waiting for a node to come online
+                execute_with_retry(db, c, "UPDATE work_distribution SET status = 'ERROR' WHERE group_id = %s",
+                                  (self.group_id,), commit=True)
+
             return NO_NODES_AVAILABLE
 
         # now figure out what analysis modes are actually available for processing
@@ -382,10 +390,11 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
             try:
                 submission = pickle.loads(submission_blob)
             except Exception as e:
-                execute_with_retry(db, c, """UPDATE work_distribution SET status = 'COMPLETED' 
+                execute_with_retry(db, c, """UPDATE work_distribution SET status = 'ERROR' 
                                              WHERE group_id = %s AND work_id = %s""",
                                   (self.group_id, self.work_id), commit=True)
                 logging.error("unable to un-pickle submission blob for id {}: {}".format(work_id, e))
+                continue
 
             # simple flag to remember if we failed to send
             submission_failed = False
@@ -424,67 +433,48 @@ LIMIT %s""".format(','.join(['%s' for _ in available_modes]))
                         and not isinstance(e, urllib3.exceptions.NewConnectionError) \
                         and not isinstance(e, requests.exceptions.ConnectionError):
                             # if it's not a connection issue then report it
-                            report_exception()
+                            #report_exception()
+                            pass
 
                     log_function("unable to submit work item {} to {} via group {}: {}".format(
                                  submission, target, self, e))
 
                     # if we are in full delivery mode then we need to try this one again later
-                    if self.full_delivery:
+                    if self.full_delivery and (isinstance(e, urllib3.exceptions.MaxRetryError) \
+                                          or isinstance(e, urllib3.exceptions.NewConnectionError) \
+                                          or isinstance(e, requests.exceptions.ConnectionError)):
                         continue
 
+                    # otherwise we consider it a failure
                     submission_failed = True
+                    execute_with_retry(db, c, """UPDATE work_distribution SET status = 'ERROR' 
+                                                 WHERE group_id = %s AND work_id = %s""",
+                                      (self.group_id, work_id), commit=True)
+            
+            # if we skipped it or we sent it, then we're done with it
+            if not submission_failed:
+                execute_with_retry(db, c, """UPDATE work_distribution SET status = 'COMPLETED' 
+                                             WHERE group_id = %s AND work_id = %s""",
+                                  (self.group_id, work_id), commit=True)
 
-            # at this point we either sent it or we tried and failed but that's OK
-            execute_with_retry(db, c, """UPDATE work_distribution SET status = 'COMPLETED' 
-                                         WHERE group_id = %s AND work_id = %s""",
-                              (self.group_id, work_id), commit=True)
-
-            # check to see if we're the last attempt on this work item
-            c.execute("""
-SELECT 
-    COUNT(*) 
-FROM 
-    incoming_workload JOIN work_distribution ON incoming_workload.id = work_distribution.work_id
-WHERE
-    incoming_workload.id = %s
-    AND work_distribution.status = 'READY'
-""", (work_id,))
-            result = c.fetchone()
-            db.commit()
-            result = result[0]
-
-            if result == 0:
-                logging.debug("completed work item {}".format(submission))
-                execute_with_retry(db, c, "DELETE FROM incoming_workload WHERE id = %s", (work_id,), commit=True)
-
-                # give the collector a chance to do something with the
-                # submission BEFORE we delete the incoming directory for it
-                if submission_failed:
-                    try:
-                        submission.fail()
-                    except Exception as e:
-                        logging.error("call to {}.fail() failed: {}".format(submission, e))
-                        report_exception()
-                else:
-                    try:
-                        submission.success(submission_result)
-                    except Exception as e:
-                        logging.error("call to {}.success() failed: {}".format(submission, e))
-                        report_exception()
-
-                if submission.files:
-                    try:
-                        target_dir = os.path.join(self.incoming_dir, submission.uuid)
-                        shutil.rmtree(target_dir)
-                        logging.debug("deleted incoming dir {}".format(target_dir))
-                    except Exception as e:
-                        logging.error("unable to delete directory {}: {}".format(target_dir, e))
+            if submission_failed:
+                try:
+                    submission.fail(self)
+                except Exception as e:
+                    logging.error(f"call to {submission}.fail() failed: {e}")
+                    report_exception()
+            else:
+                try:
+                    submission.success(self, submission_result)
+                except Exception as e:
+                    logging.error(f"call to {submission}.success() failed: {e}")
+                    report_exception()
 
         if submission_success:
             return WORK_SUBMITTED
 
         return NO_WORK_SUBMITTED
+
 
     def __str__(self):
         return "RemoteNodeGroup(name={}, coverage={}, full_delivery={}, company_id={}, database={})".format(
@@ -570,7 +560,7 @@ class Collector(object):
         else:
             group_id = row[0]
 
-        remote_node_group = RemoteNodeGroup(name, coverage, full_delivery, company_id, database, group_id, self.workload_type_id)
+        remote_node_group = RemoteNodeGroup(name, coverage, full_delivery, company_id, database, group_id, self.workload_type_id, self.shutdown_event)
         self.remote_node_groups.append(remote_node_group)
         logging.info("added {}".format(remote_node_group))
         return remote_node_group
@@ -596,20 +586,27 @@ class Collector(object):
         if not self.remote_node_groups:
             raise RuntimeError("no RemoteNodeGroup objects have been added to {}".format(self))
 
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+
         self.collection_thread = threading.Thread(target=self.loop, name="Collector")
         self.collection_thread.start()
+
+        self.cleanup_thread = threading.Thread(target=self.cleanup_loop, name="Collector Cleanup")
+        self.cleanup_thread.start()
 
         # start the node groups
         for group in self.remote_node_groups:
             group.start()
+
+    def _signal_handler(self, signum, frame):
+        self.stop()
 
     def initialize(self):
         pass
 
     def stop(self):
         self.shutdown_event.set()
-        for group in self.remote_node_groups:
-            group.stop()
 
     def wait(self):
         logging.info("waiting for collection thread to terminate...")
@@ -618,7 +615,73 @@ class Collector(object):
             logging.info("waiting for {} thread to terminate...".format(group))
             group.wait()
 
+        logging.info("waiting for cleanup thread to terminate...")
+        self.cleanup_thread.join()
+
         logging.info("collection ended")
+
+    def cleanup_loop(self):
+        logging.debug("starting cleanup loop")
+        enable_cached_db_connections()
+
+        while True:
+            wait_time = 1
+            try:
+                if self.execute_workload_cleanup() > 0:
+                    wait_time = 0
+
+            except Exception as e:
+                logging.exception("unable to execute workload cleanup")
+
+            if self.shutdown_event.wait(wait_time):
+                break
+
+        disable_cached_db_connections()
+        logging.debug("exited cleanup loop")
+
+    @use_db
+    def execute_workload_cleanup(self, db, c):
+        # look up all the work that is currently completed
+        # a completed work item has no entries in the work_distribution table with a status of 'READY'
+        c.execute("""
+SELECT 
+    i.id, 
+    i.work
+FROM 
+    incoming_workload i JOIN work_distribution w ON i.id = w.work_id
+    JOIN incoming_workload_type t ON i.type_id = t.id
+WHERE
+    t.id = %s
+GROUP BY 
+    i.id, i.work
+HAVING
+    SUM(IF(w.status = 'READY', 1, 0)) = 0""", (self.workload_type_id,))
+
+        submission_count = 0
+        for work_id, submission_blob in c:
+            submission_count += 1
+            logging.debug(f"completed work item {work_id}")
+
+            submission = None
+
+            try:
+                submission = pickle.loads(submission_blob)
+            except Exception as e:
+                logging.error(f"unable to un-pickle submission blob for id {work_id}: {e}")
+
+            # clear any files that back the submission
+            if submission and submission.files:
+                try:
+                    target_dir = os.path.join(self.incoming_dir, submission.uuid)
+                    shutil.rmtree(target_dir)
+                    logging.debug(f"deleted incoming dir {target_dir}")
+                except Exception as e:
+                    logging.error(f"unable to delete directory {target_dir}: {e}")
+
+            # we finally clear the database entry for this workload item
+            execute_with_retry(db, c, "DELETE FROM incoming_workload WHERE id = %s", (work_id,), commit=True)
+
+        return submission_count
 
     def loop(self):
         enable_cached_db_connections()

@@ -587,6 +587,12 @@ class Engine(object):
         # in seconds
         self.alert_disposition_check_frequency = self.config.getint('alert_disposition_check_frequency')
 
+        # list of analysis modes we do NOT consider for alert status when we find a detection
+        self.non_detectable_modes = [_.strip() for _ in self.config['non_detectable_modes'].split(',')]
+
+        # by default alerting is turned on
+        self.alerting_enabled = True
+
     def __str__(self):
         return "Engine ({} - {})".format(saq.SAQ_NODE, self.name)
 
@@ -595,6 +601,15 @@ class Engine(object):
         self.exclusive_uuid = str(uuid.uuid4())
         saq.set_node(str(uuid.uuid4()))
         logging.info("set node {} to local exclusive uuid {}".format(saq.SAQ_NODE, self.exclusive_uuid))
+
+    def disable_alerting(self):
+        """Normally any analysis can contains any kind of detection will automatically become an alert.
+           This function overrides that behavior and disables it.
+           This is typically used for local (command line) correlation and unit testing."""
+        self.alerting_enabled = False
+
+    def enable_alerting(self):
+        self.alerting_enabled = True
 
     @property
     def is_local(self):
@@ -666,14 +681,16 @@ class Engine(object):
     @use_db
     def workload_queue_size(self, db, c):
         """Returns the size of the workload queue (for this node.)"""
-        where_clause = [ 'node_id = %s', 'company_id = %s' ]
-        params = [ saq.SAQ_NODE_ID, saq.COMPANY_ID ]
+        where_clause = [ 'node_id = %s' ]
+        params = [ saq.SAQ_NODE_ID ]
 
         if self.is_local:
             where_clause.append('exclusive_uuid = %s')
             params.append(self.exclusive_uuid)
         else:
             where_clause.append('exclusive_uuid IS NULL')
+            where_clause.append('company_id = %s')
+            params.append(saq.COMPANY_ID)
 
         if self.local_analysis_modes:
             where_clause.append('workload.analysis_mode IN ( {} )'.format(','.join(['%s' for _ in self.local_analysis_modes])))
@@ -1156,6 +1173,8 @@ class Engine(object):
         except Exception as e:
             logging.error("caught unknown error in {}: {}".format(self.lock_keepalive_thread, e))
             report_exception()
+
+        logging.debug(f"lock manager for {uuid} exited")
     #
     # DELAYED ANALYSIS
     # ------------------------------------------------------------------------
@@ -1650,12 +1669,14 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             logging.error("error processing work item {}: {}".format(work_item, e))
             report_exception()
 
+            self.stop_root_lock_manager()
             self.clear_work_target(work_item)
             return
 
         # if self.root is not set at this point then something went wrong
         if self.root is None:
             logging.warning(f"unless to process work item {work_item} (self.root was None)")
+            self.stop_root_lock_manager()
             return 
 
         logging.debug("analyzing {} in analysis_mode {}".format(self.root, self.root.analysis_mode))
@@ -1671,6 +1692,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                                                  Alert.disposition != None).count() != 0:
                     logging.info(f"skipping analysis of dispositioned alert {work_item.uuid}")
                     self.clear_work_target(work_item)
+                    self.stop_root_lock_manager()
                     return
 
         except Exception as e:
@@ -1684,6 +1706,43 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
 
         self.stop_root_lock_manager()
         self.clear_work_target(work_item)
+
+        #
+        # HANDLE DETECTION POINTS
+        #
+
+        if self.alerting_enabled:
+            # OK then is there any outstanding work assigned to this uuid?
+            try:
+                with get_db_connection() as db:
+                    c = db.cursor()
+                    c.execute("""SELECT uuid FROM workload WHERE uuid = %s
+                                 UNION SELECT uuid FROM delayed_analysis WHERE uuid = %s
+                                 UNION SELECT uuid FROM locks WHERE uuid = %s
+                                 LIMIT 1
+                                 """, (self.root.uuid, self.root.uuid, self.root.uuid))
+
+                    row = c.fetchone()
+                    db.commit()
+
+                    if row is None:
+                        # is this work item in a detectable analysis mode (any mode exception for correlation)
+                        if self.root.analysis_mode not in self.non_detectable_modes:
+                            # has this analysis been whitelisted?
+                            if not saq.FORCED_ALERTS and self.root.whitelisted:
+                                logging.debug(f"{self.root} has been whitelisted")
+                            elif self.root.has_detections():
+                                logging.info("{} has {} detection points - changing mode to {}".format(
+                                             self.root, len(self.root.all_detection_points), ANALYSIS_MODE_CORRELATION))
+                                self.root.analysis_mode = ANALYSIS_MODE_CORRELATION
+                            elif saq.FORCED_ALERTS:
+                                logging.warning("saq.FORCED_ALERTS is set to True")
+                                self.root.analysis_mode = ANALYSIS_MODE_CORRELATION
+
+            except Exception as e:
+                logging.error(f"trouble checking finished status of {self.root}: {e}")
+                report_exception()
+
 
         # did the analysis mode change?
         # NOTE that we do this AFTER locks are released
@@ -1707,6 +1766,24 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         except Exception as e:
                             logging.error(f"unable to move {self.root.storage_dir} to {target_dir}: {e}")
                             report_exception()
+
+                    # at this point we also need to update the workload and delayed analysis entries 
+                    # to point to the new storage_dir
+
+                    try:
+                        with get_db_connection() as db:
+                            c = db.cursor()
+                            sql = []
+                            params = []
+                            sql.append("UPDATE workload SET storage_dir = %s WHERE uuid = %s")
+                            params.append((self.root.storage_dir, self.root.uuid))
+                            sql.append("UPDATE delayed_analysis SET storage_dir = %s WHERE uuid = %s")
+                            params.append((self.root.storage_dir, self.root.uuid))
+                            execute_with_retry(db, c, sql, params, commit=True)
+                    except Exception as e:
+                        logging.error(f"unable to update workload/delayed_analysis tables with new storage_dir for {self.root}: {e}")
+                        report_exception()
+
                 try:
                     ALERT(self.root)
                 except Exception as e:
@@ -1760,7 +1837,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         try:
                             shutil.rmtree(self.root.storage_dir)
                         except Exception as e:
-                            logging.error("unable to clear {}: {}".format(self.root.storage_dir))
+                            logging.error("unable to clear {}: {}".format(self.root.storage_dir, e))
                     else:
                         logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
 
@@ -2059,7 +2136,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                     if item.id in self.tracker:
                         return
 
-                logging.debug("adding work stack item {}".format(item))
+                #logging.debug("adding work stack item {}".format(item))
                 if isinstance(item, WorkTarget):
                     self.work.append(item)
                 elif isinstance(item, Observable):
@@ -2177,12 +2254,13 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
     
         # MAIN LOOP
         # keep going until there is nothing to analyze
+        logging.info(f"starting analysis on {self.root} with a workload of {len(work_stack)}")
         while not self.cancel_analysis_flag:
             # the current WorkTarget
             work_item = None
 
             # are we done?
-            logging.debug("work stack size {} active dependencies {}".format(len(work_stack), len(self.root.active_dependencies)))
+            #logging.debug("work stack size {} active dependencies {}".format(len(work_stack), len(self.root.active_dependencies)))
             if len(work_stack) == 0 and len(self.root.active_dependencies) == 0:
                 # are we in final analysis mode?
                 if final_analysis_mode:

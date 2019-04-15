@@ -55,7 +55,6 @@ def use_db(method=None, name=None):
 
     return wrapper
 
-
 def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=False):
     """Executes the given SQL or function (and params) against the given cursor with
        re-attempts up to N times (defaults to 2) on deadlock detection.
@@ -286,21 +285,21 @@ def _get_db_connection(name='ace'):
     if 'ssl_ca' in _section or 'ssl_key' in _section or 'ssl_cert' in _section:
         kwargs['ssl'] = {}
 
-        if 'ssl_ca' in _section:
+        if 'ssl_ca' in _section and _section['ssl_ca']:
             path = abs_path(_section['ssl_ca'])
             if not os.path.exists(path):
                 logging.error("ssl_ca file {} does not exist (specified in {})".format(path, config_section))
             else:
                 kwargs['ssl']['ca'] = path
 
-        if 'ssl_key' in _section:
+        if 'ssl_key' in _section and _section['ssl_key']:
             path = abs_path(_section['ssl_key'])
             if not os.path.exists(path):
                 logging.error("ssl_key file {} does not exist (specified in {})".format(path, config_section))
             else:
                 kwargs['ssl']['key'] = path
 
-        if 'ssl_cert' in _section:
+        if 'ssl_cert' in _section and _section['ssl_cert']:
             path = _section['ssl_cert']
             if not os.path.exists(path):
                 logging.error("ssl_cert file {} does not exist (specified in {})".format(path, config_section))
@@ -342,8 +341,8 @@ def get_db_connection(*args, **kwargs):
 # new school database connections
 import logging
 import os.path
-from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum
-from sqlalchemy.dialects.mysql import BOOLEAN
+from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum, func
+from sqlalchemy.dialects.mysql import BOOLEAN, VARBINARY, BLOB
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates, scoped_session
 from sqlalchemy.orm.exc import NoResultFound, DetachedInstanceError
@@ -361,18 +360,16 @@ Base = declarative_base()
 # if target is an executable, then *args is to session.execute function
 # if target is a callable, then *args is to the callable function (whatever that is)
 
-def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **kwargs):
+def retry_on_deadlock(targets, *args, attempts=2, commit=False, **kwargs):
     """Executes the given targets, in order. If a deadlock condition is detected, the database session
        is rolled back and the targets are executed in order, again. This can happen up to :param:attempts times
        before the failure is raised as an exception.
 
        :param targets Can be any of the following
-       * A function or callable.
-       * A list of functions or callables.
+       * A callable.
+       * A list of callables.
        * A sqlalchemy.sql.expression.Executable object.
        * A list of sqlalchemy.sql.expression.Executable objects.
-       :param session The session to use for the database operations. If not passed the the default session is used 
-       (see :meth:saq.db)
        :param int attempts The maximum number of times the operations are tried before passing the exception on.
        :param bool commit If set to True then the ``commit`` function is called on the session object before returning
        from the function. If a deadlock occurs during the commit then further attempts are made.
@@ -386,17 +383,8 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
 
        :return This function returns the last operation in the list of targets."""
 
-    # if we don't pass in a session then we just grab the one available
-    # and pass it to the target function as the "session" argument
-    if session is None:
-        session = saq.db()
-        kwargs['session'] = session
-
     if not isinstance(targets, list):
         targets = [ targets ]
-
-    # this doesn't seem to work
-    #session.begin_nested()
 
     current_attempt = 0
     while True:
@@ -404,12 +392,12 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
             last_result = None
             for target in targets:
                 if isinstance(target, Executable) or isinstance(target, str):
-                    session.execute(target, *args, **kwargs)
+                    saq.db.execute(target, *args, **kwargs)
                 elif callable(target):
                     last_result = target(*args, **kwargs)
 
             if commit:
-                session.commit()
+                saq.db.commit()
 
             return last_result
 
@@ -420,7 +408,7 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
                 logging.debug(f"DEADLOCK STATEMENT attempt #{current_attempt + 1} SQL {e.statement} PARAMS {e.params}")
 
                 try:
-                    session.rollback() # rolls back to the begin_nested()
+                    saq.db.rollback() # rolls back to the begin_nested()
                 except Exception as e:
                     logging.error(f"unable to roll back transaction: {e}")
                     report_exception()
@@ -439,16 +427,25 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
 
 def retry_function_on_deadlock(function, *args, **kwargs):
     assert callable(function)
-    return retry_on_deadlock(targets=function, *args, **kwargs)
+    return retry_on_deadlock(function, *args, **kwargs)
 
 def retry_sql_on_deadlock(executable, *args, **kwargs):
     assert isinstance(executable, Executable)
-    return retry_on_deadlock(targets=executable, *args, **kwargs)
+    return retry_on_deadlock(executable, *args, **kwargs)
 
 def retry_multi_sql_on_deadlock(executables, *args, **kwargs):
     assert isinstance(executables, list)
     assert all([isinstance(_, Executable) for _ in executables])
-    return retry_on_deadlock(targets=executables, *args, **kwargs)
+    return retry_on_deadlock(executables, *args, **kwargs)
+
+def retry(func, *args, **kwargs):
+    """Executes the wrapped function with retry_on_deadlock."""
+    @functools.wraps(func)
+    def wrapper(*w_args, **w_kwargs):
+        w_kwargs.update(kwargs)
+        return retry_function_on_deadlock(func, *w_args, **w_kwargs)
+
+    return wrapper
 
 class User(UserMixin, Base):
 
@@ -498,6 +495,34 @@ class Event(Base):
     malware = relationship("saq.database.MalwareMapping", passive_deletes=True, passive_updates=True)
     alert_mappings = relationship("saq.database.EventMapping", passive_deletes=True, passive_updates=True)
     companies = relationship("saq.database.CompanyMapping", passive_deletes=True, passive_updates=True)
+
+    @property
+    def json(self):
+        return {
+            'id': self.id,
+            'alerts': self.alerts,
+            'campaign': self.campaign.name if self.campaign else None,
+            'comment': self.comment,
+            'companies': self.company_names,
+            'creation_date': str(self.creation_date),
+            'disposition': self.disposition,
+            'malware': [{mal.name: [t.type for t in mal.threats]} for mal in self.malware],
+            'name': self.name,
+            'prevention_tool': self.prevention_tool,
+            'remediation': self.remediation,
+            'status': self.status,
+            'tags': self.sorted_tags,
+            'type': self.type,
+            'vector': self.vector,
+            'wiki': self.wiki
+        }
+
+    @property
+    def alerts(self):
+        uuids = []
+        for alert_mapping in self.alert_mappings:
+            uuids.append(alert_mapping.alert.uuid)
+        return uuids
 
     @property
     def malware_names(self):
@@ -1108,66 +1133,6 @@ class Alert(RootAnalysis, Base):
             logging.error("sync_tag_mapping failed: {}".format(e))
             report_exception()
 
-    def sync_profile_points(self):
-        logging.debug("syncing profile points for {}".format(self))
-        with get_db_connection() as db:
-            cursor = db.cursor()
-            # make sure all of our profile points have database IDs stored
-            # also make a list of all the profile_points ids we have
-            current_profile_point_ids = set()
-            for profile_point in self.profile_points:
-                if profile_point.id is None:
-                    cursor.execute("""SELECT id FROM profile_points WHERE description = %s""", (profile_point.description,))
-                    row = cursor.fetchone()
-                    if row is None:
-                        logging.error("unknown profile point {}".format(profile_point))
-                    else:
-                        profile_point.id = row[0]
-                        current_profile_point_ids.add(profile_point.id)
-                        logging.debug("found profile point id {} for {}".format(profile_point.id, profile_point))
-                else:
-                    current_profile_point_ids.add(profile_point.id)
-
-            # check the existing profile point mapping in the database
-            # delete any mappings that no longer exist
-            deleted_profile_point_ids = set()
-            cursor.execute("""
-SELECT pp.description FROM profile_points pp 
-    JOIN pp_alert_mapping ppam ON ppam.profile_point_id = pp.id 
-    JOIN alerts a ON ppam.alert_id = a.id
-WHERE
-    a.id = %s""", (self.id,))
-            for row in cursor:
-                profile_point_id = row[0]
-                if profile_point_id not in current_profile_point_ids:
-                    deleted_profile_point_ids.add(profile_point_id)
-
-            for profile_point in self.profile_points:
-                if profile_point.id is None:
-                    logging.warning("profile point {} does not have a database ID (skipping sync)".format(
-                                    profile_point))
-                    continue
-
-                # have we mapped this alert to this profile point yet?
-                cursor.execute("""SELECT 1 FROM pp_alert_mapping WHERE alert_id = %s AND profile_point_id = %s""",
-                         (self.id, profile_point.id))
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("""INSERT INTO pp_alert_mapping ( alert_id, profile_point_id ) VALUES ( %s, %s )""",
-                             (self.id, profile_point.id))
-                    logging.debug("mapping profile point {} to alert {}".format(profile_point, self))
-                else:
-                    logging.debug("profile point {} already mapped to {}".format(profile_point, self))
-
-            db.commit()
-
-            for profile_point_id in deleted_profile_point_ids:
-                cursor.execute("""DELETE FROM pp_alert_mapping WHERE alert_id = %s AND profile_point_id = %s""",
-                         (self.id, profile_point_id))
-                logging.debug("deleted profile point mapping {} for {}".format(profile_point_id, self.id))
-
-            db.commit()
-
     def sync_tag_mapping(self, tag):
         tag_id = None
 
@@ -1222,55 +1187,29 @@ WHERE
             logging.error("sync_observable_mapping failed: {}".format(e))
             #report_exception()
 
+    @retry
     def sync_observable_mapping(self, observable):
-        observable_id = None
+        assert isinstance(observable, saq.analysis.Observable)
 
-        with get_db_connection() as db:
-            cursor = db.cursor()
-            for _ in range(3): # make sure we don't enter an infinite loop here
-                cursor.execute("SELECT id FROM observables WHERE type = %s AND value = %s", ( observable.type, observable.value ))
-                result = cursor.fetchone()
-                if result:
-                    observable_id = result[0]
-                    break
-                else:
-                    try:
-                        execute_with_retry(db, cursor, "INSERT IGNORE INTO observables ( type, value ) VALUES ( %s, %s )""", 
-                                          ( observable.type, observable.value ))
-                        db.commit()
-                        continue
-                    except pymysql.err.InternalError as e:
-                        if e.args[0] == 1062:
+        existing_observable = saq.db.query(Observable).filter(Observable.type == observable.type, Observable.md5 == func.UNHEX(observable.md5_hex)).first()
+        if not existing_observable:
+            # XXX assuming all observables are encodable in utf-8 is probably wrong
+            # XXX we could have some kind of binary data, or an intentionally corrupt value
+            # XXX in which case we'd lose the actual value of the data here
+            existing_observable = Observable(type=observable.type, value=observable.value.encode('utf8', errors='ignore'), md5=func.UNHEX(observable.md5_hex))
+            saq.db.add(existing_observable)
+            saq.db.flush()
 
-                            # another process added it just before we did
-                            try:
-                                db.rollback()
-                            except:
-                                pass
+        assert existing_observable.id is not None
 
-                            logging.warning("already tracking {}".format(observable))
-                            # another process added it just before we did
-                            break
-                        else:
-                            raise e
+        existing_mapping = saq.db.query(ObservableMapping).filter(ObservableMapping.observable_id == existing_observable.id, ObservableMapping.alert_id == self.id).first()
+        if existing_mapping is None:
+            existing_mapping = ObservableMapping(observable_id=existing_observable.id, alert_id=self.id)
+            saq.db.add(existing_mapping)
 
-            if not observable_id:
-                logging.error("unable to find observable_id for {}".format(observable))
-                return
+        saq.db.commit()
 
-            try:
-                execute_with_retry(db, cursor, "INSERT IGNORE INTO observable_mapping ( alert_id, observable_id ) VALUES ( %s, %s )", ( self.id, observable_id ))
-                db.commit()
-                logging.debug("mapped observable {} to {}".format(observable, self))
-            except pymysql.err.InternalError as e:
-                if e.args[0] == 1062: # already mapped
-                    return
-                else:
-                    raise e
-
-    def _save_to_database(self, session):
-        session.add(self)
-
+    @retry
     def sync(self):
         """Saves the Alert to disk and database."""
         assert self.storage_dir is not None # requires a valid storage_dir at this point
@@ -1278,15 +1217,17 @@ WHERE
 
         # XXX is this check still required?
         # newly generated alerts will have a company_name but no company_id
-        # we look that up here if we don't have it yet
-        if self.company_name and not self.company_id:
-            with get_db_connection() as db:
-                c = db.cursor()
-                c.execute("SELECT `id` FROM company WHERE `name` = %s", (self.company_name))
-                row = c.fetchone()
-                if row:
-                    logging.debug("found company_id {} for company_name {}".format(self.company_id, self.company_name))
-                    self.company_id = row[0]
+        # we look that up here if we don't have it yet if self.company_name and not self.company_id:
+        #if self.company_name and not self.company_id:
+            #logging.info("MARKER: I was here")
+            #self.company_id = saq.db.query(Company).filter(Company.name == self.company_name).one().id
+            #with get_db_connection() as db:
+                #c = db.cursor()
+                #c.execute("SELECT `id` FROM company WHERE `name` = %s", (self.company_name))
+                #row = c.fetchone()
+                #if row:
+                    #logging.debug("found company_id {} for company_name {}".format(self.company_id, self.company_name))
+                    #self.company_id = row[0]
 
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
@@ -1297,14 +1238,8 @@ WHERE
             session = saq.db()
         
         session.add(self)
-        retry_on_deadlock(session.commit, session=session)
+        session.commit()
         self.build_index()
-
-        #try:
-            #self.sync_profile_points()
-        #except Exception as e:
-            #logging.error("unable to sync profile points: {}".format(e))
-            #report_exception()
 
         self.save() # save this alert now that it has the id
 
@@ -1570,7 +1505,7 @@ class Comment(Base):
     # many to one
     user = relationship('User', backref='comments')
 
-class Observable(saq.analysis.Observable, Base):
+class Observable(Base):
 
     __tablename__ = 'observables'
 
@@ -1582,9 +1517,17 @@ class Observable(saq.analysis.Observable, Base):
         String(64),
         nullable=False)
 
-    value = Column(
-        String(1024),
+    md5 = Column(
+        VARBINARY(16),
         nullable=False)
+
+    value = Column(
+        BLOB,
+        nullable=False)
+
+    @property
+    def display_value(self):
+        return self.value.decode('utf8', errors='ignore')
 
     tags = relationship('saq.database.ObservableTagMapping', passive_deletes=True, passive_updates=True)
 
@@ -1672,56 +1615,6 @@ class TagMapping(Base):
 
     alert = relationship('saq.database.Alert', backref='tag_mapping')
     tag = relationship('saq.database.Tag', backref='tag_mapping')
-
-class ProfilePoint(Base):
-    
-    __tablename__ = 'profile_points'
-    
-    id = Column(
-        Integer,
-        primary_key=True)
-
-    crits_id = Column(
-        String(24),
-        nullable=False)
-
-    description = Column(
-        String(4096),
-        nullable=False)
-
-class ProfilePointTagMapping(Base):
-
-    __tablename__ = 'pp_tag_mapping'
-
-    profile_point_id = Column(
-        Integer,
-        ForeignKey('profile_points.id'),
-        primary_key=True)
-
-    tag_id = Column(
-        Integer,
-        ForeignKey('tags.id'),
-        primary_key=True)
-
-    profile_point = relationship('saq.database.ProfilePoint', backref='tag_mappings')
-    tag = relationship('saq.database.Tag', backref='profile_point_mappings')
-
-class ProfilePointAlertMapping(Base):
-    
-    __tablename__ = 'pp_alert_mapping'
-
-    profile_point_id = Column(
-        Integer,
-        ForeignKey('profile_points.id'),
-        primary_key=True)
-
-    alert_id = Column(
-        Integer,
-        ForeignKey('alerts.id'),
-        primary_key=True)
-
-    profile_point = relationship('saq.database.ProfilePoint', backref='alert_mappings')
-    alerts = relationship('saq.database.Alert', backref='profile_point_mappings')
 
 class Remediation(Base):
 

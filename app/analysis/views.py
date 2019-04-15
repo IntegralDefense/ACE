@@ -48,7 +48,6 @@ from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Eve
                          MalwareMapping, Company, CompanyMapping, Campaign, Alert, \
                          Workload, DelayedAnalysis, \
                          acquire_lock, release_lock, \
-                         ProfilePointAlertMapping, ProfilePoint, ProfilePointTagMapping, \
                          get_available_nodes, use_db, set_dispositions, add_workload
 from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
@@ -89,20 +88,6 @@ def generic_functions():
     return { 'generate_unique_reference': generate_unique_reference }
 
 # utility routines
-
-def get_profile_point_counts():
-    """Returns a dict mapping of profile point tag to total counts."""
-    # first figure out the total count for each tag
-    # there really shouldn't be that many tags so we can safely store them all in memory
-    result = {} # key = tag_name, value = count
-    for tag_name, count in db.session.query(Tag.name, func.count('*')).\
-                         join(ProfilePointTagMapping).\
-                         join(ProfilePoint).\
-                         group_by(Tag.name):
-
-        result[tag_name] = count
-
-    return result
 
 def get_current_alert_uuid():
     """Returns the current alert UUID the analyst is looking at, or None if they are not looking at anything."""
@@ -1013,7 +998,7 @@ def new_alert(db, c):
                 }
 
                 if o_time:
-                    otime = datetime.datetime.strptime(otime, '%m-%d-%Y %H:%M:%S')
+                    o_time = datetime.datetime.strptime(o_time, '%m-%d-%Y %H:%M:%S')
                     observable['time'] = timezone.localize(o_time)
 
                 if o_type == F_FILE:
@@ -2020,7 +2005,7 @@ def manage():
                 continue
 
             observable_filters_english.append(
-                "with observable type {0} value {1}".format(observable.type, observable.value))
+                "with observable type {0} value {1}".format(observable.type, observable.value.decode('utf8', errors='ignore')))
             observables.append(observable)
 
     if len(observables) > 0:
@@ -2180,34 +2165,6 @@ def manage():
         alert_tags[alert_uuid] = sorted(alert_tags[alert_uuid], key=lambda x: (-x.score, x.name.lower()))
         #alert_tags[item.uuid] = [tag_mapping for tag_mapping in alert_tags[item.uuid] if tag_mapping.tag.name not in special_tag_names]
 
-    # get the total scores for all profiles
-    #profile_point_counts = get_profile_point_counts()
-
-    # determine profile point scores
-    profile_point_scores = {} # key = alert_uuid, value = list[tuple(tag_name, score (0 to 100))]
-
-    # need to sort...
-    #for alert_uuid, tag_name, pp_score in db.session.query(GUIAlert.uuid, Tag.name, func.count('*')).\
-                         #join(ProfilePointAlertMapping).\
-                         #join(ProfilePoint).\
-                         #join(ProfilePointTagMapping).\
-                         #join(Tag).\
-                         #filter(GUIAlert.id.in_(sub_query)).\
-                         #group_by(GUIAlert.uuid, Tag):
-        #if alert_uuid not in profile_point_scores:
-            #profile_point_scores[alert_uuid] = []
-
-        #score = int(math.floor(pp_score / profile_point_counts[tag_name] * 100.0))
-        #if score >= saq.CONFIG['profile_points'].getint('display_threshold'):
-            #profile_point_scores[alert_uuid].append((tag_name, score))
-            ##profile_point_scores[alert_uuid][tag_name] = int(math.floor(pp_score / profile_point_counts[tag_name] * 100.0))
-
-    #for alert_uuid in profile_point_scores.keys():
-        # sort these by score (best to worst) followed by name if they are equal
-        # TODO the second sort (for equal scores) is backwards
-        #profile_point_scores[alert_uuid] = sorted(profile_point_scores[alert_uuid], key=lambda x: (x[1], x[0]), reverse=True)
-
-
     # for each observable we want to show how many there are (in all) and (in all open alerts)
     open_observable_count = defaultdict(lambda: 0)
     all_observable_count = defaultdict(lambda: 0)
@@ -2266,7 +2223,6 @@ def manage():
         observable_types=VALID_OBSERVABLE_TYPES,
         has_sla=len(sla_ids) > 0,
         display_disposition=display_disposition,
-        profile_point_scores=profile_point_scores,
         total_alerts=total_alerts,
         alert_limit=alert_limit,
         user_limit=session['limit'] if 'limit' in session else "50",
@@ -3183,7 +3139,7 @@ def observables():
             for row in cursor:
                 # we record in a dictionary that matches the observable "id" to the count
                 observable_count[row[0]] = row[1]
-                logging.debug("recorded observable count of {0} for {1}".format(row[1], row[0]))
+                #logging.debug("recorded observable count of {0} for {1}".format(row[1], row[0]))
 
     data = {}  # key = observable_type
     for observable in observables:
@@ -3437,38 +3393,6 @@ def index():
     companies = db.session.query(Company).order_by(Company.name.asc()).all()
     campaigns = db.session.query(Campaign).order_by(Campaign.name.asc()).all()
 
-    # all the profile points True for this alert
-    profile_points = [ppm.profile_point for ppm in alert.profile_point_mappings]
-
-    # all the tags for all these profile points
-    pp_tags = set()
-    pp_scores = {} # key = tag name, value = # of times
-    for profile_point in profile_points:
-        for pptm in profile_point.tag_mappings:
-            pp_tags.add(pptm.tag.name)
-            if pptm.tag.name not in pp_scores:
-                pp_scores[pptm.tag.name] = 0
-            pp_scores[pptm.tag.name] += 1
-    pp_tags = list(pp_tags)
-
-    # for each profile (tag), we want the full list of all profile points
-    pp_full = {} # key = profile (tag name), value = { "yes": [list of profile points], "no": [list of profile points] }
-    # where "yes" is the list of profile points that are True for this alert
-    # and "no" are the ones that are NOT true
-
-    for pp_tag in pp_tags:
-        pp_full[pp_tag] = { 'yes': [], 'no': [] }
-        for profile_point in db.session.query(ProfilePoint).\
-                                       join(ProfilePointTagMapping).\
-                                       join(Tag).\
-                                       filter(Tag.name == pp_tag):
-
-            # is this in our list of profile points for this alert?
-            if profile_point in profile_points:
-                pp_full[pp_tag]['yes'].append(profile_point)
-            else:
-                pp_full[pp_tag]['no'].append(profile_point)
-
     # get the remediation history for any message_ids in this alert
     email_remediations = []
     message_ids = [o.value for o in alert.get_observables_by_type(F_MESSAGE_ID)]
@@ -3569,11 +3493,6 @@ def index():
                            campaigns=campaigns,
                            all_users=all_users,
                            disposition_css_mapping=DISPOSITION_CSS_MAPPING,
-                           profile_points=profile_points,
-                           pp_tags=pp_tags,
-                           pp_counts=get_profile_point_counts(),
-                           pp_scores=pp_scores,
-                           pp_full=pp_full,
                            domains=domains,
                            domain_list=domain_list,
                            domain_summary_str=domain_summary_str,

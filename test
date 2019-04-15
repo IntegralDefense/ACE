@@ -13,6 +13,11 @@ then
     rm logs/unittest.log
 fi
 
+if [ -d data_unittest/error_reports ]
+then
+    rm -rf data_unittest/error_reports && mkdir data_unittest/error_reports
+fi
+
 # if we passed no parameters then we run all the tests
 if [ "$#" -eq "0" ]
 then
@@ -41,6 +46,7 @@ then
         api.analysis.test \
         api.engine.test \
         api.cloudphish.test \
+	api.events.test \
         test_ace_api \
 
         #saq.collectors.test_cb_binaries \

@@ -5,6 +5,7 @@ import collections
 import copy
 import datetime
 import gc
+import hashlib
 import importlib
 import json
 import logging
@@ -1400,6 +1401,17 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     @value.setter
     def value(self, value):
         self._value = value
+
+    @property
+    def md5_hex(self):
+        """Returns the hexidecimal MD5 hash of the value of this observable."""
+        md5_hasher = hashlib.md5()
+        if isinstance(self.value, str):
+            md5_hasher.update(self.value.encode('utf8', errors='ignore'))
+        else:
+            md5_hasher.update(self.value)
+
+        return md5_hasher.hexdigest()
 
     @property
     def time(self):
@@ -3256,7 +3268,7 @@ class RootAnalysis(Analysis):
     @property
     def all(self):
         """Returns the list of all Observables and Analysis for this RootAnalysis."""
-        result = self.all_analysis
+        result = self.all_analysis[:]
         result.extend(self.all_observables)
         return result
 
@@ -3320,8 +3332,6 @@ class RootAnalysis(Analysis):
 
     def has_detections(self):
         """Returns True if this RootAnalysis could become an Alert (has at least one DetectionPoint somewhere.)"""
-        if saq.FORCED_ALERTS:
-            return True
         if self.has_detection_points():
             return True
         for a in self.all_analysis:

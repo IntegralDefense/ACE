@@ -1215,7 +1215,9 @@ class EmailAnalyzer(AnalysisModule):
         try:
             logging.debug("parsing email file {}".format(_file))
             with open(os.path.join(self.root.storage_dir, _file.value), 'r', errors='ignore') as fp:
-                unparsed_email = fp.read()
+                # we ignore any leading and/or trailing whitespace
+                # this isn't technically "correct" but some systems make mistakes
+                unparsed_email = fp.read().strip()
             
             # by default we target the parsed email (see NOTE A)
             target_email = parsed_email = email.parser.Parser().parsestr(unparsed_email)
@@ -1908,7 +1910,7 @@ class EmailArchiveAction(AnalysisModule):
             return False
 
         email_analysis = self.wait_for_analysis(_file, EmailAnalysis)
-        if email_analysis is None:
+        if not email_analysis:
             return None
 
         email_md5 = self._get_email_md5(_file)
@@ -2054,7 +2056,8 @@ class EmailArchiveAction(AnalysisModule):
                     transactions.append(('url', target.value))
 
                 if isinstance(target, FileHashAnalysis):
-                    transactions.append(('content', target.md5))
+                    if target.md5:
+                        transactions.append(('content', target.md5))
                     
             recurse_tree(_file, _callback)
 
@@ -2969,12 +2972,11 @@ class URLEmailPivotAnalyzer(AnalysisModule):
                 c = db.cursor()
                 c.execute("""
 SELECT 
-    COUNT(DISTINCT(asrch.archive_id))
+    COUNT(DISTINCT(archive_id))
 FROM 
-    archive_search asrch JOIN archive a ON asrch.archive_id = a.archive_id
-    JOIN archive_index ai ON a.archive_id = ai.archive_id
+    archive_index 
 WHERE 
-    ai.field = 'url' AND ai.hash = UNHEX(%s)""", ( url_md5, ))
+    field = 'url' AND hash = UNHEX(%s)""", ( url_md5, ))
 
                 # first we check to see how many of these we've got
                 row = c.fetchone()

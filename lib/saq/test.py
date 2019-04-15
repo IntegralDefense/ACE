@@ -476,6 +476,10 @@ class ACEBasicTestCase(TestCase):
         self.app_context.push()                           
         self.client = self.app.test_client()
 
+        # Hopefully temporary hack to ensure session is cleared after each test
+        import api
+        api.db.session.close()
+
     def tearDown(self):
         close_test_comms()
 
@@ -669,7 +673,6 @@ class ACEBasicTestCase(TestCase):
         c.execute("DELETE FROM workload")
         c.execute("DELETE FROM observables")
         c.execute("DELETE FROM tags")
-        c.execute("DELETE FROM profile_points")
         c.execute("DELETE FROM events")
         c.execute("DELETE FROM remediation")
         c.execute("DELETE FROM company WHERE name != 'default'")
@@ -678,6 +681,7 @@ class ACEBasicTestCase(TestCase):
         c.execute("DELETE FROM locks")
         c.execute("DELETE FROM delayed_analysis")
         c.execute("DELETE FROM users")
+        c.execute("DELETE FROM malware")
 
         from app.models import User
         u = User()
@@ -894,6 +898,10 @@ class ACEModuleTestCase(ACEEngineTestCase):
     pass
 
 class TestEngine(Engine):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.disable_alerting()
+
     def set_cleanup(self, mode, value):
         saq.CONFIG[f'analysis_mode_{mode}']['cleanup'] = 'yes' if value else 'no'
         logging.debug(f"set cleanup to {value} for analysis mode {mode}")

@@ -466,7 +466,7 @@ class AnalysisModule(object):
 
             try:
                 if obj.type not in valid_types:
-                    logging.debug("{} is not a valid type for {}".format(obj.type, self))
+                    #logging.debug("{} is not a valid type for {}".format(obj.type, self))
                     return False
             except Exception as e:
                 logging.error("valid_observable_types returned invalid data type {} for {}".format(
@@ -476,18 +476,18 @@ class AnalysisModule(object):
         if isinstance(obj, Observable):
             # does this analysis module exclude this observable from analysis?
             if self.is_excluded(obj):
-                logging.debug("observable {} is excluded from analysis by {}".format(obj, self))
+                #logging.debug("observable {} is excluded from analysis by {}".format(obj, self))
                 return False
 
             # does this observable exclude itself from this kind of analysis?
             if obj.is_excluded(self):
-                logging.debug("analysis module {} excluded from analyzing {}".format(self, obj))
+                #logging.debug("analysis module {} excluded from analyzing {}".format(self, obj))
                 return False
 
             # does this analysis module require directives?
             for directive in self.required_directives:
                 if not obj.has_directive(directive):
-                    logging.debug("{} does not have required directive {} for {}".format(obj, directive, self))
+                    #logging.debug("{} does not have required directive {} for {}".format(obj, directive, self))
                     return False
 
             # have we already generated analysis for this target?

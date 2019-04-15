@@ -149,6 +149,7 @@ class TestCase(ACEModuleTestCase):
     def test_live_browser_404(self):
         """We should not download screenshots for URLs that returned a 404 error message."""
 
+        from saq.database import Alert
         from saq.modules.url import CrawlphishAnalysisV2
         from saq.modules.url import LiveBrowserAnalysis
 
@@ -161,14 +162,17 @@ class TestCase(ACEModuleTestCase):
         root.schedule()
         
         engine = TestEngine()
+        engine.enable_alerting()
         engine.enable_module('analysis_module_crawlphish', 'test_groups')
         engine.enable_module('analysis_module_live_browser_analyzer', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
 
-        root.load()
-        url = root.get_observable(url.id)
+        alert = saq.db.query(Alert).first()
+        self.assertIsNotNone(alert)
+        alert.load()
+        url = alert.get_observable(url.id)
         analysis = url.get_analysis(CrawlphishAnalysisV2)
 
         file_observables = analysis.get_observables_by_type(F_FILE)
