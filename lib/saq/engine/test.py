@@ -675,7 +675,7 @@ class TestCase(ACEEngineTestCase):
         engine.wait()
 
         # we should see a warning message about taking up too much memory
-        wait_for_log_count('used too much memory', 1)
+        wait_for_log_count('used too much memory', 1, 10)
 
         # we should NOT see a workload item or a lock left
         self.assertEquals(saq.db.query(Workload.id).count(), 0)
@@ -2249,8 +2249,8 @@ class TestCase(ACEEngineTestCase):
         root.schedule()
         
         engine = TestEngine(pool_size_limit=1)
+        engine.enable_alerting()
         engine.enable_module('analysis_module_forced_detection', 'test_groups')
-        engine.enable_module('analysis_module_detection', 'test_groups')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -2382,8 +2382,8 @@ class TestCase(ACEEngineTestCase):
         root.schedule()
 
         engine = TestEngine()
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test', 'test_single')
-        engine.enable_module('analysis_module_detection', 'test_single')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -2455,8 +2455,8 @@ class TestCase(ACEEngineTestCase):
         ignore_root.schedule()
 
         engine = TestEngine()
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test', 'test_single')
-        engine.enable_module('analysis_module_detection', 'test_single')
         engine.controlled_stop()
         engine.start()
         engine.wait()
@@ -2505,8 +2505,8 @@ class TestCase(ACEEngineTestCase):
         root.schedule()
 
         engine = TestEngine(pool_size_limit=1, local_analysis_modes=['test_single', ANALYSIS_MODE_CORRELATION])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_basic_test', 'test_single')
-        engine.enable_module('analysis_module_detection', 'test_single')
         engine.controlled_stop()
         engine.start()
         engine.wait()

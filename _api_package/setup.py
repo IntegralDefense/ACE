@@ -3,7 +3,7 @@
 
 """A setuptools based setup module.
 See:
-https://packaging.python.org/en/latest/distributing.html
+https://packaging.python.org/tutorials/packaging-projects/
 https://github.com/pypa/sampleproject
 """
 
@@ -14,7 +14,7 @@ from setuptools import setup, find_packages
 from codecs import open
 from os import path
 
-__version__ = "1.0.5"
+__version__ = "1.0.6"
 description = "Analysis Correlation Engine (ACE) API Python Bindings."
 
 here = path.abspath(path.dirname(__file__))

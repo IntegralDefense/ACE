@@ -74,6 +74,7 @@ log = logging.getLogger(__name__)
 # what HTTP method to use
 METHOD_GET = 'get'
 METHOD_POST = 'post'
+METHOD_PUT = 'put'
 
 def set_default_remote_host(remote_host):
     """Sets the default remote host used when no remote host is provided to the API calls.
@@ -131,6 +132,8 @@ def _execute_api_call(command,
 
     if method == METHOD_GET:
         func = requests.get
+    elif method == METHOD_PUT:
+        func = requests.put
     else:
         func = requests.post
 
@@ -1306,6 +1309,45 @@ submit_failed_alerts_command_parser.add_argument('--keep-alerts', default=False,
             Defaults to False (alerts are deleted locally after a successful send.""")
 submit_failed_alerts_command_parser.set_defaults(func=_cli_submit_failed_alerts)
 
+
+def get_open_events(*args, **kwargs):
+    """Gets a list of the open ACE events.
+
+    :return: A result list.
+    :rtype: list
+    """
+    return _execute_api_call('events/open', *args, **kwargs).json()
+
+
+def _cli_get_open_events(args):
+    return get_open_events(remote_host=args.remote_host, ssl_verification=args.ssl_verification)
+
+
+open_events_command_parser = _api_command(subparsers.add_parser('open-events',
+                                                                help="""Gets a list of the open ACE events."""))
+open_events_command_parser.set_defaults(func=_cli_get_open_events)
+
+
+def update_event_status(event_id, status, *args, **kwargs):
+    """ Updates an event's status.
+
+    :return: The updated event.
+    :rtype: dict
+    """
+    return _execute_api_call('events/{}/status'.format(event_id), data={'status': status}, method=METHOD_PUT, *args, **kwargs).json()
+
+
+def _cli_update_event_status(args):
+    return update_event_status(args.event_id, args.status, remote_host=args.remote_host, ssl_verification=args.ssl_verification)
+
+
+update_event_status_parser = _api_command(subparsers.add_parser('update-event-status',
+                                                                help="""Updates an event's status."""))
+update_event_status_parser.add_argument('--event-id', help="Event ID", required=True)
+update_event_status_parser.add_argument('--status', help="Event status", required=True)
+update_event_status_parser.set_defaults(func=_cli_update_event_status)
+
+
 def main():
 
     args = parser.parse_args()
@@ -1319,12 +1361,16 @@ def main():
         result = args.func(args)
         if isinstance(result, dict):
             pprint.pprint(result)
+        elif isinstance(result, list):
+            for r in result:
+                pprint.pprint(r)
     except Exception as e:
         sys.stderr.write("unable to execute api call: {}\n".format(e))
         traceback.print_exc()
         if hasattr(e, 'response'):
             if hasattr(e.response, 'text'):
                 print(e.response.text)
+
 
 if __name__ == '__main__':
     main()

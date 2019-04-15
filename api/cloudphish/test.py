@@ -24,7 +24,7 @@ import requests
 from flask import url_for
 
 # part of our sample set of data
-TEST_URL = 'http://localhost:8080/Payment_Advice.pdf'
+TEST_URL = 'http://localhost:8088/Payment_Advice.pdf'
 
 class CloudphishTestCase(TestCase):
     def __init__(self, *args, **kwargs):
@@ -44,7 +44,7 @@ class CloudphishTestCase(TestCase):
 
     def start_http_server(self):
         logging.debug("starting http server")
-        self.http_server = Popen(['python3', '-m', 'http.server', '8080'], 
+        self.http_server = Popen(['python3', '-m', 'http.server', '8088'], 
                            cwd=os.path.join(saq.SAQ_HOME, 'test_data', 'pdf'), stdout=PIPE, stderr=PIPE)
 
         def _reader(p):
@@ -145,11 +145,12 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 
         # now we start an engine to work on cloudphish analysis
         engine = TestEngine(analysis_pools={ANALYSIS_MODE_CLOUDPHISH: 1}, local_analysis_modes=[ANALYSIS_MODE_CLOUDPHISH])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
         # force this analysis to become an alert
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
+        #engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
         #engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()
@@ -317,12 +318,13 @@ class CloudphishAPITestCase(CloudphishTestCase, ACEEngineTestCase):
 
         # have the engine process it
         engine = TestEngine(analysis_pools={ANALYSIS_MODE_CLOUDPHISH: 1}, local_analysis_modes=[ANALYSIS_MODE_CLOUDPHISH])
+        engine.enable_alerting()
         engine.enable_module('analysis_module_crawlphish', ANALYSIS_MODE_CLOUDPHISH)
         engine.enable_module('analysis_module_cloudphish_request_analyzer', ANALYSIS_MODE_CLOUDPHISH)
 
         # force this analysis to become an alert
         engine.enable_module('analysis_module_forced_detection', ANALYSIS_MODE_CLOUDPHISH)
-        engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
+        #engine.enable_module('analysis_module_detection', ANALYSIS_MODE_CLOUDPHISH)
         #engine.enable_module('analysis_module_alert', ANALYSIS_MODE_CLOUDPHISH)
         engine.controlled_stop()
         engine.start()

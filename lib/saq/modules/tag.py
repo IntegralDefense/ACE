@@ -178,58 +178,23 @@ class IPv4TagAnalysis(TagAnalysis):
 class UserTagAnalysis(TagAnalysis):
     pass
 
+#
+# NOTE - understanding how this logic works
+# (A) --> (C) --> (alert)
+# (B) --> (C)
+# (B) --> (D) --> (alert)
+# where (A) has tag t1 and (B) has tag t2
+
+# (A) has t1 so tag_map[A] = (t1) and tag_map[C] = (t1)
+# (B) has t2 so tag_map[B] = (t2) and tag_map[C] = (t1, t2)
+# (t1, t2) matches the definition so C gets the detection point
+
 class CorrelatedTagDefinition(object):
     def __init__(self, text, tags):
+        # the textual description of the alert
         self.text = text
-        self.tags = tags
-        self.reset()
-
-    def reset(self):
-        # for each tag we keep track of what objects have that tag
-        # key = tag_name, value = [ objects ]
-        self.tag_matches = {}
-        for tag in self.tags:
-            self.tag_matches[tag] = [] # can be more than one
-
-    def match(self, target):
-        assert isinstance(target, TaggableObject)
-        result = False
-        for tag in self.tags:
-            if target.has_tag(tag):
-                self.tag_matches[tag].append(target)
-                result = True
-
-        return result
-
-    def matches(self):
-        for tag in self.tags:
-            if len(self.tag_matches[tag]) == 0:
-                return False
-
-        # at this point we know we've got matches for all the tags we're looking for
-        # now look to see if all the matches have a common ancestor somewhere
-        def _callback(obj):
-            nonlocal _ancestors
-            # we don't look at the root since everything shares that as a common point
-            if not ( obj is obj.root ):
-                _ancestors.append(obj)
-
-        all_ancestors = []
-        for tag in self.tags:
-            for obj in self.tag_matches[tag]:
-                _ancestors = []
-                recurse_down(obj, _callback)
-                all_ancestors.append(set(_ancestors))
-
-        # at this point we have a list of all the ancestors of all the objects
-        # we need at least one common object in all of them
-        for index in range(len(all_ancestors) - 1):
-            if index == 0:
-                result = all_ancestors[index] & all_ancestors[index + 1]
-            else:
-                result = result & all_ancestors[index + 1]
-
-        return len(result) > 0
+        # the list of tags we expect to see in the children of a target object
+        self.tags = set(tags)
 
 class CorrelatedTagAnalyzer(AnalysisModule):
     """Does this combination of tagging exist on objects with a common ancestry?"""
@@ -248,34 +213,29 @@ class CorrelatedTagAnalyzer(AnalysisModule):
 
                 self.definitions.append(CorrelatedTagDefinition(self.config[config_text], 
                                          [x.strip() for x in self.config[config_rule].split(',')]))
-                logging.info("loaded definition for {}".format(config_rule))
+                logging.debug("loaded definition for {}".format(config_rule))
 
     def execute_post_analysis(self):
-        for target in root.all:
-            for _def in self.definitions:
-                _def.reset()
+        for d in self.definitions:
+            tag_map = {} # key = object_id, value = [tags]
+            def callback(obj):
+                if obj is self.root:
+                    return
 
-            # does this target have a tag we're looking for?
-            if not _def.match(target):
-                return False
+                if id(obj) not in tag_map:
+                    tag_map[id(obj)] = set()
 
-            for _def in self.definitions:
-                _def.reset()
-            
-            for obj in self.root.all:
-                for _def in self.definitions:
-                    _def.match(obj)
+                tag_map[id(obj)].add(t)
+                if tag_map[id(obj)] == d.tags:
+                    o.add_detection_point("Correlated Tag Match: {}".format(d.text))
 
-            for _def in self.definitions:
-                if _def.matches():
-                    already_detected = False
-                    message = "Correlated Tag Match: {}".format(_def.text)
-                    for detection_point in target.detections:
-                        if detection_point.description == message:
-                            already_detected = True
-                            break
+            for t in d.tags:
+                for o in self.root.all:
+                    # exclude looking at the RootAnalysis object itself
+                    if o is self.root:
+                        continue
 
-                    if not already_detected:
-                        target.add_detection_point("Correlated Tag Match: {}".format(_def.text))
-
-            return True
+                    # if this object has the tag we're looking for...
+                    if o.has_tag(t):
+                        # then "apply" the tag all the way down to (but not including) the root
+                        recurse_down(o, callback)
