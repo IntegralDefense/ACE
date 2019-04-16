@@ -1,5 +1,6 @@
 import datetime
 import functools
+import html
 import logging
 import shutil
 import sys
@@ -1404,6 +1405,7 @@ def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
        :param user_id: The id of the User that is setting the disposition.
        :param user_comment: Optional comment the User is providing as part of the disposition."""
 
+    message_ids = []
     with get_db_connection() as db:
         c = db.cursor()
         # update dispositions
@@ -1443,6 +1445,33 @@ WHERE
         params.extend(alert_uuids)
         c.execute(sql, tuple(params))
         db.commit()
+
+        # get all associated message_ids
+        c.execute("""SELECT o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
+                     JOIN alerts a ON om.alert_id = a.id
+                     WHERE o.type = 'message_id' AND a.uuid IN ( {} )""".format(','.join(['%s' for _ in alert_uuids])),
+                 tuple(alert_uuids))
+        for row in c:
+            message_id = html.unescape(row[0].decode(errors='ignore'))
+            message_ids.append(message_id)
+
+    # remediate associated emails based on disposition
+    if len(message_ids) > 0:
+        auto_remediate_disposition = [
+            saq.constants.DISPOSITION_GRAYWARE,
+            saq.constants.DISPOSITION_POLICY_VIOLATION,
+            saq.constants.DISPOSITION_RECONNAISSANCE,
+            saq.constants.DISPOSITION_WEAPONIZATION,
+            saq.constants.DISPOSITION_DELIVERY,
+            saq.constants.DISPOSITION_EXPLOITATION,
+            saq.constants.DISPOSITION_INSTALLATION,
+            saq.constants.DISPOSITION_COMMAND_AND_CONTROL,
+            saq.constants.DISPOSITION_EXFIL,
+            saq.constants.DISPOSITION_DAMAGE
+        ]
+        if disposition in auto_remediate_disposition:
+            from saq.phishfry import remediate_message_ids
+            results_targets = remediate_message_ids("delete", message_ids)
 
 class Similarity:
     def __init__(self, uuid, disposition, percent):
