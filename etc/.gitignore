@@ -42,3 +42,5 @@ crits-ssdeep/
 pcap_extract.ini
 amc_mda.ini
 amc_mda_logging.ini
+phishfry.production.ini
+phishfry.ini
