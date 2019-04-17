@@ -27,6 +27,7 @@ __all__ = [
     'CaselessObservable',
     'IPv4Observable',
     'IPv4ConversationObservable',
+    'IPv4FullConversationObservable',
     'FQDNObservable',
     'HostnameObservable',
     'AssetObservable',
@@ -127,6 +128,28 @@ class IPv4ConversationObservable(Observable):
     @property
     def destination(self):
         return self._dest
+
+class IPv4FullConversationObservable(Observable):
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(F_IPV4_FULL_CONVERSATION, *args, **kwargs)
+        self._source, self._source_port, self._dest, self._dest_port = parse_ipv4_full_conversation(self.value)
+
+    @property
+    def source(self):
+        return self._source
+
+    @property
+    def source_port(self):
+        return self._source_port
+
+    @property
+    def dest(self):
+        return self._dest
+
+    @property   
+    def dest_port(self):
+        return self._dest_port
 
 class FQDNObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -584,6 +607,7 @@ class TestObservable(Observable):
 _OBSERVABLE_TYPE_MAPPING = {
     F_ASSET: AssetObservable,
     F_IPV4_CONVERSATION: IPv4ConversationObservable,
+    F_IPV4_FULL_CONVERSATION: IPv4FullConversationObservable,
     F_PCAP: FileObservable,
     F_SNORT_SIGNATURE: SnortSignatureObservable,
     F_EMAIL_ADDRESS: EmailAddressObservable,

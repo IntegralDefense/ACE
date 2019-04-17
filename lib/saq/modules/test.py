@@ -723,3 +723,37 @@ class NoPriorityAnalyzer(AnalysisModule):
     def execute_analysis(self, test):
         analysis = self.create_analysis(test)
         return True
+
+class GroupedByTimeRangeAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class GroupedByTimeRangeAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return GroupedByTimeRangeAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class GroupingTargetAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class GroupingTargetAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return GroupingTargetAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True

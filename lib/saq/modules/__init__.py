@@ -106,6 +106,16 @@ class AnalysisModule(object):
         # this is automatically checked and updated every time this module is used to analyze something
         self.next_check_watched_files = None
 
+        # is this a module that groups analysis of duplicate values by time?
+        self.observation_grouping_time_range = None
+        if 'observation_grouping_time_range' in self.config:
+            self.observation_grouping_time_range = create_timedelta(self.config['observation_grouping_time_range'])
+
+    @property
+    def is_grouped_by_time(self):
+        """Returns True if the observation_grouping_time_range configuration option is being used."""
+        return self.observation_grouping_time_range is not None
+
     def start_threaded_execution(self):
         if not self.is_threaded:
             return
@@ -589,11 +599,22 @@ class AnalysisModule(object):
         # if we're watching any files, see if they've changed and need to be reloaded
         self.check_watched_files()
 
+        if isinstance(obj, Observable):
+            if self.analysis_covered(obj):
+                return False
+
         # if we are executing in "final analysis mode" then we call this function instead
         if final_analysis:
-            return self.execute_final_analysis(obj)
+            analysis_result = self.execute_final_analysis(obj)
         else:
-            return self.execute_analysis(obj)
+            analysis_result = self.execute_analysis(obj)
+
+        # if we are grouping by time then we mark this Observable as a future target for other grouping
+        # (if we got an analysis result)
+        if analysis_result and self.is_grouped_by_time:
+            obj.grouping_target = True
+
+        return analysis_result
 
     def cleanup(self):
         """Called after all analysis has completed. Override this if you need to clean up something after analysis."""
@@ -711,6 +732,62 @@ configuration."""
     def maintenance_frequency(self):
         """Returns how often to execute the maintenance function, in seconds, or None to disable (the default.)"""
         return None
+
+    def analysis_covered(self, observable):
+        """Returns True if the value of this observable has already been analyzed in another observable
+           that has an observation time with range of this observable."""
+
+        # for this to have any meaning, the observations must have correponding times
+        if not observable.time:
+            return False
+        
+        # is this feature enabled for this analysis module?
+        if not self.is_grouped_by_time:
+            return False
+
+        start_time = observable.time - self.observation_grouping_time_range
+        end_time = observable.time + self.observation_grouping_time_range
+
+        grouping_target_available = False
+
+        # NOTE that we also iterate over the observable we're looking at
+        for target_observable in self.root.get_observables_by_type(observable.type):
+
+            if target_observable.value != observable.value:
+                continue
+
+            # does this target observables time fall in the range we're looking for?
+            if target_observable.time is None:
+                continue
+
+            if target_observable.time >= start_time and target_observable.time <= end_time:
+                # does this target_observable already have this analysis generated?
+                if target_observable.get_analysis(self.generated_analysis_type):
+                    logging.debug(f"{target_observable} already has analysis for "
+                                  f"{self.generated_analysis_type} between times {start_time} and {end_time} "
+                                  f"{observable}")
+                    return True
+
+                # this target is in range AND is already a grouping target
+                # NOTE that we want to keep looking for existing analysis so we don't break out of the loop here
+                if target_observable.grouping_target:
+                    logging.debug(f"{target_observable} detected as grouping target for "
+                                  f"{self.generated_analysis_type} {observable}")
+                    grouping_target_available = True
+
+        # if we didn't find anything and the observable we're looking at is a grouping target then this is
+        # the one we want to analyze
+        if observable.grouping_target:
+            logging.debug(f"using {observable} as grouping target for {self.generated_analysis_type}")
+            return False
+
+        # if we didn't find anything but we did find another observable in the group that is already a grouping
+        # target then we are considered "covered" because *that* observable will get the analysis
+        if grouping_target_available:
+            return True
+
+        # otherwise we analyze this one
+        return False
 
 class TagAnalysisModule(AnalysisModule):
     """These types of modules ignore any exclusion rules."""
