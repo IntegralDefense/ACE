@@ -1480,13 +1480,13 @@ WHERE
         from saq.phishfry import remediate_targets
         results_targets = remediate_targets("delete", targets)
 
-        # set message body appropriately
-        smtp_message_body = "Analysts determined that the email you reported is malicious. Similar emails were also removed. Thank you for reporting."
+        # use malz response
+				smtp_message_body = saq.CONFIG['phishme']['response_malz']
 
     # if disposition is false positive
     elif disposition == saq.constants.DISPOSITION_FALSE_POSITIVE:
-        # set message body appropriately
-        smtp_message_body = "Analysts determined that the email you reported is not malicious. The email can be retrieved from your junk folder."
+        # use b9 response
+				smtp_message_body = saq.CONFIG['phishme']['response_b9']
     
     # send response to all users that reported an email
     if saq.CONFIG['smtp'].getboolean('enabled'):
