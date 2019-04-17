@@ -409,6 +409,65 @@ class TestCase(ACEEngineTestCase):
         self.assertTrue(isinstance(observable.get_analysis(BasicTestAnalysis), bool))
         self.assertFalse(observable.get_analysis(BasicTestAnalysis))
 
+    def test_time_range_grouped_analysis(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable_1 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 12:00:00'))
+        observable_2 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 12:10:00'))
+        observable_3 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 14:00:00'))
+        observable_4 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 10:00:00'))
+        root.analysis_mode = 'test_groups'
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_grouped_time_range', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(uuid=root.uuid, storage_dir=root.storage_dir)
+        root.load()
+        observable_1 = root.get_observable(observable_1.id)
+        observable_2 = root.get_observable(observable_2.id)
+        observable_3 = root.get_observable(observable_3.id)
+        observable_4 = root.get_observable(observable_4.id)
+
+        from saq.modules.test import GroupedByTimeRangeAnalysis
+        # observations 3 and 4 should have analysis
+        self.assertTrue(bool(observable_3.get_analysis(GroupedByTimeRangeAnalysis)))
+        self.assertTrue(bool(observable_4.get_analysis(GroupedByTimeRangeAnalysis)))
+
+        # either 1 or 2 should have it but not both (logical xor)
+        self.assertTrue(bool(observable_1.get_analysis(GroupedByTimeRangeAnalysis)) ^ bool(observable_2.get_analysis(GroupedByTimeRangeAnalysis)))
+        # and one of these should be a grouping target
+        self.assertTrue(observable_1.grouping_target or observable_2.grouping_target)
+
+        # remember which one was the grouping target
+        grouping_target = observable_1 if observable_1.grouping_target else observable_2
+
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_grouping_target', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(uuid=root.uuid, storage_dir=root.storage_dir)
+        root.load()
+        observable_1 = root.get_observable(observable_1.id)
+        observable_2 = root.get_observable(observable_2.id)
+        grouping_target = root.get_observable(grouping_target.id)
+
+        from saq.modules.test import GroupingTargetAnalysis
+        # either 1 or 2 should have it but not both (logical xor)
+        self.assertTrue(bool(observable_1.get_analysis(GroupingTargetAnalysis)) ^ bool(observable_2.get_analysis(GroupingTargetAnalysis)))
+        # and the one that was previously marked as the grouping target is the one that should have the analysis
+        self.assertTrue(bool(grouping_target.get_analysis(GroupingTargetAnalysis)))
+
     def test_no_analysis_no_return(self):
 
         root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
