@@ -1,0 +1,29 @@
+<div class="panel panel-default">
+    <div class="panel-heading">{{analysis.summary}}</div>
+    <div class="panel-body">
+        <table class="table table-bordered table-condensed">
+        <tr>
+            <th>src_ipv4</td>
+            <th>src_port</td>
+            <th>dest_ipv4</td>
+            <th>action</td>
+            <th>threat</td>
+        </tr>
+    {% for result_group in analysis.details %}
+        {% for row in result_group %}
+        {% if row['action'] == 'blocked' %}
+        <tr class="success">
+        {% else %}
+        <tr>
+        {% endif %}
+            <td>{{row['src_ip']}}</td>
+            <td>{{row['src_port']}}</td>
+            <td>{{row['dst_ip']}}</td>
+            <td>{{row['action']}}</td>
+            <td>{{row['threat_name']}}</td>
+        </tr>
+        {% endfor %}
+    {% endfor %}
+    </table>
+    </div>
+</div>

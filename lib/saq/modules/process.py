@@ -12,7 +12,6 @@ from saq.modules import AnalysisModule, SplunkAnalysisModule, splunktime_to_saqt
 from cbapi import auth, connection
 from cbapi.response import *
 from cbapi.errors import ApiError, ObjectNotFoundError
-from cbinterface.modules.process import SuperProcess
 
 KEY_ASSET_COUNT = 'asset_count'
 KEY_PROCESS_LOGS = 'process_logs'
@@ -354,6 +353,7 @@ class ProcessGUIDAnalyzer(AnalysisModule):
             except Exception as e:
                 return
 
+        from cbinterface.modules.process import SuperProcess
         sp = SuperProcess(proc)
 
         analysis = self.create_analysis(observable)
