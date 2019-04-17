@@ -1481,12 +1481,12 @@ WHERE
         results_targets = remediate_targets("delete", targets)
 
         # use malz response
-				smtp_message_body = saq.CONFIG['phishme']['response_malz']
+        smtp_message_body = saq.CONFIG['phishme']['response_malz']
 
     # if disposition is false positive
     elif disposition == saq.constants.DISPOSITION_FALSE_POSITIVE:
         # use b9 response
-				smtp_message_body = saq.CONFIG['phishme']['response_b9']
+        smtp_message_body = saq.CONFIG['phishme']['response_b9']
     
     # send response to all users that reported an email
     if saq.CONFIG['smtp'].getboolean('enabled'):
