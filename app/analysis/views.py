@@ -49,7 +49,7 @@ from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Eve
                          Workload, DelayedAnalysis, \
                          acquire_lock, release_lock, \
                          get_available_nodes, use_db, set_dispositions, add_workload
-from saq.email import search_archive, get_email_archive_sections
+from saq.email import search_archive, get_email_archive_sections, get_remediation_targets
 from saq.error import report_exception
 from saq.gui import GUIAlert
 from saq.performance import record_execution_time
@@ -3850,9 +3850,12 @@ def phishfry_remediate():
             message_id = html.unescape(key[len('remediation_target_'):])
             message_ids.append(message_id)
 
-    # remediate selected message_ids
-    from saq.phishfry import remediate_message_ids
-    result_targets = remediate_message_ids(action, message_ids)
+    # get remediation targets from message_ids
+    targets = get_remediation_targets(message_ids)
+
+    # remediate all targets
+    from saq.phishfry import remediate_targets
+    result_targets = remediate_targets(action, targets)
 
     # render the results
     return render_template('analysis/remediation_results.html', targets=result_targets)

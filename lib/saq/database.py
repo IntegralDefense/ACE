@@ -1455,23 +1455,50 @@ WHERE
             message_id = html.unescape(row[0].decode(errors='ignore'))
             message_ids.append(message_id)
 
-    # remediate associated emails based on disposition
-    if len(message_ids) > 0:
-        auto_remediate_disposition = [
-            saq.constants.DISPOSITION_GRAYWARE,
-            saq.constants.DISPOSITION_POLICY_VIOLATION,
-            saq.constants.DISPOSITION_RECONNAISSANCE,
-            saq.constants.DISPOSITION_WEAPONIZATION,
-            saq.constants.DISPOSITION_DELIVERY,
-            saq.constants.DISPOSITION_EXPLOITATION,
-            saq.constants.DISPOSITION_INSTALLATION,
-            saq.constants.DISPOSITION_COMMAND_AND_CONTROL,
-            saq.constants.DISPOSITION_EXFIL,
-            saq.constants.DISPOSITION_DAMAGE
-        ]
-        if disposition in auto_remediate_disposition:
-            from saq.phishfry import remediate_message_ids
-            results_targets = remediate_message_ids("delete", message_ids)
+    # load remediation targets
+    from saq.email import get_remediation_targets
+    targets = get_remediation_targets(message_ids)
+
+    smtp_message_body = ""
+
+    malicious_dispositions = [
+        saq.constants.DISPOSITION_GRAYWARE,
+        saq.constants.DISPOSITION_POLICY_VIOLATION,
+        saq.constants.DISPOSITION_RECONNAISSANCE,
+        saq.constants.DISPOSITION_WEAPONIZATION,
+        saq.constants.DISPOSITION_DELIVERY,
+        saq.constants.DISPOSITION_EXPLOITATION,
+        saq.constants.DISPOSITION_INSTALLATION,
+        saq.constants.DISPOSITION_COMMAND_AND_CONTROL,
+        saq.constants.DISPOSITION_EXFIL,
+        saq.constants.DISPOSITION_DAMAGE
+    ]
+
+    # if disposition is malicious
+    if disposition in malicious_dispositions:
+        # remediate emails
+        from saq.phishfry import remediate_targets
+        results_targets = remediate_targets("delete", targets)
+
+        # set message body appropriately
+        smtp_message_body = "Analysts determined that the email you reported is malicious. Similar emails were also removed. Thank you for reporting."
+
+    # if disposition is false positive
+    elif disposition == saq.constants.DISPOSITION_FALSE_POSITIVE:
+        # set message body appropriately
+        smtp_message_body = "Analysts determined that the email you reported is not malicious. The email can be retrieved from your junk folder."
+    
+    # send response to all users that reported an email
+    if saq.CONFIG['smtp'].getboolean('enabled'):
+        # log into smtp server
+        smtp_host = saq.CONFIG['smtp']['server']
+        smtp_user = saq.CONFIG['smtp']['mail_from']
+        with smtp.SMTP(smtp_host) as smtp_server:
+            for message_id in targets:
+                # if this is a user reported email then send the reporting user a response
+                if targets[message_id]["subject"].startswith("[POTENTIAL PHISH]"):
+                    smtp_message = "Subject: RE: {}\n\n{}".format(targets[message_id]['subject'], smtp_message_body)
+                    smtp_server.sendmail(smtp_user, targets[message_id]['sender'], smtp_message)
 
 class Similarity:
     def __init__(self, uuid, disposition, percent):

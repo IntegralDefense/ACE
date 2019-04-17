@@ -5,7 +5,7 @@ import saq
 from saq import SAQ_HOME
 import saq.constants
 from saq.database import get_db_connection
-from saq.email import search_archive, get_email_archive_sections
+from saq.email import get_remediation_targets
 
 def get_config_var(config, section, key, default=None):
     if section in config and key in config[section] and config[section][key]:
@@ -14,26 +14,15 @@ def get_config_var(config, section, key, default=None):
         return default
     raise Exception("Missing required config variable config[{}][{}]".format(section, key))
 
-def remediate_message_ids(action, message_ids):
+def remediate_targets(action, targets):
     assert action in [ 'restore', 'delete' ];
     result_targets = {}
-    
-    # get info about each target
-    targets = {}
-    for source in get_email_archive_sections():
-        result = search_archive(source, message_ids, excluded_emails=saq.CONFIG['remediation']['excluded_emails'].split(','))
-        for archive_id in result:
-            message_id = result[archive_id].message_id
-            if message_id not in targets:
-                targets[message_id] = { "recipients": {}, "sender": "Unknown", "subject": "Unknown" }
-            targets[message_id]["recipients"][result[archive_id].recipient] = { "remediated": 0, "error": "", "success": True }
-            targets[message_id]["sender"] = result[archive_id].sender
-            targets[message_id]["subject"] = result[archive_id].subject
 
     with get_db_connection() as db:
         c = db.cursor()
 
         # get remediation status of each target
+        message_ids = [message_id for message_id in targets]
         message_ids_format = ",".join(['%s' for _ in message_ids])
         c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
                      WHERE message_id IN ( {} )""".format(message_ids_format), tuple(message_ids))
@@ -69,7 +58,7 @@ def remediate_message_ids(action, message_ids):
                 if (action == "delete" and remediated) or (action == "restored" and not remediated):
                     if message_id not in result_targets:
                         result_targets[message_id] = { "recipients": {}, "sender": targets[message_id]["sender"], "subject": targets[message_id]["subject"] }
-                    result_targets[message_id]["recipients"][address] = { "remediated": desired_status, "error": desired_error, "success": True }
+                    result_targets[message_id]["recipients"][recipient] = { "remediated": desired_status, "error": desired_error, "success": True }
                     continue
 
                 results = {}

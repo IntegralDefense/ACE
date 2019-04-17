@@ -171,6 +171,22 @@ def search_archive(source, message_ids, excluded_emails=[]):
 
     return _buffer
 
+def get_remediation_targets(message_ids):
+    targets = {}
+    if len(message_ids) == 0:
+        return targets
+
+    for source in get_email_archive_sections():
+        result = search_archive(source, message_ids, excluded_emails=saq.CONFIG['remediation']['excluded_emails'].split(','))
+        for archive_id in result:
+            message_id = result[archive_id].message_id
+            if message_id not in targets:
+                targets[message_id] = { "recipients": {}, "sender": "Unknown", "subject": "Unknown" }
+            targets[message_id]["recipients"][result[archive_id].recipient] = { "remediated": 0, "error": "", "success": True }
+            targets[message_id]["sender"] = result[archive_id].sender
+            targets[message_id]["subject"] = result[archive_id].subject
+    return targets
+
 def maintain_archive(verbose=False):
     """Deletes archived emails older than what is configured as [analysis_module_email_archiver] expiration_days."""
 
