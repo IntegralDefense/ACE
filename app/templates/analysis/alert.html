@@ -156,31 +156,43 @@
     {% endif %}
 {% endmacro %}
 
-{% if remediation_targets | length > 0 %}
+{% for message_id, target in remediation_targets.items() %}
+{% for recipient, info in target["recipients"].items() %}
 <div class="panel panel-default">
-    <div class="panel-heading">Phishfry Remediation Status<a role="button" data-toggle="collapse" data-target="#collapse_phishfry" aria-expanded="true" aria-controls="collapse_phishfry">(hide/show)</a></div>
-    <div class="panel-body collapse" id="collapse_phishfry">
-        <table class="table table-striped">
+    <div class="panel-heading">
+        <h3 class="panel-title">PhishFry Remediation History - {{message_id}}</h3>
+    </div>
+    <div class="panel-body">
+        <h6>From: <font color="red">{{target["sender"]}}</font> 
+            To: <font color="blue">{{recipient}}</font>
+            Subject: <font color="green">{{target["subject"]}}</font>
+        </h6>
+        {% if info["history"] | length == 0 %}
             <tr>
-                <th>To</th>
-                <th>From</th>
-                <th>Subject</th>
-                <th>Remediated</th>
+                <td colspan="4"><i>No remediations have been attempted.</i></td>
             </tr>
-            {% for message_id, target in remediation_targets.items() %}
-            {% for recipient, info in target["recipients"].items() %}
-	    <tr{% if info["remediated"] %} class="success"{% endif %}>
-                <td>{{recipient}}</td>
-                <td>{{target["sender"]}}</td>
-                <td>{{target["subject"]}}</td>
-		<td>{% if info["remediated"] %}Yes{% else %}No{% endif %}</td>
+        {% else %}
+            <table class="table">
+            <tr>
+                <td>Action</td>
+                <td>Date</td>
+                <td>User</td>
+                <td>Result</td>
             </tr>
+            {% for history in info["history"] %}
+                <tr {% if history["successful"] %}class="success"{% else %}class="danger"{% endif %}>
+                    <td>{{history["action"]}}</td>
+                    <td style="white-space: nowrap">{{history["insert_date"]}}</td>
+                    <td>{{history["user"]}}</td>
+                    <td>{{history["result"]}}</td>
+                </tr>
             {% endfor %}
-            {% endfor %}
-        </table>
+            </table>
+        {% endif %}
     </div>
 </div>
-{% endif %}
+{% endfor %}
+{% endfor %}
 
 {% for entry in email_remediations %}
 <div class="panel panel-default">

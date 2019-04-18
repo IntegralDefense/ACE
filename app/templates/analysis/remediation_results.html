@@ -3,7 +3,7 @@
 		<th>To</th>
 		<th>From</th>
 		<th>Subject</th>
-		<th>Status</th>
+		<th>Result</th>
 	</tr>
 	{% for message_id, target in targets.items() %}
 	{% for recipient, status in target["recipients"].items() %}
@@ -11,7 +11,7 @@
 		<td>{{recipient}}</td>
 		<td>{{target["sender"]}}</td>
 		<td>{{target["subject"]}}</td>
-		<td>{{status["error"]}}</td>
+		<td>{{status["result"]}}</td>
 	</tr>
         {% endfor %}
         {% endfor %}

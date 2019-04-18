@@ -3440,7 +3440,6 @@ def index():
     domain_summary_str = _create_histogram_string(domains)
 
     # get remediation targets
-    targets = {}
     message_ids = []
     with get_db_connection() as dbc:
         c = dbc.cursor()
@@ -3451,29 +3450,7 @@ def index():
             message_id = row[0].decode(errors="ignore")
             message_ids.append(message_id)
             message_id = html.escape(message_id)
-            targets[message_id] = { "recipients": {}, "sender": "Unknown", "subject": "Unknown" }
-
-    # get info about each remediation target
-    for source in get_email_archive_sections():
-        result = search_archive(source, message_ids)
-        for archive_id in result:
-            message_id = html.escape(result[archive_id].message_id)
-            targets[message_id]["recipients"][result[archive_id].recipient] = { "remediated": 0 }
-            targets[message_id]["sender"] = result[archive_id].sender
-            targets[message_id]["subject"] = result[archive_id].subject
-
-    # get remediation status of each target
-    with get_db_connection() as dbc:
-        c = dbc.cursor()
-
-        # get remediation status of each target
-        message_ids_format = ",".join(['%s' for _ in message_ids])
-        c.execute("""SELECT message_id, recipient, remediated, error FROM email_remediation
-                     WHERE message_id IN ( {} )""".format(message_ids_format), tuple(message_ids))
-        for row in c:
-            message_id, recipient, remediated, error = row
-            message_id = html.escape(message_id)
-            targets[message_id]["recipients"][recipient] = { "remediated": remediated }
+    targets = get_remediation_targets(message_ids)
 
     return render_template('analysis/index.html',
                            alert=alert,
@@ -3827,14 +3804,11 @@ def remediation_targets():
         message_ids.append(message_id)
 
     # get info about each target
-    for source in get_email_archive_sections():
-        result = search_archive(source, message_ids)
-        for archive_id in result:
-            message_id = html.escape(result[archive_id].message_id)
-            targets[message_id] = { "sender": result[archive_id].sender, "subject": result[archive_id].subject }
+    targets = get_remediation_targets(message_ids)
 
     if len(targets) == 0:
         return "No targets found in email archive"
+
     return render_template('analysis/select_remediation_targets.html', targets=targets)
 
 @analysis.route('/phishfry_remediate', methods=['POST'])
