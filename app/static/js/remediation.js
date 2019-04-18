@@ -219,6 +219,6 @@ $(document).ready(function() {
     });
 
     $('#btn-phishfry-email-remediation').click(function(e) {
-	phishfry_execute('delete');
+	phishfry_execute('remove');
     });
 });

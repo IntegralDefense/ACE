@@ -180,11 +180,31 @@ def get_remediation_targets(message_ids):
         result = search_archive(source, message_ids, excluded_emails=saq.CONFIG['remediation']['excluded_emails'].split(','))
         for archive_id in result:
             message_id = result[archive_id].message_id
+            recipient = result[archive_id].recipient
+            sender = result[archive_id].sender
+            subject = result[archive_id].subject
             if message_id not in targets:
-                targets[message_id] = { "recipients": {}, "sender": "Unknown", "subject": "Unknown" }
-            targets[message_id]["recipients"][result[archive_id].recipient] = { "remediated": 0, "error": "", "success": True }
-            targets[message_id]["sender"] = result[archive_id].sender
-            targets[message_id]["subject"] = result[archive_id].subject
+                targets[message_id] = { "recipients": {}, "sender": sender, "subject": subject }
+            targets[message_id]["recipients"][recipient] = { "removed": 0, "history": [] }
+
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        # get remediation history of each target
+        c.execute("""SELECT remediation.key, action, insert_date, username, result, successful, removed
+                     FROM email_remediation
+                     JOIN remediation ON email_remediation.key = remediation.key
+                     JOIN users ON remediation.user_id = users.id
+                     WHERE message_id IN ( {} )
+                     ORDER BY insert_date ASC""".format(','.join(['%s' for _ in message_ids])), tuple(message_ids))
+        for row in c:
+            key, action, insert_date, user, result, successful, removed = row
+            message_id, recipient = key.split(':')
+            if recipient not in targets[message_id]['recipients']:
+                targets[message_id]['recipients'][recipient] = { "removed": 0, "history": [] }
+            targets[message_id]['recipients'][recipient]["removed"] = removed
+            targets[message_id]['recipients'][recipient]["history"].append({"action":action, "insert_date":insert_date, "user":user, "result":result, "successful":successful})
+
     return targets
 
 def maintain_archive(verbose=False):

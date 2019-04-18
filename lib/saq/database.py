@@ -1478,7 +1478,7 @@ WHERE
     if disposition in malicious_dispositions:
         # remediate emails
         from saq.phishfry import remediate_targets
-        results_targets = remediate_targets("delete", targets)
+        results_targets = remediate_targets("remove", targets)
 
         # use malz response
         smtp_message_body = saq.CONFIG['phishme']['response_malz']
