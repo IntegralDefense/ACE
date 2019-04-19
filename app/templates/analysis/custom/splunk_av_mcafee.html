@@ -4,7 +4,7 @@
     <div class="panel-heading">AV Alert Summary <a role="button" data-toggle="collapse" data-target="#collapse_av_summary" aria-expanded="true" aria-controls="collapse_av_summary">(hide/show)</a></div>
     <div class="panel-body collapse" id="collapse_av_summary">
         {% for row in analysis.details %}
-        <div class="well">{{row['DetectedUTC']}} <b>{{row['ThreatName']}}</b> <span style="color: #0000FF">host <b>{{row['TargetHostName']}}</b></span> <span style="color: #FF0000">file <b>{{row['TargetPath']}}</b></span> action <b>{{row['ThreatActionTaken']}}</b> detection method <b>{{row['AnalyzerDetectionMethod']}}</b></div>
+        <div class="well">{{row['DetectedUTC']}} <b>{{row['ThreatName']}}</b> <span style="color: #0000FF">host <b>{{row['TargetHostName']}}</b></span> <span style="color: #FF0000">file <b>{{row['TargetPath']}}</b></span> action <b>{{row['ThreatActionTaken']}}</b> detection method <b>{{row['AnalyzerDetectionMethod']}}</b> detected on creation <b>{{row['ThreatDetectedOnCreation']}}</b></div>
         {% endfor %}
     </div>
 </div>
