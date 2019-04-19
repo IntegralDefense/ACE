@@ -1,0 +1,19 @@
+{% extends "analysis/alert.html" %}
+{% block alert_details %}
+<div class="panel panel-default">
+    <div class="panel-heading">AV Alert Summary <a role="button" data-toggle="collapse" data-target="#collapse_av_summary" aria-expanded="true" aria-controls="collapse_av_summary">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_av_summary">
+        {% for row in analysis.details %}
+        <div class="well">{{row['DetectedUTC']}} <b>{{row['ThreatName']}}</b> <span style="color: #0000FF">host <b>{{row['TargetHostName']}}</b></span> <span style="color: #FF0000">file <b>{{row['TargetPath']}}</b></span> action <b>{{row['ThreatActionTaken']}}</b> detection method <b>{{row['AnalyzerDetectionMethod']}}</b></div>
+        {% endfor %}
+    </div>
+</div>
+<div class="panel panel-default">
+    <div class="panel-heading">AV Alert Raw Details <a role="button" data-toggle="collapse" data-target="#collapse_av_details" aria-expanded="true" aria-controls="collapse_av_details">(hide/show)</a></div>
+    <div class="panel-body collapse" id="collapse_av_details">
+        {% for row in analysis.details %}
+        <div class="well">{{row['_raw'] }}</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
