@@ -701,7 +701,7 @@ def _cli_cloudphish_download(args):
 
     if args.sha256:
         url = None
-        sha256 = target
+        sha256 = args.target
 
     return cloudphish_download(remote_host=args.remote_host,
                                ssl_verification=args.ssl_verification,

@@ -171,7 +171,7 @@ class CarbonBlackProcessAnalyzer_v1(AnalysisModule):
 class CarbonBlackNetconnSourceAnalysis(Analysis):
 
     def initialize_details(self):
-        self.details = { }
+        self.details = []
 
     def generate_summary(self):
         if not self.details:
@@ -200,13 +200,28 @@ class CarbonBlackNetconnSourceAnalyzer(SplunkAnalysisModule):
     def execute_analysis(self, ipv4_fc):
         
         target_time = ipv4_fc.time if ipv4_fc.time else self.root.event_time
-        self.splunk_query(f"""index=carbonblack event_type=netconn local_ip={ipv4_fc.source} remote_ip={ipv4_fc.dest} remote_port={ipv4_fc.dest_port} | fields *""", target_time)
 
-        if self.search_results is None:
+        # source -> dest (dest_port)
+        source_dest_json = None
+        self.splunk_query(f"""index=carbonblack event_type=netconn local_ip={ipv4_fc.source} remote_ip={ipv4_fc.dest} remote_port={ipv4_fc.dest_port} | fields *""", target_time)
+        if self.search_results is not None:
+            source_dest_json = self.json()
+
+        # dest -> source (src_port)
+        dest_source_json = None
+        self.splunk_query(f"""index=carbonblack event_type=netconn local_ip={ipv4_fc.dest} remote_ip={ipv4_fc.source} remote_port={ipv4_fc.source_port} | fields *""", target_time)
+        if self.search_results is not None:
+            dest_source_json = self.json()
+
+        if source_dest_json is None and dest_source_json is None:
             return False
 
         analysis = self.create_analysis(ipv4_fc)
-        analysis.details = self.json()
+        if source_dest_json is not None:
+            analysis.details.extend(source_dest_json)
+        if dest_source_json is not None:
+            analysis.details.extend(dest_source_json)
+
         procs = [(p['process_guid'], parse_event_time(p['_time'])) for p in analysis.details if 'process_guid' in p]
         for process_guid, event_time  in procs[:self.process_guid_limit]:
             process_guid = analysis.add_observable(F_PROCESS_GUID, process_guid, event_time)
