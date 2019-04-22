@@ -1373,8 +1373,8 @@ class EmailAnalyzer(AnalysisModule):
                 reply_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if reply_to:
                     reply_to.add_tag('reply_to')
-                    if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
+                    #if mail_to:
+                        #analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
 
         if 'return-path' in target_email:
             email_details[KEY_RETURN_PATH] = target_email['return-path']
@@ -1383,8 +1383,8 @@ class EmailAnalyzer(AnalysisModule):
                 return_path = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if return_path:
                     return_path.add_tag('return_path')
-                    if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
+                    #if mail_to:
+                        #analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
         
         if 'subject' in target_email:
             email_details[KEY_SUBJECT] = target_email['subject']
