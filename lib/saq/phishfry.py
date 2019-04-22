@@ -32,7 +32,7 @@ def remediate_targets(action, targets):
             version = get_config_var(config, section, "version", default="Exchange2016")
             user = get_config_var(config, section, "user")
             password = get_config_var(config, section, "pass")
-            accounts.append(EWS.Account(user, password, server=server, version=version, timezone=timezone))
+            accounts.append(EWS.Account(user, password, server=server, version=version, timezone=timezone, proxies=saq.PROXIES))
 
         # warn if no EWS accounts are configured
         if len(accounts) == 0:
