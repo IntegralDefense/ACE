@@ -3,6 +3,7 @@ import functools
 import html
 import logging
 import shutil
+import smtplib
 import sys
 import threading
 import time
@@ -1480,8 +1481,11 @@ WHERE
         from saq.phishfry import remediate_targets
         results_targets = remediate_targets("remove", targets)
 
-        # use malz response
+        # use malz or spam response
         smtp_message_body = saq.CONFIG['phishme']['response_malz']
+        elif disposition == saq.constants.DISPOSITION_GRAYWARE:
+            # use spam response
+            smtp_message_body = saq.CONFIG['phishme']['response_spam']
 
     # if disposition is false positive
     elif disposition == saq.constants.DISPOSITION_FALSE_POSITIVE:
@@ -1491,9 +1495,12 @@ WHERE
     # send response to all users that reported an email
     if saq.CONFIG['smtp'].getboolean('enabled'):
         # log into smtp server
-        smtp_host = saq.CONFIG['smtp']['server']
-        smtp_user = saq.CONFIG['smtp']['mail_from']
-        with smtp.SMTP(smtp_host) as smtp_server:
+        smtp_host = saq.CONFIG['smtp']['host']
+        smtp_port = saq.CONFIG['smtp'].getint('port')
+        smtp_user = saq.CONFIG['smtp']['user']
+        smtp_pass = saq.CONFIG['smtp']['pass']
+        with smtplib.SMTP(smtp_host, smtp_port) as smtp_server:
+            smtp_server.login(smtp_user, smtp_pass)
             for message_id in targets:
                 # if this is a user reported email then send the reporting user a response
                 if targets[message_id]["subject"].startswith("[POTENTIAL PHISH]"):
