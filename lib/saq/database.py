@@ -1,7 +1,9 @@
 import datetime
 import functools
+import html
 import logging
 import shutil
+import smtplib
 import sys
 import threading
 import time
@@ -1404,6 +1406,7 @@ def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
        :param user_id: The id of the User that is setting the disposition.
        :param user_comment: Optional comment the User is providing as part of the disposition."""
 
+    message_ids = []
     with get_db_connection() as db:
         c = db.cursor()
         # update dispositions
@@ -1443,6 +1446,66 @@ WHERE
         params.extend(alert_uuids)
         c.execute(sql, tuple(params))
         db.commit()
+
+        # get all associated message_ids
+        c.execute("""SELECT o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
+                     JOIN alerts a ON om.alert_id = a.id
+                     WHERE o.type = 'message_id' AND a.uuid IN ( {} )""".format(','.join(['%s' for _ in alert_uuids])),
+                 tuple(alert_uuids))
+        for row in c:
+            message_id = html.unescape(row[0].decode(errors='ignore'))
+            message_ids.append(message_id)
+
+    # load remediation targets
+    from saq.email import get_remediation_targets
+    targets = get_remediation_targets(message_ids)
+
+    smtp_message_body = ""
+
+    malicious_dispositions = [
+        saq.constants.DISPOSITION_GRAYWARE,
+        saq.constants.DISPOSITION_POLICY_VIOLATION,
+        saq.constants.DISPOSITION_RECONNAISSANCE,
+        saq.constants.DISPOSITION_WEAPONIZATION,
+        saq.constants.DISPOSITION_DELIVERY,
+        saq.constants.DISPOSITION_EXPLOITATION,
+        saq.constants.DISPOSITION_INSTALLATION,
+        saq.constants.DISPOSITION_COMMAND_AND_CONTROL,
+        saq.constants.DISPOSITION_EXFIL,
+        saq.constants.DISPOSITION_DAMAGE
+    ]
+
+    # if disposition is malicious
+    if disposition in malicious_dispositions:
+        # remediate emails
+        from saq.phishfry import remediate_targets
+        results_targets = remediate_targets("remove", targets)
+
+        # use malz or spam response
+        smtp_message_body = saq.CONFIG['phishme']['response_malz']
+        elif disposition == saq.constants.DISPOSITION_GRAYWARE:
+            # use spam response
+            smtp_message_body = saq.CONFIG['phishme']['response_spam']
+
+    # if disposition is false positive
+    elif disposition == saq.constants.DISPOSITION_FALSE_POSITIVE:
+        # use b9 response
+        smtp_message_body = saq.CONFIG['phishme']['response_b9']
+    
+    # send response to all users that reported an email
+    if saq.CONFIG['smtp'].getboolean('enabled'):
+        # log into smtp server
+        smtp_host = saq.CONFIG['smtp']['host']
+        smtp_port = saq.CONFIG['smtp'].getint('port')
+        smtp_user = saq.CONFIG['smtp']['user']
+        smtp_pass = saq.CONFIG['smtp']['pass']
+        with smtplib.SMTP(smtp_host, smtp_port) as smtp_server:
+            smtp_server.login(smtp_user, smtp_pass)
+            for message_id in targets:
+                # if this is a user reported email then send the reporting user a response
+                if targets[message_id]["subject"].startswith("[POTENTIAL PHISH]"):
+                    smtp_message = "Subject: RE: {}\n\n{}".format(targets[message_id]['subject'], smtp_message_body)
+                    smtp_server.sendmail(smtp_user, targets[message_id]['sender'], smtp_message)
 
 class Similarity:
     def __init__(self, uuid, disposition, percent):
