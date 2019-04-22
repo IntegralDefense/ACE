@@ -1,0 +1,18 @@
+<table class="table table-striped">
+	<tr>
+		<th>To</th>
+		<th>From</th>
+		<th>Subject</th>
+		<th>Result</th>
+	</tr>
+	{% for message_id, target in targets.items() %}
+	{% for recipient, status in target["recipients"].items() %}
+	<tr {% if status["success"] %}class="success"{% else %}class="danger"{% endif %}>
+		<td>{{recipient}}</td>
+		<td>{{target["sender"]}}</td>
+		<td>{{target["subject"]}}</td>
+		<td>{{status["result"]}}</td>
+	</tr>
+        {% endfor %}
+        {% endfor %}
+</table>
