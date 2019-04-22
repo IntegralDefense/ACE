@@ -1773,6 +1773,7 @@ add_observable_parser.add_argument('-t', '--reference-time', required=False, des
 add_observable_parser.set_defaults(func=add_observable)
 
 def reload_alerts(args):
+    from saq.constants import ANALYSIS_MODE_CORRELATION
     from saq.database import Alert, DatabaseSession
 
     # generate the list of alerts to reload
@@ -1780,6 +1781,7 @@ def reload_alerts(args):
     for uuid in args.uuids:
         alert = session.query(Alert).filter(Alert.uuid == uuid).one()
         #alert.request_correlation()
+        alert.analysis_mode = ANALYSIS_MODE_CORRELATION
         alert.schedule()
 
 reload_alert_parser = subparsers.add_parser('reload-alerts',

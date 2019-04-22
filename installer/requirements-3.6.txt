@@ -44,3 +44,4 @@ tzlocal
 urlfinderlib
 vxstreamlib
 yara_scanner
+sandboxapi
