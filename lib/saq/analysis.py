@@ -1253,6 +1253,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     KEY_LIMITED_ANALYSIS = 'limited_analysis'
     KEY_EXCLUDED_ANALYSIS = 'excluded_analysis'
     KEY_RELATIONSHIPS = 'relationships'
+    KEY_GROUPING_TARGET = 'grouping_target'
 
     def __init__(self, type, value, time=None, json=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1263,6 +1264,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         self._limited_analysis = []
         self._excluded_analysis = []
         self._relationships = []
+        self._grouping_target = False
 
         if json is not None:
             self.json = json
@@ -1278,6 +1280,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
             self._limited_analysis = [] # [ str ]
             self._excluded_analysis = [] # [ str ]
             self._relationships = [] # [ Relationship ]
+            self._grouping_target = False
 
         # reference to the RootAnalysis object
         self.root = None
@@ -1342,6 +1345,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
             Observable.KEY_LIMITED_ANALYSIS: self._limited_analysis,
             Observable.KEY_EXCLUDED_ANALYSIS: self._excluded_analysis,
             Observable.KEY_RELATIONSHIPS: self._relationships,
+            Observable.KEY_GROUPING_TARGET: self._grouping_target,
         })
         return result
 
@@ -1374,6 +1378,8 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
             self._excluded_analysis = value[Observable.KEY_EXCLUDED_ANALYSIS]
         if Observable.KEY_RELATIONSHIPS in value:
             self._relationships = value[Observable.KEY_RELATIONSHIPS]
+        if Observable.KEY_GROUPING_TARGET in value:
+            self._grouping_target = value[Observable.KEY_GROUPING_TARGET]
 
     @property
     def id(self):
@@ -1627,6 +1633,28 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
             return None
 
         return result[0]
+
+    #
+    # GROUPING TARGETS
+    #
+    # When an AnalysisModule uses the observation_grouping_time_range configuration option, ACE will select a 
+    # single Observable to analyze that falls within that time range. ACE will then *also* set the grouping_target
+    # property of that Observable to True.
+    # Then the next time another AnalysisModule which also groups by time is looking for an Observable to analyze
+    # out of a group of Observables, it will select the (first) one that has grouping_target set to True.
+    # This is so that most of the Analysis for grouped targets go into the same Observable, so that they're not
+    # all spread out in the graphical view.
+    #
+
+    @property
+    def grouping_target(self):
+        """Retruns True if this Observable has become a grouping target."""
+        return self._grouping_target
+
+    @grouping_target.setter
+    def grouping_target(self, value):
+        assert isinstance(value, bool)
+        self._grouping_target = value
 
     def add_tag(self, *args, **kwargs):
         super().add_tag(*args, **kwargs)

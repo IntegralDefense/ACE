@@ -1848,7 +1848,7 @@ def manage():
                      .join(observable_search, observable_mapping_search.observable_id == observable_search.id)\
                      .filter(and_(True if filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value == 'ANY' 
                                        else observable_search.type == filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value,
-                                  observable_search.value.like('%{}%'.format(filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value))))
+                                  observable_search.value.like('%{}%'.format(filters[FILTER_TXT_SEARCH_OBSERVABLE_VALUE].value).encode('utf8', errors='ignore'))))
 
         filter_english.append("has observable of type {0} with value {1}".format(
             filters[FILTER_S_SEARCH_OBSERVABLE_TYPE].value,

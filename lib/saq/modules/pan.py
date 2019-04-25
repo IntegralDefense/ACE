@@ -98,6 +98,9 @@ class PanSnortCorrelationAnalyzer(SplunkAnalysisModule):
                 if self.search_results is None:
                     return False
 
-                analysis.details.append(self.json())
+                json_result = self.json()
+                # if it's not an empty list...
+                if json_result:
+                    analysis.details.append(json_result)
 
         return True

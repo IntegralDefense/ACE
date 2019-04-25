@@ -36,6 +36,7 @@ F_DISPOSITION = 'disposition'
 F_CIDR = 'cidr'
 F_IPV4 = 'ipv4'
 F_IPV4_CONVERSATION = 'ipv4_conversation'
+F_IPV4_FULL_CONVERSATION = 'ipv4_full_conversation'
 F_FQDN = 'fqdn'
 F_HOSTNAME = 'hostname'
 F_HTTP_REQUEST = 'http_request'
@@ -65,6 +66,7 @@ OBSERVABLE_DESCRIPTIONS = {
     F_CIDR: 'IPv4 range in CIDR notation',
     F_IPV4: 'IP address (version 4)',
     F_IPV4_CONVERSATION: 'two F_IPV4 that were communicating formatted as aaa.bbb.ccc.ddd_aaa.bbb.ccc.ddd',
+    F_IPV4_FULL_CONVERSATION: 'two F_IPV4 that were communicating formatted as src_ipv4:src_port:dest_ipv4:dest_port',
     F_FQDN: 'fully qualified domain name',
     F_HOSTNAME: 'host or workstation name',
     F_HTTP_REQUEST: 'a single HTTP request',
@@ -97,6 +99,7 @@ OBSERVABLE_NODE_COLORS = {
     F_CIDR: "#0000FF", # blue
     F_IPV4 : "#0000FF", # blue
     F_IPV4_CONVERSATION : "#0000FF", # blue
+    F_IPV4_FULL_CONVERSATION : "#0000FF", # blue
     F_FQDN : "#D2691E", # chocolate
     F_HOSTNAME : "#87CEFA", # light sky blue
     F_HTTP_REQUEST : "#87CEFA", # light sky blue
@@ -126,6 +129,7 @@ VALID_OBSERVABLE_TYPES = sorted([
     F_CIDR,
     F_IPV4,
     F_IPV4_CONVERSATION,
+    F_IPV4_FULL_CONVERSATION,
     F_FQDN,
     F_HOSTNAME,
     F_HTTP_REQUEST,
@@ -159,6 +163,13 @@ DEPRECATED_OBSERVABLES = sorted([
     F_SUSPECT_FILE,
     F_YARA
 ])
+
+# utility functions to work with F_IPV4_FULL_CONVERSATION types
+def parse_ipv4_full_conversation(f_ipv4_fc):
+    return f_ipv4_fc.split(':', 4)
+
+def create_ipv4_full_conversation(src, src_port, dst, dst_port):
+    return '{}:{}:{}:{}'.format(src, src_port, dst, dst_port)
 
 # utility functions to work with F_IPV4_CONVERSATION types
 def parse_ipv4_conversation(f_ipv4_c):
