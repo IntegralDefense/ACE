@@ -482,7 +482,7 @@ CREATE TABLE `tags` (
 DROP TABLE IF EXISTS `observable_tag_mapping`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `tag_mapping` (
+CREATE TABLE `observable_tag_mapping` (
   `tag_id` int(11) NOT NULL,
   `observable_id` int(11) NOT NULL,
   PRIMARY KEY (`tag_id`,`observable_id`),
