@@ -87,7 +87,7 @@ class IPv4Observable(Observable):
     
     @property
     def jinja_available_actions(self):
-        result = []
+        result = super().jinja_available_actions()
         if not self.is_managed():
             result.append(ObservableActionUploadToCrits())
 
@@ -158,7 +158,7 @@ class FQDNObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        result = []
+        result = super().jinja_available_actions()
         if not self.is_managed():
             result.append(ObservableActionUploadToCrits())
 
@@ -176,10 +176,6 @@ class HostnameObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_HOSTNAME, *args, **kwargs)
 
-    @property
-    def jinja_available_actions(self):
-        return [ ]
-
 class AssetObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_ASSET, *args, **kwargs)
@@ -187,10 +183,6 @@ class AssetObservable(CaselessObservable):
 class UserObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_USER, *args, **kwargs)
-
-    @property
-    def jinja_available_actions(self):
-        return [ ]
 
 class URLObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -217,7 +209,9 @@ class URLObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionClearCloudphishAlert() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionClearCloudphishAlert())
+        return results
 
 class FileObservable(Observable):
 
@@ -385,7 +379,7 @@ class FileObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        result = []
+        results = super().jinja_available_actions()
         if self.exists:
             result.append(ObservableActionDownloadFile())
             result.append(ObservableActionDownloadFileAsZip())
@@ -468,7 +462,9 @@ class FilePathObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionUploadToCrits())
+        return results
 
 class FileNameObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -476,7 +472,9 @@ class FileNameObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionUploadToCrits())
+        return results
 
 class FileLocationObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -493,7 +491,9 @@ class FileLocationObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionCollectFile() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionCollectFile())
+        return results
 
     @property
     def jinja_template_path(self):
@@ -512,15 +512,13 @@ class EmailAddressObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionUploadToCrits())
+        return results
 
 class YaraRuleObservable(Observable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_YARA_RULE, *args, **kwargs)
-
-    @property
-    def jinja_available_actions(self):
-        return [ ]
 
 class IndicatorObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -530,17 +528,15 @@ class IndicatorObservable(Observable):
     def jinja_template_path(self):
         return "analysis/indicator_observable.html"
 
-    @property
-    def jinja_available_actions(self):
-        return [ ]
-
 class MD5Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_MD5, *args, **kwargs)
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionUploadToCrits())
+        return results
 
 class SHA1Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -548,7 +544,9 @@ class SHA1Observable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionUploadToCrits())
+        return results
 
 class SHA256Observable(Observable):
     def __init__(self, *args, **kwargs):
@@ -560,7 +558,9 @@ class SHA256Observable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionUploadToCrits())
+        return results
 
 class EmailConversationObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -589,7 +589,9 @@ class MessageIDObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionRemediateEmail(), ]
+        results = super().jinja_available_actions()
+        results.append(ObservableActionRemediateEmail())
+        return results
 
 class ProcessGUIDObservable(Observable): 
     def __init__(self, *args, **kwargs): 

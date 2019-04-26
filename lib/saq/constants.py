@@ -409,6 +409,8 @@ ACTION_FILE_VIEW_VX = 'file_view_vx'
 ACTION_COLLECT_FILE = 'collect_file'
 ACTION_CLEAR_CLOUDPHISH_ALERT = 'clear_cloudphish_alert'
 ACTION_REMEDIATE_EMAIL = 'remediate_email'
+ACTION_WHITELIST = 'whitelist'
+ACTION_UN_WHITELIST = 'un_whitelist'
 
 # recorded metrics
 METRIC_THREAD_COUNT = 'thread_count'
