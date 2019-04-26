@@ -23,7 +23,6 @@ import requests
 
 import saq
 from saq.constants import *
-from saq.database import get_db_connection
 from saq.error import report_exception
 from saq.gui import *
 from saq.util import *
@@ -1667,6 +1666,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
 
     # fetches user created tags for this observable from the database and adds them to the observables
     def fetch_tags(self):
+        from saq.database import get_db_connection
         with get_db_connection() as db:
             c = db.cursor()
             c.execute("""SELECT `tags.name`

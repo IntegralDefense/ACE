@@ -15,7 +15,6 @@ from subprocess import Popen, PIPE
 import saq
 from saq.analysis import Observable, DetectionPoint
 from saq.constants import *
-from saq.database import get_db_connection
 from saq.email import normalize_email_address
 from saq.error import report_exception
 from saq.gui import *
@@ -237,6 +236,7 @@ class FileObservable(Observable):
 
     # fetches user created tags for this observable from the database and adds them to the observables
     def fetch_tags(self):
+        from saq.database import get_db_connection
         with get_db_connection() as db:
             c = db.cursor()
             c.execute("""SELECT `tags.name`
