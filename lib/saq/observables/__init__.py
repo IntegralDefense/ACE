@@ -15,6 +15,7 @@ from subprocess import Popen, PIPE
 import saq
 from saq.analysis import Observable, DetectionPoint
 from saq.constants import *
+from saq.database import get_db_connection
 from saq.email import normalize_email_address
 from saq.error import report_exception
 from saq.gui import *
@@ -239,6 +240,18 @@ class FileObservable(Observable):
 
         # some directives are inherited by children
         self.add_event_listener(EVENT_RELATIONSHIP_ADDED, self.handle_relationship_added)
+
+    # fetches user created tags for this observable from the database and adds them to the observables
+    def fetch_tags(self):
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""SELECT `tags.name`
+                         FROM observables
+                         JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
+                         JOIN tags ON observable_tag_mapping.tag_id = tags.id
+                         WHERE `observables.type` = '{}' AND `observables.value` = '{}'""".format(F_SHA256, self.sha256_hash))
+            for row in c:
+                self.add_tag(row[0])
 
     @property
     def json(self):

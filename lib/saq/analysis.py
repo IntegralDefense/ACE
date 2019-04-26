@@ -23,6 +23,7 @@ import requests
 
 import saq
 from saq.constants import *
+from saq.database import get_db_connection
 from saq.error import report_exception
 from saq.util import *
 
@@ -1114,6 +1115,8 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         if observable is None:
             return None
 
+        observable.fetch_tags()
+
         if observable not in self.observables:
             self.observables.append(observable)
             self.fire_event(self, EVENT_OBSERVABLE_ADDED, observable)
@@ -1661,6 +1664,17 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         for target in self.links:
             target.add_tag(*args, **kwargs)
 
+    # fetches user created tags for this observable from the database and adds them to the observables
+    def fetch_tags(self):
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""SELECT `tags.name`
+                         FROM observables
+                         JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
+                         JOIN tags ON observable_tag_mapping.tag_id = tags.id
+                         WHERE `observables.type` = '{}' AND `observables.value` = '{}'""".format(self.type, self.value))
+            for row in c:
+                self.add_tag(row[0])
 
     @property
     def analysis(self):
