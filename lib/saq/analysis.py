@@ -24,7 +24,6 @@ import requests
 import saq
 from saq.constants import *
 from saq.error import report_exception
-from saq.gui import *
 from saq.util import *
 
 STATE_KEY_WHITELISTED = 'whitelisted'
@@ -1728,6 +1727,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     @property
     def jinja_available_actions(self):
         """Returns a list of ObservableAction-based objects that represent what a user can do with this Observable."""
+        from saq.gui import ObservableActionUnWhitelist, ObservableActionWhitelist
         actions = []
         if self.whitelisted:
             actions.append(ObservableActionUnWhitelist())
