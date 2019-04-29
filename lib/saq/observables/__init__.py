@@ -236,18 +236,18 @@ class FileObservable(Observable):
         # some directives are inherited by children
         self.add_event_listener(EVENT_RELATIONSHIP_ADDED, self.handle_relationship_added)
 
-    # fetches user created tags for this observable from the database and adds them to the observables
-    def fetch_tags(self):
-        from saq.database import get_db_connection
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""SELECT `tags.name`
-                         FROM observables
-                         JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
-                         JOIN tags ON observable_tag_mapping.tag_id = tags.id
-                         WHERE `observables.type` = '{}' AND `observables.value` = '{}'""".format(F_SHA256, self.sha256_hash))
-            for row in c:
-                self.add_tag(row[0])
+    #
+    # in ACE the value of the F_FILE observable is the relative path to the content (inside the storage directory)
+    # so when we want to look up the tag mapping we really want to look up the content
+    # so we use the F_SHA256 value for this purpose instead
+        
+    @property
+    def tag_mapping_type(self):
+        return F_SHA256
+
+    @property
+    def tag_mapping_value(self):
+        return self.sha256_hash
 
     @property
     def json(self):
