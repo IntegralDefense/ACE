@@ -3589,6 +3589,70 @@ def analyze_alert():
 
     return redirect(url_for('analysis.index', direct=alert.uuid))
 
+@analysis.route('/observable_action_whitelist', methods=['POST'])
+@login_required
+def observable_action_whitelist():
+    observable_type = request.form.get('observable_type')
+    observable_value = request.form.get('observable_value')
+
+    try:
+        with get_db_connection() as db:
+            c = db.cursor()
+
+            # get the tag_id
+            c.execute("""INSERT tags (name) VALUES ('whitelisted') ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(`id`)""")
+            c.execute("""SELECT LAST_INSERT_ID()""")
+            row = c.fetchone()
+            tag_id = row[0]
+
+            # get the observable_id
+            c.execute("""SELECT id FROM observables WHERE type=%s AND value=%s""", (observable_type, observable_value))
+            row = c.fetchone()
+            observable_id = row[0]
+
+            # create the observable tag mapping
+            c.execute("""INSERT IGNORE INTO observable_tag_mapping (observable_id, tag_id) VALUES (%s,%s)""", (observable_id, tag_id))
+            db.commit()
+
+    except Exception as e:
+        logging.error("unable to whitelist {}: {}".format(observable_id, str(e)))
+        report_exception()
+        return "unable to whitelist observable: {} ".format(str(e)), 500
+        
+    return "whitelisted. ", 200
+
+@analysis.route('/observable_action_un_whitelist', methods=['POST'])
+@login_required
+def observable_action_un_whitelist():
+    observable_type = request.form.get('observable_type')
+    observable_value = request.form.get('observable_value')
+
+    try:
+        with get_db_connection() as db:
+            c = db.cursor()
+
+            # get the tag_id
+            c.execute("""INSERT tags (name) VALUES ('whitelisted') ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(`id`)""")
+            c.execute("""SELECT LAST_INSERT_ID()""")
+            row = c.fetchone()
+            tag_id = row[0]
+
+            # get the observable_id
+            c.execute("""SELECT id FROM observables WHERE type=%s AND value=%s""", (observable_type, observable_value))
+            row = c.fetchone()
+            observable_id = row[0]
+
+            # delete the observable tag mapping
+            c.execute("""DELETE IGNORE FROM observable_tag_mapping WHERE observable_id=%s AND tag_id=%s""", (observable_id, tag_id))
+            db.commit()
+
+    except Exception as e:
+        logging.error("unable to un-whitelist {}: {}".format(observable_id, str(e)))
+        report_exception()
+        return "unable to un-whitelist observable: {} ".format(str(e)), 500
+
+    return "un-whitelisted. ", 200
+
 @analysis.route('/observable_action', methods=['POST'])
 @login_required
 def observable_action():

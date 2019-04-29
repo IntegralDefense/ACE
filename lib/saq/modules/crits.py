@@ -304,6 +304,11 @@ class CritsAnalyzer(AnalysisModule):
     
     def execute_analysis(self, indicator):
 
+        # crits was the first intel platform supported by ace
+        # so if there is no prefix to the value then it's assumed to be crits
+        if ':' in indicator.value:
+            return False
+
         analysis = self.create_analysis(indicator)
 
         # download the crits indicator JSOn directly from the crits mongo database

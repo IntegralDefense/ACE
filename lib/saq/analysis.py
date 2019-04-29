@@ -209,135 +209,6 @@ class DetectionPoint(object):
 
         return self.description == other.description and self.details == other.details
 
-class ProfilePoint(object):
-
-    KEY_DESCRIPTION = 'desc'
-    KEY_ID = 'id'
-    KEY_NOTES = 'notes'
-    
-    def __init__(self, description=None, notes=None, _id=None):
-        self._details = {
-            ProfilePoint.KEY_DESCRIPTION: description,
-            ProfilePoint.KEY_ID: _id,
-            ProfilePoint.KEY_NOTES: notes,
-        }
-
-    @property
-    def description(self):
-        return self._details[ProfilePoint.KEY_DESCRIPTION]
-
-    @description.setter
-    def description(self, value):
-        self._details[ProfilePoint.KEY_DESCRIPTION] = value
-
-    @property
-    def notes(self):
-        if ProfilePoint.KEY_NOTES in self._details:
-            return self._details[ProfilePoint.KEY_NOTES]
-        
-        return None
-        
-    @notes.setter
-    def notes(self, value):
-        self._details[ProfilePoint.KEY_NOTES] = value
-
-    @property
-    def id(self):
-        return self._details[ProfilePoint.KEY_ID]
-
-    @id.setter
-    def id(self, value):
-        self._details[ProfilePoint.KEY_ID] = value
-
-    @property
-    def json(self):
-        return self._details
-
-    @json.setter
-    def json(self, value):
-        assert isinstance(value, dict)
-        self._details = value
-
-    def __eq__(self, o):
-        if not isinstance(o, ProfilePoint):
-            return False
-
-        return self.description == o.description
-
-    def __str__(self):
-        return self.description
-
-class ProfileObject(object):
-    
-    KEY_PROFILE_POINTS = 'profile_points'
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._profile_points = []
-
-    @property
-    def json(self):
-        return { ProfileObject.KEY_PROFILE_POINTS: self._profile_points }
-
-    @json.setter
-    def json(self, value):
-        assert isinstance(value, dict)
-        if ProfileObject.KEY_PROFILE_POINTS in value:
-            self._profile_points = []
-            for p in value[ProfileObject.KEY_PROFILE_POINTS]:
-                profile_point = ProfilePoint()
-                profile_point.json = p
-                self._profile_points.append(profile_point)
-
-    @property
-    def profile_points(self):
-        return self._profile_points
-
-    @profile_points.setter
-    def profile_points(self, value):
-        assert isinstance(value, list)
-        assert all([isinstance(x, ProfilePoint) for x in value])
-        self._profile_points = value
-
-    def add_profile_point(self, value):
-        if isinstance(value, str):
-            value = ProfilePoint(value)
-
-        if value not in self._profile_points:
-            self._profile_points.append(value)
-            logging.info("added {} to {}".format(value, self))
-
-    def clear_profile_points(self):
-        self._profile_points.clear()
-
-class ProfilePointAnalyzer(object):
-    def analyze(self, root):
-        """Returns a single ProfilePoint or list of ProfilePoint objects, or None (or False) if no profile point is found."""
-        raise NotImplementedError()
-
-    def __str__(self):
-        return "Profile Point Analyzer {}".format(type(self).__name__)
-
-class ProfilePointTarget(object):
-    """Defines an object (some data) that can be the target of analysis."""
-    def __init__(self, name, data):
-        assert name in VALID_TARGETS
-        self.name = name
-        self.data = data
-
-    def __str__(self):
-        return "Profile Point Target {} ".format(self.name)
-
-    @property
-    def children(self):
-        """Always returns an empty list."""
-        return []
-
-    @property
-    def value(self):
-        """Just an alias for the data property."""
-        return self.data
-
 class DetectableObject(EventSource):
     """Mixin for objects that can have detection points."""
 
@@ -535,7 +406,7 @@ class TaggableObject(EventSource):
         self.add_directive(DIRECTIVE_WHITELISTED)
         self.root.whitelisted = True
 
-class Analysis(TaggableObject, DetectableObject, ProfileObject):
+class Analysis(TaggableObject, DetectableObject):
     """Represents an output of analysis work."""
 
     # dictionary keys used by the Analysis class
@@ -796,7 +667,6 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
     def json(self):
         result = TaggableObject.json.fget(self)
         result.update(DetectableObject.json.fget(self))
-        result.update(ProfileObject.json.fget(self))
         result.update({
             Analysis.KEY_OBSERVABLES: [o.id for o in self.observables],
             TaggableObject.KEY_TAGS: self.tags,
@@ -815,7 +685,6 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         assert isinstance(value, dict)
         TaggableObject.json.fset(self, value)
         DetectableObject.json.fset(self, value)
-        ProfileObject.json.fset(self, value)
 
         if Analysis.KEY_OBSERVABLES in value:
             # and then we un-serialize them back when we load from JSON
@@ -1098,6 +967,10 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         
         # this may return an existing observable if we already have it
         observable = self.root.record_observable(observable)
+
+        # load any user-defined tag mappings from the database
+        observable.fetch_tags()
+
         if observable not in self.observables:
             self.observables.append(observable)
             self.fire_event(self, EVENT_OBSERVABLE_ADDED, observable)
@@ -1113,6 +986,9 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
         observable = self.root.record_observable_by_spec(o_type, o_value, o_time=o_time)
         if observable is None:
             return None
+
+        # load any user-defined tag mappings from the database
+        observable.fetch_tags()
 
         if observable not in self.observables:
             self.observables.append(observable)
@@ -1160,11 +1036,6 @@ class Analysis(TaggableObject, DetectableObject, ProfileObject):
     def generate_summary(self):
         """Returns a human readable summary of the analysis.  Returns None if the analysis is not to be displayed in the GUI."""
         return None
-
-    @property
-    def targets(self):
-        """Returns an iterator that yields all the available ProfilePointTarget objects available for this analysis."""
-        return [] # defaults to no targets
 
     def is_suspect(self):
         """Returns True if this Analysis or any child Observables have any detection points."""
@@ -1239,7 +1110,7 @@ class Relationship(object):
         if Relationship.KEY_RELATIONSHIP_TARGET in value:
             self.target = value[Relationship.KEY_RELATIONSHIP_TARGET]
 
-class Observable(TaggableObject, DetectableObject, ProfileObject):
+class Observable(TaggableObject, DetectableObject):
     """Represents a piece of information discovered in an analysis that can itself be analyzed."""
 
     KEY_ID = 'id'
@@ -1288,6 +1159,9 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         # when we add a tag we automatically add a detection if the tag's score is > 0
         self.add_event_listener(EVENT_TAG_ADDED, self.tag_detection)
 
+        # state variable gets set to True when fetch_tags is called
+        self._tags_fetched = False
+
     def matches(self, value):
         """Returns True if the given value matches this value of this observable.  This can be overridden to provide more advanced matching such as CIDR for ipv4."""
         return self.value == value
@@ -1331,7 +1205,6 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     def json(self):
         result = TaggableObject.json.fget(self)
         result.update(DetectableObject.json.fget(self))
-        result.update(ProfileObject.json.fget(self))
         result.update({
             Observable.KEY_ID: self.id,
             Observable.KEY_TYPE: self.type,
@@ -1354,7 +1227,6 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         assert isinstance(value, dict)
         TaggableObject.json.fset(self, value)
         DetectableObject.json.fset(self, value)
-        ProfileObject.json.fset(self, value)
 
         if Observable.KEY_ID in value:
             self.id = value[Observable.KEY_ID]
@@ -1661,6 +1533,42 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         for target in self.links:
             target.add_tag(*args, **kwargs)
 
+    # typically tag mapping is looked up using the type and value of the observable
+    # in some cases we actually want to look up something else
+
+    @property
+    def tag_mapping_type(self):
+        return self.type
+
+    @property
+    def tag_mapping_value(self):
+        return self.value
+
+    def fetch_tags(self):
+        """Fetches user created tags for this observable from the database and adds them to the observables."""
+
+        # don't want to do this more than once
+        if self._tags_fetched:
+            return
+
+        from saq.database import get_db_connection
+        try:
+            with get_db_connection() as db:
+                c = db.cursor()
+                c.execute("""SELECT `tags.name`
+                             FROM observables
+                             JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
+                             JOIN tags ON observable_tag_mapping.tag_id = tags.id
+                             WHERE `observables.type` = %s AND `observables.value` = %s""", 
+                         (self.tag_mapping_type, self.tag_mapping_value))
+
+                for row in c:
+                    self.add_tag(row[0])
+
+            self._tags_fetched = True
+
+        except Exception as e:
+            logging.error(f"unable to fetch tags for {self}: {e}")
 
     @property
     def analysis(self):
@@ -1713,7 +1621,11 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     @property
     def jinja_available_actions(self):
         """Returns a list of ObservableAction-based objects that represent what a user can do with this Observable."""
-        return []
+        from saq.gui import ObservableActionUnWhitelist, ObservableActionWhitelist
+        if self.type in saq.GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES:
+            return [ ]
+        else:
+            return [ ObservableActionWhitelist(), ObservableActionUnWhitelist() ]
 
     def add_analysis(self, analysis):
         assert isinstance(analysis, Analysis)
@@ -1895,11 +1807,6 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
         """Adds detections points when tags are added if their score is > 0."""
         if tag.score > 0:
             self.add_detection_point("{} was tagged with {}".format(self, tag.name))
-
-    @property
-    def targets(self):
-        """Observables typically won't have any additional profile point targets."""
-        return []
 
     def __str__(self):
         if self.time is not None:

@@ -83,7 +83,7 @@ OBSERVABLE_DESCRIPTIONS = {
     F_EMAIL_CONVERSATION: 'a conversation between a source email address (MAIL FROM) and a destination email address (RCPT TO)',
     F_YARA: 'yara scan result *** DEPRECATED (use F_YARA_RULE instead)',
     F_YARA_RULE: 'yara rule name',
-    F_INDICATOR: 'crits indicator object id',
+    F_INDICATOR: 'indicator id',
     F_MD5: 'MD5 hash',
     F_SHA1: 'SHA1 hash',
     F_SHA256: 'SHA256 hash',
@@ -409,6 +409,8 @@ ACTION_FILE_VIEW_VX = 'file_view_vx'
 ACTION_COLLECT_FILE = 'collect_file'
 ACTION_CLEAR_CLOUDPHISH_ALERT = 'clear_cloudphish_alert'
 ACTION_REMEDIATE_EMAIL = 'remediate_email'
+ACTION_WHITELIST = 'whitelist'
+ACTION_UN_WHITELIST = 'un_whitelist'
 
 # recorded metrics
 METRIC_THREAD_COUNT = 'thread_count'
@@ -461,3 +463,7 @@ ANALYSIS_TYPE_BRO_HTTP = 'bro - http'
 ANALYSIS_TYPE_CLOUDPHISH = 'cloudphish'
 ANALYSIS_TYPE_MANUAL = 'manual'
 ANALYSIS_TYPE_FAQUEUE = 'faqueue'
+
+# supported intelligence databases
+INTEL_DB_SIP = 'sip'
+INTEL_DB_CRITS = 'crits'

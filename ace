@@ -2,9 +2,11 @@
 
 import argparse
 import atexit
+import collections
 import datetime
 import fnmatch
 import getpass
+import io
 import json
 import logging
 import os
@@ -120,14 +122,6 @@ def display_analysis(root):
         print("{} DETECTIONS FOUND (marked with <!> above)".format(len(detections)))
         for detection in detections:
             print('* {}'.format(detection))
-
-    if root.profile_points:
-        print("{} PROFILE POINTS MATCHED".format(len(root.profile_points)))
-        for profile_point in root.profile_points:
-            output = '* {}'.format(profile_point.description)
-            if profile_point.notes:
-                output = '* {} ({})'.format(profile_point.description, profile_point.notes)
-            print(output)
 
 def kill_daemon(daemon_name):
 
@@ -1446,7 +1440,7 @@ network_semaphore_test.set_defaults(func=test_network_semaphore)
 #
 
 def resync_alert(args):
-    """Remaps observables, tags, and profile points to the alert."""
+    """Remaps observables and tags to the alert."""
     from saq.database import Alert, DatabaseSession
     from saq.error import report_exception
 
@@ -2235,98 +2229,199 @@ update_organization_parsers = subparsers.add_parser('update-organization',
 update_organization_parsers.set_defaults(func=update_organization)
 
 def update_crits_cache(args):
+    from saq.crits import update_local_cache
+    if update_local_cache():
+        sys.exit(0)
 
-    import saq
-    import sqlite3
-    from pymongo import MongoClient
-
-    cache_path = os.path.join(saq.DATA_DIR, saq.CONFIG['crits']['cache_db_path'])
-
-    # the actual file should be a symlink
-    if os.path.exists(cache_path) and not os.path.islink(cache_path):
-        logging.error("{} should be a symlink but it's not!".format(cache_path))
-        sys.exit(1)
-
-    # get the file the symlink points to
-    current_cache_path = None
-    if os.path.exists(cache_path):
-        current_cache_path = os.path.realpath(cache_path)
-    else:
-        current_cache_path = '{}.b'.format(cache_path)
-    
-    # there are two files that end with .a and .b
-    if not current_cache_path.endswith('.a') and not current_cache_path.endswith('.b'):
-        logging.error("expecting {} to end with .a or .b!".format(current_cache_path))
-        sys.exit(1)
-
-    # we edit the other one
-    base_cache_path = current_cache_path[:-2]
-    if current_cache_path.endswith('.a'):
-        target_cache_path = '{}.b'.format(base_cache_path)
-    else:
-        target_cache_path = '{}.a'.format(base_cache_path)
-
-    logging.info("updating {}".format(target_cache_path))
-    
-    if os.path.exists(target_cache_path):
-        try:
-            logging.info("deleting existing crits cache {}".format(target_cache_path))
-            os.remove(target_cache_path)
-        except Exception as e:
-            logging.error("unable to delete {}: {}".format(target_cache_path, e))
-            sys.exit(1)
-
-    cache_db = sqlite3.connect(target_cache_path)
-    db_cursor = cache_db.cursor()
-    db_cursor.execute("""CREATE TABLE indicators ( 
-                           id TEXT PRIMARY KEY, 
-                           type TEXT NOT NULL,
-                           value TEXT NOT NULL )""")
-    db_cursor.execute("CREATE INDEX i_type_value_index ON indicators ( type, value )")
-
-    client = MongoClient(saq.CONFIG['crits']['mongodb_uri'])
-    db = client['crits']
-    collection = db['indicators']
-    c = 0
-
-    logging.info("caching indicators...")
-    for indicator in collection.find({'status': 'Analyzed'}):
-        value = indicator['value']
-        """
-        # Doing this invalidates many of our URI - Path indicators
-        # need to fix this on the fly
-        if indicator['type'] == 'URI - Path':
-            if not value.startswith('/'):
-                value = '/{}'.format(value)
-        """
-        db_cursor.execute("INSERT INTO indicators ( id, type, value ) VALUES ( ?, ?, LOWER(?) )", 
-                         (str(indicator['_id']), indicator['type'], value))
-        c += 1
-
-    logging.info("comitting changes to database...")
-    cache_db.commit()
-    logging.info("updating symlink...")
-    # now point current link to our new database
-    # leaving the old one in place for current processes to keep using
-    try:
-        try:
-            os.remove(cache_path)
-        except:
-            pass
-
-        os.symlink(os.path.basename(target_cache_path), cache_path)
-
-    except Exception as e:
-        logging.error("failed to update symlink: {}".format(e))
-
-    logging.info("done")
-
-    logging.debug("loaded {} indicators".format(c))
-    sys.exit(0)
+    sys.exit(1)
 
 update_crits_cache_parser = subparsers.add_parser('update-crits-cache',
     help="Updates the local CRITS cache used by the analysis modules.")
 update_crits_cache_parser.set_defaults(func=update_crits_cache)
+
+def update_sip_cache(args):
+    from saq.intel import update_local_cache
+    if update_local_cache():
+        sys.exit(0)
+
+    sys.exit(1)
+
+update_sip_cache_parser = subparsers.add_parser('update-sip-cache',
+    help="Updates the local SIP cache used by the analysis modules.")
+update_sip_cache_parser.set_defaults(func=update_sip_cache)
+
+def export_sip_yara_rules(args):
+
+    import yara
+    yara.set_config(max_strings_per_rule=30720)
+
+    import pysip
+    sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
+
+    from saq.intel import get_indicator_type_mapping 
+
+    # make sure target directory exists
+    if not os.path.isdir(args.dir):
+        try:
+            os.makedirs(args.dir)
+        except Exception as e:
+            logging.error("unable to create directory {}: {}".format(args.dir, e))
+            sys.exit(1)
+
+    # load the mapping from indicator type to the string modifiers to use
+    string_modifiers = collections.defaultdict(lambda: saq.CONFIG['sip_yara_export_string_modifiers']['default'])
+    for indicator_type in saq.CONFIG['sip_yara_export_string_modifiers']:
+        if indicator_type == 'default':
+            continue
+
+        string_modifiers[indicator_type] = saq.CONFIG['sip_yara_export_string_modifiers'][indicator_type]
+        logging.debug(f"using string modifiers {string_modifiers[indicator_type]} for {indicator_type}")
+
+
+    # what is the minimum length an indicator value can be to be put into a yara rule?
+    export_minimum_length = saq.CONFIG['sip_yara_export'].getint('export_minimum_length')
+
+    def format_yara_string(s):
+        return s.replace('\\', '\\\\').replace('"','\\"').replace("\n","")
+
+    def get_yara_filename(indicator_type):
+        return os.path.join(args.dir, "SIP_{}.yar".format(indicator_type))
+
+    indicator_types = [_.strip() for _ in saq.CONFIG['sip_yara_export']['export_list'].split(',')]
+    included_sources = [_.strip() for _ in saq.CONFIG['sip_yara_export']['export_sources_include'].split(',')]
+    excluded_sources = [_.strip() for _ in saq.CONFIG['sip_yara_export']['export_sources_exclude'].split(',')]
+
+    sources = []
+    for source in sip_client.get('/api/intel/source'):
+        if included_sources and source not in included_sources:
+            continue
+
+        if source in excluded_sources:
+            continue
+
+        sources.append(source)
+
+    for indicator_type in indicator_types:
+        # what is the crits equivalent of this indicator type?
+        indicator_type = get_indicator_type_mapping(indicator_type)
+        logging.info("exporting indicator type {}".format(indicator_type))
+      
+        # does a template file exists for this indicator type?
+        template_path = os.path.join(saq.CONFIG['sip_yara_export']['export_template_dir'], '{}.template'.format(indicator_type))
+        if not os.path.exists(template_path):
+            template_path = os.path.join(saq.CONFIG['sip_yara_export']['export_template_dir'], 'default.template')
+
+        logging.debug("using template {} for {}".format(template_path, indicator_type))
+
+        # load the template we're going to be using
+        with open(template_path, 'r') as fp:
+            template = fp.read()
+
+        template = template.replace('TEMPLATE_RULE_NAME', 'SIP_{}'.format(re.sub(r'[^a-zA-Z0-9_]', '', indicator_type)))
+        
+        special_paths = { "%temp%":[ "\\windows\\temp", "\\temp", "\\appdata\\local\\temp", "\\local settings\\temp", "\\locals~1\\temp" ],
+                          "%appdata%": [ "\\application data", "\\appdata\\roaming" ],
+                          "%programdata%": [ "\\programdata", "\\documents and settings\\all users" ],
+                          "%programfiles%": [ "\\program files", "\\program files (x86)" ],
+                          "%systemdrive%": [ "" ],
+                          "%system%": [ "\\windows\\system32", "\\windows\\system" ] }
+
+        string_data = io.StringIO()
+        count = 0
+        skip_count = 0
+
+        url = f'/api/indicators?status=Analyzed&bulk=True&type={indicator_type}'
+        if sources:
+            url += '&sources={}'.format(','.join(sources))
+
+        for indicator in sip_client.get(url):
+            string_buffer = io.StringIO()
+            item_id = indicator['id']
+            item_value = indicator['value']
+
+            # is this string too small?
+            if len(item_value) < export_minimum_length:
+                skip_count += 1
+                continue
+                
+            # do we need to reformat this string?
+            if indicator['type'] == get_indicator_type_mapping(saq.intel.I_FILE_PATH):
+                subindicator = 0
+                for path in special_paths:
+                    if path.lower() in indicator['value'].lower():
+                        for p_item in special_paths[path]:
+                            item_value = indicator['value'].lower().replace(path, p_item)
+                            item_id = str(indicator['id']) + "_" + str(subindicator)
+                            string_buffer.write('          ${} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[indicator['type'].lower()]))
+                            subindicator += 1
+
+                if subindicator == 0:
+                    string_buffer.write('          $sip_{} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[indicator['type'].lower()]))
+
+            elif indicator['type'] == get_indicator_type_mapping(saq.intel.I_REGISTRY_KEY):
+                for reg in ['hkcu\\', 'hklm\\', 'hkc\\', 'hku\\', 'hkcr\\']:
+                    item_value = item_value.lower().replace(reg, "") # remove the front end of the indicator if it matches our special case
+                string_buffer.write('          $sip_{} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[indicator['type'].lower()]))
+            elif indicator['type'] == get_indicator_type_mapping(saq.intel.I_HEX_STRING):
+                # hex strings are passed as is and are expected to be in yara hex string format
+                string_buffer.write('          $sip_{} = {{ {} }}\n'.format(item_id, item_value))
+            else:
+                string_buffer.write('          $sip_{} = "{}" {}\n'.format(item_id, format_yara_string(item_value), string_modifiers[indicator['type'].lower()]))
+
+            # make sure this individual string compiles into a yara rule
+            test_rule = template.replace('TEMPLATE_STRINGS', string_buffer.getvalue())
+            try:
+                yara.compile(source=test_rule)
+            except Exception as e:
+                logging.error("indicator type {} id {} value {} invalid for yara".format(indicator_type, item_id, item_value))
+                print(test_rule)
+                skip_count += 1
+                continue
+
+            count += 1
+            string_data.write(string_buffer.getvalue())
+
+        if count == 0:
+            logging.info("no indicators of type {} available for export".format(indicator_type))
+            continue
+
+        # make sure the whole rule compiles
+        rule = template.replace('TEMPLATE_STRINGS', string_data.getvalue()) 
+        try:
+            yara.compile(source=rule)
+        except Exception as e:
+            logging.error("unable to compile rules for {}: {}".format(indicator_type, e))
+            print(rule)
+            continue
+
+        # make sure something changed
+        output_file = get_yara_filename(indicator_type)
+        if os.path.exists(output_file):
+            with open(output_file, 'r') as fp:
+                existing_rule = fp.read()
+
+            if existing_rule == rule:
+                logging.info("no changes detected for {}".format(indicator_type))
+                continue
+
+        with open(output_file, 'w') as fp:
+            fp.write(rule)
+
+        logging.info("exported {} skipped {} indicators of type {} to {}".format(count, skip_count, indicator_type, output_file))
+        if count == 0:
+            logging.warning("no strings were exported for {}, removing {}".format(indicator_type, output_file))
+            try:
+                os.remove(output_file)
+            except Exception as e:
+                logging.error("unable to remove {}: {}".format(output_file, e))
+
+    sys.exit(0)
+
+export_sip_yara_rules_parser = subparsers.add_parser('export-sip-yara-rules',
+    help="Exports your SIP database as yara rules to be used by ACE.")
+export_sip_yara_rules_parser.add_argument('dir',
+    help="The path to the directory to export the yara rules into.")
+export_sip_yara_rules_parser.set_defaults(func=export_sip_yara_rules)
 
 def export_crits_yara_rules(args):
 
