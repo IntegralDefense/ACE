@@ -967,6 +967,10 @@ class Analysis(TaggableObject, DetectableObject):
         
         # this may return an existing observable if we already have it
         observable = self.root.record_observable(observable)
+
+        # load any user-defined tag mappings from the database
+        observable.fetch_tags()
+
         if observable not in self.observables:
             self.observables.append(observable)
             self.fire_event(self, EVENT_OBSERVABLE_ADDED, observable)
@@ -983,6 +987,7 @@ class Analysis(TaggableObject, DetectableObject):
         if observable is None:
             return None
 
+        # load any user-defined tag mappings from the database
         observable.fetch_tags()
 
         if observable not in self.observables:
@@ -1153,6 +1158,9 @@ class Observable(TaggableObject, DetectableObject):
 
         # when we add a tag we automatically add a detection if the tag's score is > 0
         self.add_event_listener(EVENT_TAG_ADDED, self.tag_detection)
+
+        # state variable gets set to True when fetch_tags is called
+        self._tags_fetched = False
 
     def matches(self, value):
         """Returns True if the given value matches this value of this observable.  This can be overridden to provide more advanced matching such as CIDR for ipv4."""
@@ -1525,18 +1533,42 @@ class Observable(TaggableObject, DetectableObject):
         for target in self.links:
             target.add_tag(*args, **kwargs)
 
-    # fetches user created tags for this observable from the database and adds them to the observables
+    # typically tag mapping is looked up using the type and value of the observable
+    # in some cases we actually want to look up something else
+
+    @property
+    def tag_mapping_type(self):
+        return self.type
+
+    @property
+    def tag_mapping_value(self):
+        return self.value
+
     def fetch_tags(self):
+        """Fetches user created tags for this observable from the database and adds them to the observables."""
+
+        # don't want to do this more than once
+        if self._tags_fetched:
+            return
+
         from saq.database import get_db_connection
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""SELECT `tags.name`
-                         FROM observables
-                         JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
-                         JOIN tags ON observable_tag_mapping.tag_id = tags.id
-                         WHERE `observables.type` = '{}' AND `observables.value` = '{}'""".format(self.type, self.value))
-            for row in c:
-                self.add_tag(row[0])
+        try:
+            with get_db_connection() as db:
+                c = db.cursor()
+                c.execute("""SELECT `tags.name`
+                             FROM observables
+                             JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
+                             JOIN tags ON observable_tag_mapping.tag_id = tags.id
+                             WHERE `observables.type` = %s AND `observables.value` = %s""", 
+                         (self.tag_mapping_type, self.tag_mapping_value))
+
+                for row in c:
+                    self.add_tag(row[0])
+
+            self._tags_fetched = True
+
+        except Exception as e:
+            logging.error(f"unable to fetch tags for {self}: {e}")
 
     @property
     def analysis(self):
@@ -1590,7 +1622,10 @@ class Observable(TaggableObject, DetectableObject):
     def jinja_available_actions(self):
         """Returns a list of ObservableAction-based objects that represent what a user can do with this Observable."""
         from saq.gui import ObservableActionUnWhitelist, ObservableActionWhitelist
-        return [ ObservableActionWhitelist(), ObservableActionUnWhitelist() ]
+        if self.type in saq.GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES:
+            return [ ]
+        else:
+            return [ ObservableActionWhitelist(), ObservableActionUnWhitelist() ]
 
     def add_analysis(self, analysis):
         assert isinstance(analysis, Analysis)
