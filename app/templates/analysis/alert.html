@@ -156,44 +156,6 @@
     {% endif %}
 {% endmacro %}
 
-{% for message_id, target in remediation_targets.items() %}
-{% for recipient, info in target["recipients"].items() %}
-<div class="panel panel-default">
-    <div class="panel-heading">
-        <h3 class="panel-title">PhishFry Remediation History - {{message_id}}</h3>
-    </div>
-    <div class="panel-body">
-        <h6>From: <font color="red">{{target["sender"]}}</font> 
-            To: <font color="blue">{{recipient}}</font>
-            Subject: <font color="green">{{target["subject"]}}</font>
-        </h6>
-        {% if info["history"] | length == 0 %}
-            <tr>
-                <td colspan="4"><i>No remediations have been attempted.</i></td>
-            </tr>
-        {% else %}
-            <table class="table">
-            <tr>
-                <td>Action</td>
-                <td>Date</td>
-                <td>User</td>
-                <td>Result</td>
-            </tr>
-            {% for history in info["history"] %}
-                <tr {% if history["successful"] %}class="success"{% else %}class="danger"{% endif %}>
-                    <td>{{history["action"]}}</td>
-                    <td style="white-space: nowrap">{{history["insert_date"]}}</td>
-                    <td>{{history["user"]}}</td>
-                    <td>{{history["result"]}}</td>
-                </tr>
-            {% endfor %}
-            </table>
-        {% endif %}
-    </div>
-</div>
-{% endfor %}
-{% endfor %}
-
 {% for entry in email_remediations %}
 <div class="panel panel-default">
     <div class="panel-heading">

@@ -26,7 +26,6 @@ __all__ = [
     'ObservableActionCollectFile',
     'ObservableActionClearCloudphishAlert',
     'ObservableActionRemediateEmail',
-    'ObservableActionPhishfryEmail',
 ]
     
 
@@ -118,15 +117,6 @@ class ObservableActionRemediateEmail(ObservableAction):
         self.name = ACTION_REMEDIATE_EMAIL
         self.description = "Remediate Email"
         self.jinja_action_path = 'analysis/observable_actions/remediate_email.html'
-        self.icon = 'remove'
-
-class ObservableActionPhishfryEmail(ObservableAction):
-    """Action to remediate a given email using phishfry(referenced by message-id)."""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.name = ACTION_PHISHFRY_EMAIL
-        self.description = "Phishfry Email"
-        self.jinja_action_path = 'analysis/observable_actions/phishfry_email.html'
         self.icon = 'remove'
 
 class ObservableActionDownloadFile(ObservableAction):
