@@ -12,6 +12,9 @@ class TestCase(ACEModuleTestCase):
     def setUp(self):
         ACEModuleTestCase.setUp(self)
 
+        if not saq.CONFIG['sip'].getboolean('enabled'):
+            return
+
         # XXX get rid of verify=False
         self.sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
 
@@ -23,10 +26,17 @@ class TestCase(ACEModuleTestCase):
 
     def tearDown(self):
         ACEModuleTestCase.tearDown(self)
+        
+        if not saq.CONFIG['sip'].getboolean('enabled'):
+            return
+
         # remove the indicator we inserted
         self.sip_client.delete('indicators/{}'.format(self.test_indicator_id))
 
     def test_intel_analysis(self):
+        if not saq.CONFIG['sip'].getboolean('enabled'):
+            return
+
         root = create_root_analysis(analysis_mode=ANALYSIS_MODE_CORRELATION)
         root.initialize_storage()
         i = root.add_observable(F_INDICATOR, 'sip:{}'.format(self.test_indicator_id))
@@ -53,6 +63,9 @@ class TestCase(ACEModuleTestCase):
         self.assertEquals(analysis.details, self.test_indicator)
         
     def test_faqueue_alert(self):
+        if not saq.CONFIG['sip'].getboolean('enabled'):
+            return
+
         root = create_root_analysis(analysis_mode=ANALYSIS_MODE_CORRELATION, alert_type=ANALYSIS_TYPE_FAQUEUE)
         root.initialize_storage()
         root.details = { 'indicator': { 'sip_id': '1' } }
