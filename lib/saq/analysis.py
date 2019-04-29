@@ -1728,12 +1728,7 @@ class Observable(TaggableObject, DetectableObject, ProfileObject):
     def jinja_available_actions(self):
         """Returns a list of ObservableAction-based objects that represent what a user can do with this Observable."""
         from saq.gui import ObservableActionUnWhitelist, ObservableActionWhitelist
-        actions = []
-        if self.whitelisted:
-            actions.append(ObservableActionUnWhitelist())
-        else:
-            actions.append(ObservableActionWhitelist())
-        return actions
+        return [ ObservableActionWhitelist(), ObservableActionUnWhitelist() ]
 
     def add_analysis(self, analysis):
         assert isinstance(analysis, Analysis)
