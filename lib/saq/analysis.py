@@ -983,6 +983,8 @@ class Analysis(TaggableObject, DetectableObject):
         if observable is None:
             return None
 
+        observable.fetch_tags()
+
         if observable not in self.observables:
             self.observables.append(observable)
             self.fire_event(self, EVENT_OBSERVABLE_ADDED, observable)
@@ -1523,6 +1525,18 @@ class Observable(TaggableObject, DetectableObject):
         for target in self.links:
             target.add_tag(*args, **kwargs)
 
+    # fetches user created tags for this observable from the database and adds them to the observables
+    def fetch_tags(self):
+        from saq.database import get_db_connection
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""SELECT `tags.name`
+                         FROM observables
+                         JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
+                         JOIN tags ON observable_tag_mapping.tag_id = tags.id
+                         WHERE `observables.type` = '{}' AND `observables.value` = '{}'""".format(self.type, self.value))
+            for row in c:
+                self.add_tag(row[0])
 
     @property
     def analysis(self):
@@ -1575,7 +1589,8 @@ class Observable(TaggableObject, DetectableObject):
     @property
     def jinja_available_actions(self):
         """Returns a list of ObservableAction-based objects that represent what a user can do with this Observable."""
-        return []
+        from saq.gui import ObservableActionUnWhitelist, ObservableActionWhitelist
+        return [ ObservableActionWhitelist(), ObservableActionUnWhitelist() ]
 
     def add_analysis(self, analysis):
         assert isinstance(analysis, Analysis)

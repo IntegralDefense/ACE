@@ -88,7 +88,8 @@ class IPv4Observable(Observable):
     def jinja_available_actions(self):
         result = []
         if not self.is_managed():
-            result.append(ObservableActionUploadToCrits())
+            result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+            result.extend(super().jinja_available_actions)
 
         return result
 
@@ -159,7 +160,8 @@ class FQDNObservable(CaselessObservable):
     def jinja_available_actions(self):
         result = []
         if not self.is_managed():
-            result.append(ObservableActionUploadToCrits())
+            result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+            result.extend(super().jinja_available_actions)
 
         return result
 
@@ -175,10 +177,6 @@ class HostnameObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_HOSTNAME, *args, **kwargs)
 
-    @property
-    def jinja_available_actions(self):
-        return [ ]
-
 class AssetObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_ASSET, *args, **kwargs)
@@ -186,10 +184,6 @@ class AssetObservable(CaselessObservable):
 class UserObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_USER, *args, **kwargs)
-
-    @property
-    def jinja_available_actions(self):
-        return [ ]
 
 class URLObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -216,7 +210,9 @@ class URLObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionClearCloudphishAlert() ]
+        result = [ ObservableActionClearCloudphishAlert(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class FileObservable(Observable):
 
@@ -239,6 +235,19 @@ class FileObservable(Observable):
 
         # some directives are inherited by children
         self.add_event_listener(EVENT_RELATIONSHIP_ADDED, self.handle_relationship_added)
+
+    # fetches user created tags for this observable from the database and adds them to the observables
+    def fetch_tags(self):
+        from saq.database import get_db_connection
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""SELECT `tags.name`
+                         FROM observables
+                         JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
+                         JOIN tags ON observable_tag_mapping.tag_id = tags.id
+                         WHERE `observables.type` = '{}' AND `observables.value` = '{}'""".format(F_SHA256, self.sha256_hash))
+            for row in c:
+                self.add_tag(row[0])
 
     @property
     def json(self):
@@ -386,7 +395,7 @@ class FileObservable(Observable):
             result.append(ObservableActionViewInVt())
             result.append(ObservableActionViewInVx())
             result.append(ObservableActionSeparator())
-
+        result.extend(super().jinja_available_actions)
         return result
 
     @property
@@ -455,7 +464,9 @@ class FilePathObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class FileNameObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -463,7 +474,9 @@ class FileNameObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class FileLocationObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -480,7 +493,9 @@ class FileLocationObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionCollectFile() ]
+        result = [ ObservableActionCollectFile(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
     @property
     def jinja_template_path(self):
@@ -499,7 +514,9 @@ class EmailAddressObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class YaraRuleObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -507,7 +524,7 @@ class YaraRuleObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ]
+        return []
 
 class IndicatorObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -519,7 +536,7 @@ class IndicatorObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ]
+        return []
 
 class MD5Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -527,7 +544,9 @@ class MD5Observable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class SHA1Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -535,7 +554,9 @@ class SHA1Observable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class SHA256Observable(Observable):
     def __init__(self, *args, **kwargs):
@@ -547,7 +568,9 @@ class SHA256Observable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class EmailConversationObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -576,7 +599,9 @@ class MessageIDObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionRemediateEmail(), ]
+        result = [ ObservableActionRemediateEmail(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class ProcessGUIDObservable(Observable): 
     def __init__(self, *args, **kwargs): 
