@@ -14,17 +14,18 @@ class CrawlphishTestCase(ACEBasicTestCase):
         ACEBasicTestCase.setUp(self)
 
         # XXX get rid of verify=False
-        self.sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
-        self.test_indicators = []
+        if saq.CONFIG['sip'].getboolean('enabled'):
+            self.sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
+            self.test_indicators = []
 
-        # insert the indicator(s) we'll test against
-        for indicator in [ 
-            { 'type': 'URI - URL', 'value': 'http://whackadoodle.net/dunno.html', 'status': 'Analyzed' },
-            #{ 'type': 'Address - ipv4-addr', 'value': '165.45.66.45', 'status': 'Analyzed' },
-            { 'type': 'URI - Path', 'value': '/follow/the/white/rabbit.html', 'status': 'Analyzed' },
-            { 'type': 'Windows - FileName', 'value': 'ultimate.txt', 'status': 'Analyzed' }, ]:
+            # insert the indicator(s) we'll test against
+            for indicator in [ 
+                { 'type': 'URI - URL', 'value': 'http://whackadoodle.net/dunno.html', 'status': 'Analyzed' },
+                #{ 'type': 'Address - ipv4-addr', 'value': '165.45.66.45', 'status': 'Analyzed' },
+                { 'type': 'URI - Path', 'value': '/follow/the/white/rabbit.html', 'status': 'Analyzed' },
+                { 'type': 'Windows - FileName', 'value': 'ultimate.txt', 'status': 'Analyzed' }, ]:
 
-            self.test_indicators.append(self.sip_client.post('indicators', indicator))
+                self.test_indicators.append(self.sip_client.post('indicators', indicator))
 
         self.target_urls = [
             'http://whackadoodle.net/dunno.html',
@@ -36,8 +37,9 @@ class CrawlphishTestCase(ACEBasicTestCase):
         ACEBasicTestCase.tearDown(self)
 
         # remove the indicator(s) we inserted
-        for indicator in self.test_indicators:
-            self.sip_client.delete('indicators/{}'.format(indicator['id']))
+        if saq.CONFIG['sip'].getboolean('enabled'):
+            for indicator in self.test_indicators:
+                self.sip_client.delete('indicators/{}'.format(indicator['id']))
 
     def test_filters(self):
 
@@ -46,7 +48,9 @@ class CrawlphishTestCase(ACEBasicTestCase):
 
         # XXX need a way of doing this
         #saq.crits.update_local_cache()
-        saq.intel.update_local_cache()
+
+        if saq.CONFIG['sip'].getboolean('enabled'):
+            saq.intel.update_local_cache()
 
         _filter = CrawlphishURLFilter()
         _filter.load()
@@ -107,11 +111,12 @@ class CrawlphishTestCase(ACEBasicTestCase):
         self.assertEquals(result.reason, REASON_DIRECT_IPV4)
         
         # always crawl stuff that is in the intel db
-        for target_url in self.target_urls:
-            with self.subTest(target_url=target_url):
-                result = _filter.filter(target_url)
-                self.assertEquals(result.filtered, False)
-                self.assertEquals(result.reason, REASON_CRITS)
+        if saq.CONFIG['sip'].getboolean('enabled'):
+            for target_url in self.target_urls:
+                with self.subTest(target_url=target_url):
+                    result = _filter.filter(target_url)
+                    self.assertEquals(result.filtered, False)
+                    self.assertEquals(result.reason, REASON_CRITS)
         
         result = _filter.filter('http://test1.local')
         self.assertEquals(result.filtered, True)
