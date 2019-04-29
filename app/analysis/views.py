@@ -1,5 +1,4 @@
 import datetime
-import html
 import importlib
 import io
 import json
@@ -49,7 +48,7 @@ from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Eve
                          Workload, DelayedAnalysis, \
                          acquire_lock, release_lock, \
                          get_available_nodes, use_db, set_dispositions, add_workload
-from saq.email import search_archive, get_email_archive_sections, get_remediation_targets
+from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
 from saq.gui import GUIAlert
 from saq.performance import record_execution_time
@@ -3439,19 +3438,6 @@ def index():
 
     domain_summary_str = _create_histogram_string(domains)
 
-    # get remediation targets
-    message_ids = []
-    with get_db_connection() as dbc:
-        c = dbc.cursor()
-        c.execute("""SELECT o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
-                     JOIN alerts a ON om.alert_id = a.id
-                     WHERE o.type = 'message_id' AND a.uuid = %s""", (alert.uuid))
-        for row in c:
-            message_id = row[0].decode(errors="ignore")
-            message_ids.append(message_id)
-            message_id = html.escape(message_id)
-    targets = get_remediation_targets(message_ids)
-
     return render_template('analysis/index.html',
                            alert=alert,
                            alert_tags=alert_tags,
@@ -3473,7 +3459,6 @@ def index():
                            domains=domains,
                            domain_list=domain_list,
                            domain_summary_str=domain_summary_str,
-                           remediation_targets=targets,
                            email_remediations=email_remediations)
 
 @analysis.route('/file', methods=['GET'])
@@ -3780,59 +3765,6 @@ def query_message_ids():
     response = make_response(json.dumps(result))
     response.mimetype = 'application/json'
     return response
-
-@analysis.route('/remediation_targets', methods=['POST'])
-@login_required
-def remediation_targets():
-    # get all potential remediation targets
-    targets = {}
-    message_ids = []
-    if 'alert_uuids' in request.values:
-        alert_uuids = json.loads(request.values['alert_uuids'])
-        with get_db_connection() as db:
-            c = db.cursor()
-            alert_format = ','.join(['%s' for _ in alert_uuids])
-            c.execute("""SELECT o.id, o.value FROM observables o JOIN observable_mapping om ON o.id = om.observable_id
-                         JOIN alerts a ON om.alert_id = a.id
-                         WHERE o.type = 'message_id' AND a.uuid IN ( {} )""".format(alert_format), tuple(alert_uuids))
-            for row in c:
-                oid, message_id = row
-                message_id = message_id.decode(errors="ignore")
-                message_ids.append(message_id)
-    else:
-        message_id = html.unescape(json.loads(request.values['message_id'])[0])
-        message_ids.append(message_id)
-
-    # get info about each target
-    targets = get_remediation_targets(message_ids)
-
-    if len(targets) == 0:
-        return "No targets found in email archive"
-
-    return render_template('analysis/select_remediation_targets.html', targets=targets)
-
-@analysis.route('/phishfry_remediate', methods=['POST'])
-@login_required
-def phishfry_remediate():
-    # get action
-    action = request.values['action']
-
-    # get selected message_ids
-    message_ids = []
-    for key in request.values.keys():
-        if key.startswith('remediation_target_'):
-            message_id = html.unescape(key[len('remediation_target_'):])
-            message_ids.append(message_id)
-
-    # get remediation targets from message_ids
-    targets = get_remediation_targets(message_ids)
-
-    # remediate all targets
-    from saq.phishfry import remediate_targets
-    result_targets = remediate_targets(action, targets)
-
-    # render the results
-    return render_template('analysis/remediation_results.html', targets=result_targets)
 
 class EmailRemediationTarget(object):
     def __init__(self, archive_id=None, message_id=None, recipient=None):

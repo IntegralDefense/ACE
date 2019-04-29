@@ -444,20 +444,6 @@ CREATE TABLE `remediation` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `email_remediation`
---
-
-DROP TABLE IF EXISTS `email_remediation`;
-CREATE TABLE `email_remediation` (
-  `removed` tinyint(1) DEFAULT '0' COMMENT '1 - the email is currently deleted, 0 - them email is currently not deleted',
-  `message_id` varchar(256) NOT NULL COMMENT 'The message_id of the email',
-  `key` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci NOT NULL COMMENT 'The key to look up the item.  In the case of emails this is the message_id and the recipient email address.',
-  PRIMARY KEY (`key`),
-  KEY `i_message_id` (`message_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `tag_mapping`
 --
 

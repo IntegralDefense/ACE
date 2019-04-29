@@ -145,6 +145,3 @@ bin/procyon-decompiler*
 
 # unit testing
 data_unittest
-
-# phishfry
-lib/EWS

@@ -206,23 +206,6 @@ $(document).ready(function() {
         remediate_emails(all_alert_uuids, message_ids);
     });
 
-    $("#btn-phishfry-alerts").off()
-    $("#btn-phishfry-alerts").click(function(e) {
-        var all_alert_uuids = get_all_checked_alerts();
-        var message_id = null;
-
-        if (all_alert_uuids.length == 0 ) {
-            // prompt for the message_id
-            var message_id = prompt("Enter a message_id to remediate.");
-            if (message_id.length == 0) 
-                return;
-
-            all_alert_uuids = null;
-        }
-
-        remediate_alerts(all_alert_uuids, message_id);
-    });
-
     $('#btn-limit').click(function(e) {
         result = prompt("How many alerts should be displayed at once?", 50);
     });
