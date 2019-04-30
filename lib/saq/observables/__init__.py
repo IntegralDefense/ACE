@@ -251,6 +251,9 @@ class FileObservable(Observable):
 
     @property
     def tag_mapping_md5_hex(self):
+        if self.sha256_hash is None:
+            return None
+
         md5_hasher = hashlib.md5()
         md5_hasher.update(self.sha256_hash.encode('utf8', errors='ignore'))
         return md5_hasher.hexdigest()
@@ -315,15 +318,21 @@ class FileObservable(Observable):
         sha1_hasher = hashlib.sha1()
         sha256_hasher = hashlib.sha256()
     
-        with open(self.path, 'rb') as fp:
-            while True:
-                data = fp.read(io.DEFAULT_BUFFER_SIZE)
-                if data == b'':
-                    break
+        try:
+            with open(self.path, 'rb') as fp:
+                while True:
+                    data = fp.read(io.DEFAULT_BUFFER_SIZE)
+                    if data == b'':
+                        break
 
-                md5_hasher.update(data)
-                sha1_hasher.update(data)
-                sha256_hasher.update(data)
+                    md5_hasher.update(data)
+                    sha1_hasher.update(data)
+                    sha256_hasher.update(data)
+
+        except Exception as e:
+            # this will happen if a F_FILE observable refers to a file that no longer (or never did) exists
+            logging.debug(f"unable to compute hashes of {self.value}: {e}")
+            return False
         
         md5_hash = md5_hasher.hexdigest()
         sha1_hash = sha1_hasher.hexdigest()

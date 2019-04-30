@@ -359,7 +359,7 @@ class TestCase(ACEEngineTestCase):
 
         # TODO kind of annoying I have to edit this every time I add a new module for testing
         # there should be 18 analysis modules loaded
-        self.assertEquals(log_count('loading module '), 18)
+        self.assertEquals(log_count('loading module '), 19)
 
     def test_locally_enabled_modules(self):
         
