@@ -2347,7 +2347,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             if work_item.observable:
                 # has this thing been whitelisted?
                 if work_item.observable.whitelisted:
-                    logging.debug("{} was whitelisted -- not analyzing".format(work_item.observable))
+                    logging.info("{} was whitelisted -- not analyzing".format(work_item.observable))
                     if work_item.dependency:
                         work_item.dependency.set_status_failed('whitelisted')
                         work_item.dependency.increment_status()

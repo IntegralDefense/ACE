@@ -1544,6 +1544,10 @@ class Observable(TaggableObject, DetectableObject):
     def tag_mapping_value(self):
         return self.value
 
+    @property
+    def tag_mapping_md5_hex(self):
+        return self.md5_hex
+
     def fetch_tags(self):
         """Fetches user created tags for this observable from the database and adds them to the observables."""
 
@@ -1555,12 +1559,12 @@ class Observable(TaggableObject, DetectableObject):
         try:
             with get_db_connection() as db:
                 c = db.cursor()
-                c.execute("""SELECT `tags.name`
+                c.execute("""SELECT `tags`.`name`
                              FROM observables
                              JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
                              JOIN tags ON observable_tag_mapping.tag_id = tags.id
-                             WHERE `observables.type` = %s AND `observables.value` = %s""", 
-                         (self.tag_mapping_type, self.tag_mapping_value))
+                             WHERE `observables`.`type` = %s AND `observables`.`md5` = UNHEX(%s)""", 
+                         (self.tag_mapping_type, self.tag_mapping_md5_hex))
 
                 for row in c:
                     self.add_tag(row[0])
