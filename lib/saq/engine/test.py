@@ -2627,3 +2627,111 @@ class TestCase(ACEEngineTestCase):
         self.assertIsNotNone(observable_2)
         analysis = observable_2.get_analysis('BasicTestAnalysis')
         self.assertIsNotNone(analysis)
+
+    def test_observable_whitelisting(self):
+
+        from saq.database import add_observable_tag_mapping, remove_observable_tag_mapping
+
+        # add a user-defined whitelisting
+        add_observable_tag_mapping(F_TEST, 'test_1', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_observable = root.add_observable(F_TEST, 'test_1')
+        self.assertTrue(test_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should NOT see any analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        test_observable = root.get_observable(test_observable.id)
+        self.assertIsNotNone(test_observable)
+        self.assertEquals(len(test_observable.analysis), 0)
+
+        # remove the whitelisting
+        remove_observable_tag_mapping(F_TEST, 'test_1', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_observable = root.add_observable(F_TEST, 'test_1')
+        self.assertFalse(test_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should see any one analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        test_observable = root.get_observable(test_observable.id)
+        self.assertIsNotNone(test_observable)
+        self.assertEquals(len(test_observable.analysis), 1)
+
+    def test_file_observable_whitelisting(self):
+
+        from saq.database import add_observable_tag_mapping, remove_observable_tag_mapping
+
+        # add a user-defined whitelisting
+        add_observable_tag_mapping(F_SHA256, '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_file = self.create_test_file(file_content='Hello, world!', root_analysis=root)
+        file_observable = root.add_observable(F_FILE, test_file)
+        self.assertTrue(file_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_single': 1})
+        engine.enable_module('analysis_module_generic_test', 'test_single')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should NOT see any analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        self.assertEquals(len(file_observable.analysis), 0)
+
+        # remove the whitelisting
+        remove_observable_tag_mapping(F_SHA256, '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_file = self.create_test_file(file_content='Hello, world!', root_analysis=root)
+        file_observable = root.add_observable(F_FILE, test_file)
+        self.assertFalse(file_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_single': 1})
+        engine.enable_module('analysis_module_generic_test', 'test_single')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should NOT see any analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        from saq.modules.test import GenericTestAnalysis
+        analysis = file_observable.get_analysis(GenericTestAnalysis)
+        self.assertIsNotNone(analysis)

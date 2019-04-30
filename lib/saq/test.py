@@ -503,7 +503,7 @@ class ACEBasicTestCase(TestCase):
         # clear the database session this test used
         saq.db.remove()
 
-    def create_test_file(self, file_path='test', file_content=None, root_analysis=None):
+    def create_test_file(self, file_path='.unittest_test_data', file_content=None, root_analysis=None):
         """Creates a test file and returns the path to the newly created file.
            Any file created this way is automatically deleted after the test runs.
            If file_path is relative then the file is created relative to SAQ_HOME.
@@ -673,6 +673,7 @@ class ACEBasicTestCase(TestCase):
         c.execute("DELETE FROM workload")
         c.execute("DELETE FROM observables")
         c.execute("DELETE FROM tags")
+        c.execute("INSERT INTO tags ( `id`, `name` ) VALUES ( 1, 'whitelisted' )")
         c.execute("DELETE FROM events")
         c.execute("DELETE FROM remediation")
         c.execute("DELETE FROM company WHERE name != 'default'")

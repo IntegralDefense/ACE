@@ -224,9 +224,9 @@ class FileObservable(Observable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_FILE, *args, **kwargs)
 
-        self.md5_hash = None
-        self.sha1_hash = None
-        self.sha256_hash = None
+        self._md5_hash = None
+        self._sha1_hash = None
+        self._sha256_hash = None
 
         self._mime_type = None
 
@@ -236,18 +236,24 @@ class FileObservable(Observable):
         # some directives are inherited by children
         self.add_event_listener(EVENT_RELATIONSHIP_ADDED, self.handle_relationship_added)
 
-    # fetches user created tags for this observable from the database and adds them to the observables
-    def fetch_tags(self):
-        from saq.database import get_db_connection
-        with get_db_connection() as db:
-            c = db.cursor()
-            c.execute("""SELECT `tags.name`
-                         FROM observables
-                         JOIN observable_tag_mapping ON observables.id = observable_tag_mapping.observable_id
-                         JOIN tags ON observable_tag_mapping.tag_id = tags.id
-                         WHERE `observables.type` = '{}' AND `observables.value` = '{}'""".format(F_SHA256, self.sha256_hash))
-            for row in c:
-                self.add_tag(row[0])
+    #
+    # in ACE the value of the F_FILE observable is the relative path to the content (inside the storage directory)
+    # so when we want to look up the tag mapping we really want to look up the content
+    # so we use the F_SHA256 value for this purpose instead
+        
+    @property
+    def tag_mapping_type(self):
+        return F_SHA256
+
+    @property
+    def tag_mapping_value(self):
+        return self.sha256_hash
+
+    @property
+    def tag_mapping_md5_hex(self):
+        md5_hasher = hashlib.md5()
+        md5_hasher.update(self.sha256_hash.encode('utf8', errors='ignore'))
+        return md5_hasher.hexdigest()
 
     @property
     def json(self):
@@ -266,16 +272,34 @@ class FileObservable(Observable):
         Observable.json.fset(self, value)
 
         if FileObservable.KEY_MD5_HASH in value:
-            self.md5_hash = value[FileObservable.KEY_MD5_HASH]
+            self._md5_hash = value[FileObservable.KEY_MD5_HASH]
         if FileObservable.KEY_SHA1_HASH in value:
-            self.sha1_hash = value[FileObservable.KEY_SHA1_HASH]
+            self._sha1_hash = value[FileObservable.KEY_SHA1_HASH]
         if FileObservable.KEY_SHA256_HASH in value:
-            self.sha256_hash = value[FileObservable.KEY_SHA256_HASH]
+            self._sha256_hash = value[FileObservable.KEY_SHA256_HASH]
         if FileObservable.KEY_MIME_TYPE in value:
             self._mime_type = value[FileObservable.KEY_MIME_TYPE]
 
+    @property
+    def md5_hash(self):
+        self.compute_hashes()
+        return self._md5_hash
+
+    @property
+    def sha1_hash(self):
+        self.compute_hashes()
+        return self._sha1_hash
+
+    @property
+    def sha256_hash(self):
+        self.compute_hashes()
+        return self._sha256_hash
+
     def compute_hashes(self):
         """Computes the md5, sha1 and sha256 hashes of the file and stores them as properties."""
+
+        if self._md5_hash is not None and self._sha1_hash is not None and self._sha256_hash is not None:
+            return True
 
         # sanity check
         # you need the root storage_dir to get the correct path
@@ -306,9 +330,9 @@ class FileObservable(Observable):
         sha256_hash = sha256_hasher.hexdigest()
         logging.debug("file {} has md5 {} sha1 {} sha256 {}".format(self.path, md5_hash, sha1_hash, sha256_hash))
 
-        self.md5_hash = md5_hash
-        self.sha1_hash = sha1_hash
-        self.sha256_hash = sha256_hash
+        self._md5_hash = md5_hash
+        self._sha1_hash = sha1_hash
+        self._sha256_hash = sha256_hash
 
         return True
 

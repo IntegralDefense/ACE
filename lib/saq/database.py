@@ -1191,15 +1191,7 @@ class Alert(RootAnalysis, Base):
     def sync_observable_mapping(self, observable):
         assert isinstance(observable, saq.analysis.Observable)
 
-        existing_observable = saq.db.query(Observable).filter(Observable.type == observable.type, Observable.md5 == func.UNHEX(observable.md5_hex)).first()
-        if not existing_observable:
-            # XXX assuming all observables are encodable in utf-8 is probably wrong
-            # XXX we could have some kind of binary data, or an intentionally corrupt value
-            # XXX in which case we'd lose the actual value of the data here
-            existing_observable = Observable(type=observable.type, value=observable.value.encode('utf8', errors='ignore'), md5=func.UNHEX(observable.md5_hex))
-            saq.db.add(existing_observable)
-            saq.db.flush()
-
+        existing_observable = sync_observable(observable)
         assert existing_observable.id is not None
 
         existing_mapping = saq.db.query(ObservableMapping).filter(ObservableMapping.observable_id == existing_observable.id, ObservableMapping.alert_id == self.id).first()
@@ -1397,6 +1389,24 @@ class Alert(RootAnalysis, Base):
     def node_location(self):
         return self.nodes.location
 
+@retry
+def sync_observable(observable):
+    """Syncs the given observable to the database by inserting a row in the observables table if it does not currently exist.
+       Returns the existing or newly created saq.database.Observable entry for the corresponding row."""
+    existing_observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type == observable.type, 
+                                                                       saq.database.Observable.md5 == func.UNHEX(observable.md5_hex)).first()
+    if existing_observable is None:
+        # XXX assuming all observables are encodable in utf-8 is probably wrong
+        # XXX we could have some kind of binary data, or an intentionally corrupt value
+        # XXX in which case we'd lose the actual value of the data here
+        existing_observable = Observable(type=observable.type, 
+                                         value=observable.value.encode('utf8', errors='ignore'), 
+                                         md5=func.UNHEX(observable.md5_hex))
+        saq.db.add(existing_observable)
+        saq.db.flush()
+
+    return existing_observable
+
 def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
     """Utility function to the set disposition of many Alerts at once.
        :param alert_uuids: A list of UUIDs of Alert objects to set.
@@ -1564,6 +1574,75 @@ class ObservableTagMapping(Base):
 
     observable = relationship('saq.database.Observable', backref='observable_tag_mapping')
     tag = relationship('saq.database.Tag', backref='observable_tag_mapping')
+
+def add_observable_tag_mapping(o_type, o_value, o_md5, tag):
+    """Adds the given observable tag mapping specified by type, and md5 (hex string) and the tag you want to map.
+       If the observable does not exist and o_value is provided then the observable is added to the database.
+       Returns True if the mapping was successful, False otherwise."""
+
+    try:
+        tag = saq.db.query(saq.database.Tag).filter(saq.database.Tag.name == tag).one()
+    except NoResultFound as e:
+        saq.db.execute(saq.database.Tag.__table__.insert().values(name=tag))
+        saq.db.commit()
+        tag = saq.db.query(saq.database.Tag).filter(saq.database.Tag.name == tag).one()
+
+    observable = None
+
+    if o_md5 is not None:
+        try:
+            observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type==o_type, 
+                                                                      saq.database.Observable.md5==func.UNHEX(o_md5)).one()
+        except NoResultFound as e:
+            if o_value is None:
+                logging.warning(f"observable type {o_type} md5 {o_md5} cannot be found for mapping")
+                return False
+
+    if observable is None:
+        from saq.observables import create_observable
+        observable = sync_observable(create_observable(o_type, o_value))
+        saq.db.commit()
+
+    try:
+        mapping = saq.db.query(ObservableTagMapping).filter(ObservableTagMapping.observable_id == observable.id,
+                                                            ObservableTagMapping.tag_id == tag.id).one()
+        saq.db.commit()
+        return True
+
+    except NoResultFound as e:
+        saq.db.execute(ObservableTagMapping.__table__.insert().values(observable_id=observable.id, tag_id=tag.id))
+        saq.db.commit()
+        return True
+
+def remove_observable_tag_mapping(o_type, o_value, o_md5, tag):
+    """Removes the given observable tag mapping specified by type, and md5 (hex string) and the tag you want to remove.
+       Returns True if the removal was successful, False otherwise."""
+
+    tag = saq.db.query(saq.database.Tag).filter(saq.database.Tag.name == tag).first()
+    if tag is None:
+        return False
+
+    observable = None
+    if o_md5 is not None:
+        observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type == o_type,
+                                                                  saq.database.Observable.md5 == func.UNHEX(o_md5)).first()
+    
+    if observable is None:
+        if o_value is None:
+            return False
+
+        from saq.observables import create_observable
+        o = create_observable(o_type, o_value)
+        observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type == o.type,
+                                                                  saq.database.Observable.md5 == func.UNHEX(o.md5_hex)).first()
+
+    if observable is None:
+        return False
+
+    saq.db.execute(ObservableTagMapping.__table__.delete().where(and_(ObservableTagMapping.observable_id == observable.id,
+                                                                 ObservableTagMapping.tag_id == tag.id)))
+    saq.db.commit()
+    return True
 
 class Tag(saq.analysis.Tag, Base):
     

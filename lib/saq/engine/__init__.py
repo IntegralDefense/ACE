@@ -30,7 +30,7 @@ import saq
 import saq.analysis
 import saq.database
 
-from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, ProfilePointAnalyzer
+from saq.analysis import Observable, Analysis, RootAnalysis
 from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
@@ -2347,7 +2347,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             if work_item.observable:
                 # has this thing been whitelisted?
                 if work_item.observable.whitelisted:
-                    logging.debug("{} was whitelisted -- not analyzing".format(work_item.observable))
+                    logging.info("{} was whitelisted -- not analyzing".format(work_item.observable))
                     if work_item.dependency:
                         work_item.dependency.set_status_failed('whitelisted')
                         work_item.dependency.increment_status()
