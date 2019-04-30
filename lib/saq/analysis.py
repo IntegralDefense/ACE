@@ -1555,6 +1555,10 @@ class Observable(TaggableObject, DetectableObject):
         if self._tags_fetched:
             return
 
+        # bail if we don't have what we need
+        if self.tag_mapping_type is None or self.tag_mapping_md5_hex is None:
+            return
+
         from saq.database import get_db_connection
         try:
             with get_db_connection() as db:
@@ -1572,7 +1576,8 @@ class Observable(TaggableObject, DetectableObject):
             self._tags_fetched = True
 
         except Exception as e:
-            logging.error(f"unable to fetch tags for {self}: {e}")
+            # some times you won't be able to fetch the tags for an observable
+            logging.debug(f"unable to fetch tags for {self}: {e}")
 
     @property
     def analysis(self):

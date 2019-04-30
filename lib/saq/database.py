@@ -1193,12 +1193,7 @@ class Alert(RootAnalysis, Base):
 
         existing_observable = sync_observable(observable)
         assert existing_observable.id is not None
-
-        existing_mapping = saq.db.query(ObservableMapping).filter(ObservableMapping.observable_id == existing_observable.id, ObservableMapping.alert_id == self.id).first()
-        if existing_mapping is None:
-            existing_mapping = ObservableMapping(observable_id=existing_observable.id, alert_id=self.id)
-            saq.db.add(existing_mapping)
-
+        saq.db.execute(ObservableMapping.__table__.insert().prefix_with('IGNORE').values(observable_id=existing_observable.id, alert_id=self.id))
         saq.db.commit()
 
     @retry
