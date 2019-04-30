@@ -47,7 +47,8 @@ from saq.database import User, UserAlertMetrics, Comment, get_db_connection, Eve
                          MalwareMapping, Company, CompanyMapping, Campaign, Alert, \
                          Workload, DelayedAnalysis, \
                          acquire_lock, release_lock, \
-                         get_available_nodes, use_db, set_dispositions, add_workload
+                         get_available_nodes, use_db, set_dispositions, add_workload, \
+                         add_observable_tag_mapping, remove_observable_tag_mapping
 from saq.email import search_archive, get_email_archive_sections
 from saq.error import report_exception
 from saq.gui import GUIAlert
@@ -3592,66 +3593,59 @@ def analyze_alert():
 @analysis.route('/observable_action_whitelist', methods=['POST'])
 @login_required
 def observable_action_whitelist():
-    observable_type = request.form.get('observable_type')
-    observable_value = request.form.get('observable_value')
+    
+    alert = get_current_alert()
+    if alert is None:
+        return "operation failed: unable to find alert", 200
 
     try:
-        with get_db_connection() as db:
-            c = db.cursor()
+        alert.load()
+    except Exception as e:
+        return f"operation failed: unable to load alert {alert}: {e}", 200
 
-            # get the tag_id
-            c.execute("""INSERT tags (name) VALUES ('whitelisted') ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(`id`)""")
-            c.execute("""SELECT LAST_INSERT_ID()""")
-            row = c.fetchone()
-            tag_id = row[0]
+    observable = alert.get_observable(request.form.get('id'))
+    if not observable:
+        return "operation failed: unable to find observable in alert", 200
 
-            # get the observable_id
-            c.execute("""SELECT id FROM observables WHERE type=%s AND value=%s""", (observable_type, observable_value))
-            row = c.fetchone()
-            observable_id = row[0]
-
-            # create the observable tag mapping
-            c.execute("""INSERT IGNORE INTO observable_tag_mapping (observable_id, tag_id) VALUES (%s,%s)""", (observable_id, tag_id))
-            db.commit()
+    try:
+        if add_observable_tag_mapping(observable.tag_mapping_type,
+                                      observable.tag_mapping_value,
+                                      observable.tag_mapping_md5_hex, 
+                                      'whitelisted'):
+            return "whitelisting added", 200
+        else:
+            return "operation failed", 200
 
     except Exception as e:
-        logging.error("unable to whitelist {}: {}".format(observable_id, str(e)))
-        report_exception()
-        return "unable to whitelist observable: {} ".format(str(e)), 500
-        
-    return "whitelisted. ", 200
+        return f"operation failed: {e}", 200
 
 @analysis.route('/observable_action_un_whitelist', methods=['POST'])
 @login_required
 def observable_action_un_whitelist():
-    observable_type = request.form.get('observable_type')
-    observable_value = request.form.get('observable_value')
+    alert = get_current_alert()
+    if alert is None:
+        return "operation failed: unable to find alert", 200
 
     try:
-        with get_db_connection() as db:
-            c = db.cursor()
+        alert.load()
+    except Exception as e:
+        return f"operation failed: unable to load alert {alert}: {e}", 200
 
-            # get the tag_id
-            c.execute("""INSERT tags (name) VALUES ('whitelisted') ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(`id`)""")
-            c.execute("""SELECT LAST_INSERT_ID()""")
-            row = c.fetchone()
-            tag_id = row[0]
+    observable = alert.get_observable(request.form.get('id'))
+    if not observable:
+        return "operation failed: unable to find observable in alert", 200
 
-            # get the observable_id
-            c.execute("""SELECT id FROM observables WHERE type=%s AND value=%s""", (observable_type, observable_value))
-            row = c.fetchone()
-            observable_id = row[0]
-
-            # delete the observable tag mapping
-            c.execute("""DELETE IGNORE FROM observable_tag_mapping WHERE observable_id=%s AND tag_id=%s""", (observable_id, tag_id))
-            db.commit()
+    try:
+        if remove_observable_tag_mapping(observable.tag_mapping_type,
+                                         observable.tag_mapping_value,
+                                         observable.tag_mapping_md5_hex,
+                                         'whitelisted'):
+            return "removed whitelisting", 200
+        else:
+            return "operation failed", 200
 
     except Exception as e:
-        logging.error("unable to un-whitelist {}: {}".format(observable_id, str(e)))
-        report_exception()
-        return "unable to un-whitelist observable: {} ".format(str(e)), 500
-
-    return "un-whitelisted. ", 200
+        return f"operation failed: {e}", 200
 
 @analysis.route('/observable_action', methods=['POST'])
 @login_required

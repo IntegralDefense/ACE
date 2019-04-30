@@ -19,7 +19,7 @@ import uuid
 
 import saq
 
-from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree, search_down
+from saq.analysis import Analysis, Observable, recurse_tree, search_down
 from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_source_email
 from saq.constants import *
 from saq.crypto import encrypt, decrypt
@@ -1121,25 +1121,6 @@ class EmailAnalysis(Analysis):
         return result
 
     @property
-    def targets(self):
-        if self.received:
-            yield ProfilePointTarget(TARGET_EMAIL_RECEIVED, '\n'.join(self.received))
-        if self.x_mailer:
-            yield ProfilePointTarget(TARGET_EMAIL_XMAILER, self.x_mailer)
-        if self.message_id:
-            yield ProfilePointTarget(TARGET_EMAIL_MESSAGE_ID, self.message_id)
-        if self.env_rcpt_to:
-            for rcpt_to in self.env_rcpt_to:
-                yield ProfilePointTarget(TARGET_EMAIL_RCPT_TO, rcpt_to)
-
-        body = self.body
-        if body:
-            with open(os.path.join(self.storage_dir, body.value), 'rb') as fp:
-                body_content = fp.read()
-
-            yield ProfilePointTarget(TARGET_EMAIL_BODY, body_content)
-
-    @property
     def jinja_template_path(self):
         return "analysis/email_analysis.html"
         
@@ -1373,8 +1354,8 @@ class EmailAnalyzer(AnalysisModule):
                 reply_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if reply_to:
                     reply_to.add_tag('reply_to')
-                    if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
+                    #if mail_to:
+                        #analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
 
         if 'return-path' in target_email:
             email_details[KEY_RETURN_PATH] = target_email['return-path']
@@ -1383,8 +1364,8 @@ class EmailAnalyzer(AnalysisModule):
                 return_path = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if return_path:
                     return_path.add_tag('return_path')
-                    if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
+                    #if mail_to:
+                        #analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
         
         if 'subject' in target_email:
             email_details[KEY_SUBJECT] = target_email['subject']
@@ -2242,6 +2223,69 @@ class EmailConversationAttachmentAnalyzer(AnalysisModule):
         _file.add_detection_point("An email from a new sender contained a macro.")
 
         analysis = self.create_analysis(_file)
+        return True
+
+class EmailConversationLinkAnalysis(Analysis):
+    """Has someone who has never sent us an email before sent us a potentially malicious link?"""
+    def initialize_details(self):
+        self.details = None # not used
+
+class EmailConversationLinkAnalyzer(AnalysisModule):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # load the list of url patterns we want to alert on
+        self.url_patterns = []
+        for key in self.config.keys():
+            if key.startswith('url_pattern_'):
+                try:
+                    pattern = self.config[key]
+                    self.url_patterns.append(re.compile(pattern))
+                except Exception as e:
+                    logging.error(f"unable to add pattern {self.config[key.value]}: {e}")
+
+    @property
+    def generated_analysis_type(self):
+        return EmailConversationLinkAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return F_URL
+
+    def execute_analysis(self, url):
+
+        # does this URL match one of our patterns?
+        matches = False
+        for pattern in self.url_patterns:
+            if pattern.search(url.value):
+                matches = True
+                break
+
+        if not matches:
+            return False
+
+        # get the email this url came from
+        def _is_email(_file):
+            if isinstance(_file, Observable):
+                if _file.type == F_FILE:
+                    if self.wait_for_analysis(_file, EmailAnalysis):
+                        return True
+
+        email = search_down(url, _is_email)
+        if not email:
+            return False
+
+        email_analysis = email.get_analysis(EmailAnalysis)
+
+        # are any of the email conversations tagged as new sender?
+        for ec in email_analysis.get_observables_by_type(F_EMAIL_CONVERSATION):
+            if self.wait_for_analysis(ec, EmailConversationFrequencyAnalysis):
+                if ec.has_tag('new_sender'):
+                    # this is a url we would crawl AND it's from a new sender
+                    url.add_detection_point("Suspect URL sent from new sender.")
+
+        analysis = self.create_analysis(url)
         return True
 
 # DEPRECATED

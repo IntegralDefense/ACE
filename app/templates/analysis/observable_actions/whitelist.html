@@ -2,7 +2,7 @@
     $('#action_{{action.name}}_{{unique_reference}}').on('click', function() {
         if (! confirm("Are you sure you want to whitelist this observable from future analysis?")) { return; }
         $.post("{{ url_for('analysis.observable_action_whitelist') }}",
-                {"observable_type":"{{_observable.type}}","observable_value":"{{_observable.value}}"},
+                { "alert_uuid": "{{alert.uuid}}", "id":"{{_observable.id}}" },
                 function(data) {
                     alert(data);
                 }
