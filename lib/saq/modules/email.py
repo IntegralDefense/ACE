@@ -24,7 +24,7 @@ from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_so
 from saq.constants import *
 from saq.crypto import encrypt, decrypt
 from saq.database import get_db_connection, execute_with_retry, Alert, use_db
-from saq.email import normalize_email_address, search_archive, get_email_archive_sections
+from saq.email import normalize_email_address, search_archive, get_email_archive_sections, decode_rfc2822
 from saq.error import report_exception
 from saq.modules import AnalysisModule, SplunkAnalysisModule, AnalysisModule
 from saq.modules.util import get_email
@@ -1311,7 +1311,8 @@ class EmailAnalyzer(AnalysisModule):
         mail_to = None # strt
 
         if 'from' in target_email:
-            email_details[KEY_FROM] = target_email['from']
+            email_details[KEY_FROM] = decode_rfc2822(target_email['from'])
+            
             name, address = email.utils.parseaddr(email_details[KEY_FROM])
             if address != '':
                 mail_from = address
@@ -1334,7 +1335,7 @@ class EmailAnalyzer(AnalysisModule):
         
         email_details[KEY_TO] = target_email.get_all('to', [])
         for addr in email_details[KEY_TO]:
-            name, address = email.utils.parseaddr(addr)
+            name, address = email.utils.parseaddr(decode_rfc2822(addr))
             if address:
 
                 # if we don't know who it was delivered to yet then we grab the first To:
@@ -1417,24 +1418,7 @@ class EmailAnalyzer(AnalysisModule):
 
         # is the subject rfc2822 encoded?
         if KEY_SUBJECT in email_details:
-            decoded_subject = []
-            for binary_subject, charset in email.header.decode_header(email_details[KEY_SUBJECT]):
-                decoded_part = None
-                if charset is not None:
-                    try:
-                        decoded_part = binary_subject.decode(charset, errors='replace')
-                    except Exception as e:
-                        pass
-
-                if decoded_part is None:
-                    if isinstance(binary_subject, str):
-                        decoded_part = binary_subject
-                    else:
-                        decoded_part = binary_subject.decode('utf8', errors='replace')
-
-                decoded_subject.append(decoded_part)
-
-            email_details[KEY_DECODED_SUBJECT] = ''.join(decoded_subject)
+            email_details[KEY_DECODED_SUBJECT] = decode_rfc2822(email_details[KEY_SUBJECT])
 
         # get the first and last received header values
         last_received = None
