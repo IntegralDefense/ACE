@@ -2174,6 +2174,20 @@ remediate_email_parser.add_argument('message_ids', nargs='*',
     help="One or more message-ids to remediate. You can also specify --from-stdin.")
 remediate_email_parser.set_defaults(func=remediate_email_old)
 
+def submit_phishme_response(args):
+    from saq.phishme import submit_response
+    submit_response(args.recipient, args.subject, args.disposition, args.comment)
+    sys.exit(0)
+
+submit_phishme_response_parser = subparsers.add_parser('submit-phishme-response',
+    help="Submits a PhishMe response with the given parameters. Useful for debugging purposes.")
+submit_phishme_response_parser.add_argument('recipient', help="Target recipient of the response.")
+submit_phishme_response_parser.add_argument('subject', help="Original subject of the reported email.")
+submit_phishme_response_parser.add_argument('disposition', help="Disposition assigned to the report.")
+submit_phishme_response_parser.add_argument('--comment', 
+    help="Optional user comment to add to the report.")
+submit_phishme_response_parser.set_defaults(func=submit_phishme_response)
+
 def update_organization(args):
 
     from saq.modules import LDAPAnalysisModule

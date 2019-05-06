@@ -1,0 +1,11 @@
+Thank you for submitting the email with the subject {<[subject]>}!
+
+Analysts have determined this email was a phish. The email has been removed from your system. 
+{<[user_comment]>}
+
+If there’s any follow up needed someone from the cyber security team will be in contact. 
+
+Thank you for helping protect our environment from phishing cyber threats.
+
+Best regards, 
+Cyber Security
