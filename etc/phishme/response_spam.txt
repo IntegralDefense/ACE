@@ -1,6 +1,8 @@
 Thank you for submitting the email with the subject {<[subject]>}!
 
 Analysts have determined this email was not phish but rather an attempt to defraud or scam you. We have removed it from your mailbox.
+
+Any additional comments added by the analyst may be listed below.
 {<[user_comment]>}
 
 Please keep reporting these types of emails and other phishing attacks!
