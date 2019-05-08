@@ -157,6 +157,9 @@
 {% endmacro %}
 
 {% for entry in email_remediations %}
+    {# sometimes embedded emails do not have the recipient
+       these can't be remediated anyways #}
+    {% if entry.recipient %}
 <div class="panel panel-default">
     <div class="panel-heading">
         <h3 class="panel-title">Email Remediation History - {{entry.message_id}}</h3>
@@ -192,6 +195,7 @@
         {% endif %}
     </div>
 </div>
+    {% endif %}
 {% endfor %}
 
 {% if domain_summary_str %}
