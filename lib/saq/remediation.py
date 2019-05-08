@@ -253,7 +253,7 @@ def _execute_phishfry_remediation(action, emails):
                         discovery_method = "UNKNOWN DISCOVERY METHOD"
 
                     messages.append('({}) {} {} ({})'.format(
-                                    200 if pf_result[pf_recipient].success else 500,
+                                    200 if pf_result[pf_recipient].success and pf_result[pf_recipient].message in [ 'removed', 'restored' ] else 500,
                                     discovery_method,
                                     pf_recipient,
                                     pf_result[pf_recipient].message))
@@ -264,7 +264,7 @@ def _execute_phishfry_remediation(action, emails):
 
                 result.append((pf_result[recipient].message_id,
                                recipient,
-                               200 if pf_result[pf_recipient].success else 500,
+                               200 if pf_result[pf_recipient].success and pf_result[pf_recipient].message in [ 'removed', 'restored' ] else 500,
                                message))
 
                 # we found the recipient in this acount so we don't need to keep looking
