@@ -56,6 +56,10 @@ def _remediate_email_o365_EWS(emails):
     
     for message_id, recipient in emails:
         try:
+
+            if recipient is None:
+                continue
+
             if recipient.startswith('<'):
                 recipient = recipient[1:]
             if recipient.endswith('>'):
