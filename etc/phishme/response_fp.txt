@@ -1,6 +1,8 @@
 Thank you for submitting the email with the subject {<[subject]>}!
 
 Analysts have determined this email was not phish.
+
+Any additional comments added by the analyst may be listed below.
 {<[user_comment]>}
 
 If you need this message back you can find it in your Junk folder.

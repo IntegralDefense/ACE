@@ -37,9 +37,9 @@ def submit_response(recipient, subject, disposition, comment):
 
     # interpolate the values
     if comment is None:
-        comment = ""
+        comment = "(No comments were added.)"
     else:
-        comment = f"analyst comment: {comment}"
+        comment = f"{comment}"
 
     with open(f'{response_path}.txt', 'r') as fp:
         text_content = fp.read().replace('{<[subject]>}', subject).replace('{<[user_comment]>}', comment)
@@ -57,7 +57,7 @@ def submit_response(recipient, subject, disposition, comment):
     else:
         message['Subject'] = f"RE: {subject}"
 
-    message['From'] = Address("Valvoline/Ashland Cyber Security", "cybersecsupport", "valvoline.com")
+    message['From'] = saq.CONFIG['smtp']['mail_from']
     message['To'] = (recipient,)
 
     message.set_content(text_content)
@@ -67,6 +67,6 @@ def submit_response(recipient, subject, disposition, comment):
     with smtplib.SMTP(saq.CONFIG['smtp']['server']) as smtp_server:
         smtp_server.set_debuglevel(2)
         logging.info(f"sending phishme response to {recipient} with subject {message['Subject']}")
-        #smtp_server.send_message(message)
+        smtp_server.send_message(message)
 
     return True
