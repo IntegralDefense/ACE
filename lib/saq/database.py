@@ -836,10 +836,10 @@ class Alert(RootAnalysis, Base):
 
         sla_now = self._datetime_to_sla_time_zone()
         _converted_insert_date = self._datetime_to_sla_time_zone(dt=self.insert_date)
-        logging.info("Getting business time delta between '{}' and '{}' - CONVERTED: '{}' and '{}' - tzino: {} and {}".format(self.insert_date,
-                                        datetime.datetime.now(), _converted_insert_date, self._datetime_to_sla_time_zone(), _converted_insert_date.tzinfo, sla_now.tzinfo))
+        #logging.debug("Getting business time delta between '{}' and '{}' - CONVERTED: '{}' and '{}' - tzino: {} and {}".format(self.insert_date,
+                                        #datetime.datetime.now(), _converted_insert_date, self._datetime_to_sla_time_zone(), _converted_insert_date.tzinfo, sla_now.tzinfo))
         result = self._bt.businesstimedelta(_converted_insert_date, self._datetime_to_sla_time_zone())
-        logging.info("Got business time delta of '{}'".format(result))
+        #logging.debug("Got business time delta of '{}'".format(result))
         setattr(self, '_business_time', result)
         return result
 
