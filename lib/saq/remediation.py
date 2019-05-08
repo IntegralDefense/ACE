@@ -10,8 +10,10 @@ import re
 import smtplib
 import time
 
+from configparser import ConfigParser
+
 import saq
-from saq.database import Alert
+from saq.database import Alert, get_db_connection
 from saq.constants import *
 from saq.error import report_exception
 
@@ -25,6 +27,10 @@ KEY_MAIL_TO = 'to'
 KEY_SUBJECT = 'subject'
 KEY_DECODED_SUBJECT = 'decoded_subject'
 KEY_MESSAGE_ID = 'message_id'
+
+# TODO these should be defined in the phishfry library
+ACTION_REMEDIATE = 'remove'
+ACTION_RESTORE = 'restore'
 
 def _remediate_email_o365_EWS(emails):
     """Remediates the given emails specified by a list of tuples of (message-id, recipient email address)."""
@@ -117,11 +123,209 @@ def _unremediate_email_o365_EWS(emails):
 
     return result
 
-def remediate_emails(*args, **kwargs):
-    return _remediate_email_o365_EWS(*args, **kwargs)
+def load_phishfry_accounts():
+    """Loads phishfry accounts from a configuration file and returns the list of EWS.Account objects."""
+    import EWS
+    accounts = []
+    config = ConfigParser()
+    config.read(os.path.join(saq.SAQ_HOME, "etc", "phishfry.ini"))
+    timezone = config["DEFAULT"].get("timezone", "UTC")
+    for section in config.sections():
+        server = config[section].get("server", "outlook.office365.com")
+        version = config[section].get("version", "Exchange2016")
+        user = config[section]["user"]
+        password = config[section]["pass"]
+        accounts.append(EWS.Account(user, password, server=server, version=version, timezone=timezone, proxies=saq.PROXIES))
 
-def unremediate_emails(*args, **kwargs):
-    return _unremediate_email_o365_EWS(*args, **kwargs)
+    return accounts
+
+def get_restoration_targets(message_ids):
+    """Given a list of message-ids, return a list of tuples of (message_id, recipient)
+       suitable for the unremediate_emails command. The values are discovered by 
+       querying the remediation table in the database."""
+
+    from saq.database import get_db_connection
+
+    if not message_ids:
+        return []
+
+    result = [] # if ( message-id, recipient )
+
+    logging.info("searching for restoration targets for {} message-ids".format(len(message_ids)))
+    
+    with get_db_connection() as db:
+        c = db.cursor()
+
+        for message_id in message_ids:
+            # TODO create an email_remediation table that has the indexing for message_id, recipient, etc...
+            c.execute("SELECT DISTINCT(`key`) FROM `remediation` WHERE `type` = 'email' AND `action` = 'remove' AND `key` LIKE %s",
+                     (f'{message_id}%',))
+
+            for row in c:
+                message_id, recipient = row[0].split(':', 1)
+                result.append((message_id, recipient))
+
+    return result
+
+def get_remediation_targets(message_ids):
+    """Given a list of message-ids, return a list of tuples of (message_id, recipient) 
+       suitable for the remediate_emails command."""
+
+    from saq.email import get_email_archive_sections, search_archive
+
+    if not message_ids:
+        return []
+
+    result = [] # of ( message-id, recipient )
+
+    logging.info("searching for remediation targets for {} message-ids".format(len(message_ids)))
+
+    # first search email archives for all delivered emails that had this message-id
+    for source in get_email_archive_sections():
+        search_result = search_archive(source, message_ids, excluded_emails=saq.CONFIG['remediation']['excluded_emails'].split(','))
+        for archive_id in search_result:
+            result.append((search_result[archive_id].message_id, search_result[archive_id].recipient))
+            #message_id = search_result[archive_id].message_id
+            #recipient = search_result[archive_id].recipient
+            #sender = result[archive_id].sender
+            #subject = result[archive_id].subject
+            #if message_id not in targets:
+                #targets[message_id] = { "recipients": {}, "sender": sender, "subject": subject }
+            #targets[message_id]["recipients"][recipient] = { "removed": 0, "history": [] }
+
+    #with get_db_connection() as db:
+        #c = db.cursor()
+
+        # get remediation history of each target
+        #c.execute("""SELECT remediation.key, action, insert_date, username, result, successful, removed
+                     #FROM email_remediation
+                     #JOIN remediation ON email_remediation.key = remediation.key
+                     #JOIN users ON remediation.user_id = users.id
+                     #WHERE message_id IN ( {} )
+                     #ORDER BY insert_date ASC""".format(','.join(['%s' for _ in message_ids])), tuple(message_ids))
+        #for row in c:
+            #key, action, insert_date, user, result, successful, removed = row
+            #message_id, recipient = key.split(':')
+            #if recipient not in targets[message_id]['recipients']:
+                ###targets[message_id]['recipients'][recipient] = { "removed": 0, "history": [] }
+            #targets[message_id]['recipients'][recipient]["removed"] = removed targets[message_id]['recipients'][recipient]["history"].append({"action":action, "insert_date":insert_date, "user":user, "result":result, "successful":successful})
+#
+    logging.info("found {} remediation targets for {} message-ids".format(len(result), len(message_ids)))
+    return result
+
+def _execute_phishfry_remediation(action, emails):
+
+    result = [] # tuple(message_id, recipient, result_code, result_text)
+
+    for message_id, recipient in emails:
+        found_recipient = False
+        for account in load_phishfry_accounts():
+            if recipient.startswith('<'):
+                recipient = recipient[1:]
+            if recipient.endswith('>'):
+                recipient = recipient[:-1]
+
+            logging.info(f"attempting to {action} message-id {message_id} for {recipient}")
+            # TODO get rid of the hard coded constant
+            pf_result = account.Remediate(action, recipient, message_id)
+            logging.info(f"got {action} result {pf_result} for message-id {message_id} for {recipient}")
+
+            # this returns a dict of the following structure
+            # pf_result[email_address] = EWS.RemediationResult
+            # with any number of email_address keys depending on what kind of mailbox it found
+            # and how many forwards it found
+
+            # use results from whichever account succesfully resolved the mailbox
+            if pf_result[recipient].mailbox_type != "Unknown": # TODO remove hcc
+                found_recipient = True
+                messages = []
+                for pf_recipient in pf_result.keys():
+                    if pf_recipient == recipient:
+                        continue
+
+                    if pf_recipient in pf_result[recipient].forwards:
+                        discovery_method = "forwarded to"
+                    elif pf_recipient in pf_result[recipient].members:
+                        discovery_method = "list membership"
+                    elif pf_result[recipient].owner:
+                        discovery_method = "owner"
+                    else:
+                        discovery_method = "UNKNOWN DISCOVERY METHOD"
+
+                    messages.append('({}) {} {} ({})'.format(
+                                    200 if pf_result[pf_recipient].success else 500,
+                                    discovery_method,
+                                    pf_recipient,
+                                    pf_result[pf_recipient].message))
+                
+                message = pf_result[pf_recipient].message
+                if messages:
+                    message += '\n' + '\n'.join(messages)
+
+                result.append((pf_result[recipient].message_id,
+                               recipient,
+                               200 if pf_result[pf_recipient].success else 500,
+                               message))
+
+                # we found the recipient in this acount so we don't need to keep looking
+                break
+
+        # did we find it?
+        if not found_recipient:
+            logging.warning(f"could not find message-id {message_id} sent to {recipient}")
+            result.append((message_id,
+                           recipient,
+                           500,
+                           "cannot find email"))
+
+    return result
+
+def _remediate_email_phishfry(*args, **kwargs):
+    return _execute_phishfry_remediation(ACTION_REMEDIATE, *args, **kwargs)
+
+def _unremediate_email_phishfry(*args, **kwargs):
+    return _execute_phishfry_remediation(ACTION_RESTORE, *args, **kwargs)
+
+def _process_email_remediation_results(action, user_id, comment, results):
+    with get_db_connection() as db:
+        c = db.cursor()
+        for result in results:
+            message_id, recipient, result_code, result_text = result
+            result_text = '({}) {}'.format(result_code, result_text)
+            result_success = str(result_code) == '200'
+            c.execute("""INSERT INTO remediation ( `type`, `action`, `user_id`, `key`, 
+                                                   `result`, `comment`, `successful` ) 
+                         VALUES ( 'email', %s, %s, %s, %s, %s, %s )""", (
+                      action,
+                      user_id,
+                      f'{message_id}:{recipient}',
+                      result_text,
+                      comment,
+                      result_success))
+
+        db.commit()
+    
+def remediate_emails(*args, use_phishfry=False, user_id=None, comment=None, **kwargs):
+    assert user_id
+
+    if use_phishfry:
+        results = _execute_phishfry_remediation(ACTION_REMEDIATE, *args, **kwargs)
+    else:
+        results = _remediate_email_o365_EWS(*args, **kwargs)
+
+    _process_email_remediation_results(ACTION_REMEDIATE, user_id, comment, results)
+    return results
+
+def unremediate_emails(*args, use_phishfry=False, user_id=None, comment=None, **kwargs):
+    assert user_id
+
+    if use_phishfry:
+        results = _execute_phishfry_remediation(ACTION_RESTORE, *args, **kwargs)
+    else:
+        results = _unremediate_email_o365_EWS(*args, **kwargs)
+
+    _process_email_remediation_results(ACTION_RESTORE, user_id, comment, results)
+    return results
 
 def remediate_phish(alerts):
     """Attempts to remediate the given Alert objects.  Returns a tuple of (success_count, total)"""

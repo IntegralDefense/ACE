@@ -1449,6 +1449,41 @@ WHERE
         c.execute(sql, tuple(params))
         db.commit()
 
+    # TODO - I don't think this should be here
+    # we probably need custom Alert classes, based on the alert type, with overloaded functions
+    from saq.phishme import submit_response
+        
+    for alert in saq.db.query(Alert).filter(and_(Alert.uuid.in_(alert_uuids), 
+                                                 Alert.alert_type == 'mailbox', 
+                                                 Alert.description.like('ACE Mailbox Scanner Detection - [POTENTIAL PHISH]%'))):
+        try:
+            alert.load()
+        except Exception as e:
+            logging.error(f"unable to load alert {alert}: {e}")
+            continue
+
+        if 'email' not in alert.details:
+            logging.error(f"phishme report alert {alert} missing email property in alert details")
+            continue
+
+        if 'from' not in alert.details['email']:
+            logging.error(f"phishme report alert {alert} missing from property in alert email details")
+            continue
+
+        if 'subject' not in alert.details['email']:
+            logging.error(f"phishme report alert {alert} missing subject property in alert email details")
+            continue
+
+        email_from = alert.details['email']['from']
+        email_subject = alert.details['email']['subject'].replace('[POTENTIAL PHISH] ', '')
+
+        try:
+            submit_response(email_from, email_subject, alert.disposition, user_comment)
+        except Exception as e:
+            logging.error(f"unable to submit response to phishme report to {email_from}: {e}")
+            report_exception()
+            continue
+
 class Similarity:
     def __init__(self, uuid, disposition, percent):
         self.uuid = uuid
