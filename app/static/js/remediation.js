@@ -34,6 +34,10 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                     var remediated = data[source][archive_id]['remediated'];
                     var remediation_history = data[source][archive_id]['remediation_history'];
 
+                    // sometimes embedded emails do not have recipient
+                    // and you can't remediated an embedded email anyways
+                    if (recipient == null) continue;
+
                     html += '<tr';
                     if (remediated) {
                         html += ' class="success">';
