@@ -411,6 +411,9 @@ ACTION_CLEAR_CLOUDPHISH_ALERT = 'clear_cloudphish_alert'
 ACTION_REMEDIATE_EMAIL = 'remediate_email'
 ACTION_WHITELIST = 'whitelist'
 ACTION_UN_WHITELIST = 'un_whitelist'
+ACTION_SET_SIP_INDICATOR_STATUS_INFORMATIONAL = 'sip_status_informational'
+ACTION_SET_SIP_INDICATOR_STATUS_ANALYZED = 'sip_status_analyzed'
+ACTION_SET_SIP_INDICATOR_STATUS_NEW = 'sip_status_new'
 
 # recorded metrics
 METRIC_THREAD_COUNT = 'thread_count'

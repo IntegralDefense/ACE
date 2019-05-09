@@ -34,6 +34,7 @@ import requests
 from pymongo import MongoClient
 
 import saq
+import saq.intel
 import virustotal
 import vxstreamlib
 import splunklib
@@ -3696,6 +3697,22 @@ def observable_action():
                 logging.error("unable to mark observable {} for file collection".format(observable))
                 report_exception()
                 return "request failed - check logs", 500
+
+        elif action_id in [ ACTION_SET_SIP_INDICATOR_STATUS_ANALYZED, 
+                            ACTION_SET_SIP_INDICATOR_STATUS_INFORMATIONAL,
+                            ACTION_SET_SIP_INDICATOR_STATUS_NEW ]:
+
+            if action_id == ACTION_SET_SIP_INDICATOR_STATUS_ANALYZED:
+                status = saq.intel.SIP_STATUS_ANALYZED
+            elif action_id == ACTION_SET_SIP_INDICATOR_STATUS_INFORMATIONAL:
+                status = saq.intel.SIP_STATUS_INFORMATIONAL
+            else:
+                status = saq.intel.SIP_STATUS_NEW
+
+            sip_id = int(observable.value[len('sip:'):])
+            logging.info(f"{current_user.username} set sip indicator {sip_id} status to {status}")
+            result = saq.intel.set_sip_indicator_status(sip_id, status)
+            return "OK", 200
 
         return "invalid action_id", 500
 
