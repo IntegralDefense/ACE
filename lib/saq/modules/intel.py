@@ -41,9 +41,13 @@ class IntelAnalysis(Analysis):
 
         if 'campaigns' in self.details:
             campaigns = ','.join([x['name'] for x in self.details['campaigns']])
+            if not campaigns:
+                campaigns = '(no campaign)'
 
         if 'references' in self.details:
             sources = ','.join([x['source'] for x in self.details['references']])
+            if not sources:
+                sources = '(no sources)'
        
         if saq.CONFIG['gui'].getboolean('hide_intel'):
             return 'Intel Analysis - [HIDDEN] [HIDDEN] [{}] [HIDDEN]'.format(self.details['type'])
@@ -69,13 +73,13 @@ class IntelAnalyzer(AnalysisModule):
     def execute_analysis(self, indicator):
 
         # is this a SIP indicator?
-        if not indicator.value.startswith('sip:'):
+        if not indicator.is_sip_indicator:
             return False
 
-        id = int(indicator.value[4:])
+        id = int(indicator.value[len('sip:'):])
         
         try:
-            intel = self.sip_client.get(f'indicators/{id}')
+            intel = query_sip_indicator(id)
         except Exception as e:
             logging.error(f"unknown indicator {id}: {e}")
             return False

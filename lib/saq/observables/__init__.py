@@ -18,6 +18,7 @@ from saq.constants import *
 from saq.email import normalize_email_address
 from saq.error import report_exception
 from saq.gui import *
+from saq.intel import query_sip_indicator
 from saq.util import is_subdomain
 
 import iptools
@@ -562,6 +563,7 @@ class YaraRuleObservable(Observable):
 class IndicatorObservable(Observable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_INDICATOR, *args, **kwargs)
+        self._sip_details = None
 
     @property
     def jinja_template_path(self):
@@ -569,7 +571,45 @@ class IndicatorObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return []
+        result = []
+    
+        # SIP indicators start with sip:
+        if self.is_sip_indicator:
+            result.append(ObservableActionSetSIPIndicatorStatus_Informational())
+            result.append(ObservableActionSetSIPIndicatorStatus_New())
+            result.append(ObservableActionSetSIPIndicatorStatus_Analyzed())
+
+        return result
+
+    @property
+    def is_sip_indicator(self):
+        return self.value.startswith('sip:')
+
+    @property
+    def sip_details(self):
+        if self._sip_details is not None:
+            return self._sip_details
+
+        if not self.is_sip_indicator:
+            return None
+
+        try:
+            self._sip_details = query_sip_indicator(int(self.value[len('sip:'):]))
+            return self._sip_details
+        except Exception as e:
+            logging.error(f"unable to obtain SIP indicator details for {self.value}: {e}")
+            return None
+
+
+    @property
+    def sip_status(self):
+        if not self.is_sip_indicator:
+            return None
+
+        if self.sip_details is None:
+            return None
+
+        return self.sip_details['status']
 
 class MD5Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
