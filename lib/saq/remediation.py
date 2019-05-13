@@ -230,8 +230,13 @@ def _execute_phishfry_remediation(action, emails):
                 recipient = recipient[:-1]
 
             logging.info(f"attempting to {action} message-id {message_id} for {recipient}")
-            # TODO get rid of the hard coded constant
-            pf_result = account.Remediate(action, recipient, message_id)
+            if not saq.UNIT_TESTING:
+                pf_result = account.Remediate(action, recipient, message_id)
+            else:
+                # for unit testing we want to fake the results of the remediation attempt
+                # fake the results of the remediation attempt
+                pf_result = None # TODO
+
             logging.info(f"got {action} result {pf_result} for message-id {message_id} for {recipient}")
 
             # this returns a dict of the following structure
@@ -317,7 +322,7 @@ def remediate_emails(*args, use_phishfry=False, user_id=None, comment=None, **kw
     else:
         results = _remediate_email_o365_EWS(*args, **kwargs)
 
-    _process_email_remediation_results(ACTION_REMEDIATE, user_id, comment, results)
+    #_process_email_remediation_results(ACTION_REMEDIATE, user_id, comment, results)
     return results
 
 def unremediate_emails(*args, use_phishfry=False, user_id=None, comment=None, **kwargs):
@@ -328,8 +333,42 @@ def unremediate_emails(*args, use_phishfry=False, user_id=None, comment=None, **
     else:
         results = _unremediate_email_o365_EWS(*args, **kwargs)
 
-    _process_email_remediation_results(ACTION_RESTORE, user_id, comment, results)
+    #_process_email_remediation_results(ACTION_RESTORE, user_id, comment, results)
     return results
+
+def execute_remediation(remediation):
+    from saq.database import Remediation
+
+    message_id, recipient = remediation.key.split(':', 2)
+    results = remediate_emails((message_id, recipient), use_phishfry=True, user_id=remediation.user_id, comment=remediation.comment)
+    for result in results:
+        message_id, recipient, result_code, result_text = result
+        result_text = '({}) {}'.format(result_code, result_text)
+        result_success = str(result_code) == '200'
+        saq.db.execute(Remediation.__table__.update().values(
+            result=text_text, successful=result_success).where(
+            Remediation.id == remediation.id))
+        saq.db.commit()
+
+def _insert_email_remediation_object(action, message_id, recipient, user_id, company_id, comment=None):
+    from saq.database import Remediation
+    remediation = Remediation(
+        type=REMEDIATION_TYPE_EMAIL,
+        action=action,
+        user_id=user_id,
+        key=f'{message_id}:{recipient}',
+        comment=comment,
+        company_id=company_id)
+
+    saq.db.add(remediation)
+    saq.db.commit()
+    logging.info(f"user {user_id} added remediation request for message_id {message_id} recipient {recipient}")
+
+def request_email_remediation(*args, **kwargs):
+    return _insert_email_remediation_object(REMEDIATION_ACTION_REMOVE, *args, **kwargs)
+
+def request_email_restoration(*args, **kwargs):
+    return _insert_email_remediation_object(REMEDIATION_ACTION_RESTORE, *args, **kwargs)
 
 def remediate_phish(alerts):
     """Attempts to remediate the given Alert objects.  Returns a tuple of (success_count, total)"""

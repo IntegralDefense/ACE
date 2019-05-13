@@ -467,3 +467,15 @@ ANALYSIS_TYPE_FAQUEUE = 'faqueue'
 # supported intelligence databases
 INTEL_DB_SIP = 'sip'
 INTEL_DB_CRITS = 'crits'
+
+# possible remediation status states
+REMEDIATION_STATUS_NEW = 'NEW'
+REMEDIATION_STATUS_IN_PROGRESS = 'IN_PROGRESS'
+REMEDIATION_STATUS_COMPLETED = 'COMPLETED'
+
+# possible remediation types
+REMEDIATION_TYPE_EMAIL = 'email'
+
+# possible remediation actions
+REMEDIATION_ACTION_REMOVE = 'remove'
+REMEDIATION_ACTION_RESTORE = 'restore'

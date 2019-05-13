@@ -1771,6 +1771,24 @@ class Remediation(Base):
         nullable=True,
         default=False)
 
+    company_id = Column(
+        Integer,
+        ForeignKey('company.id'),
+        nullable=True)
+
+    lock = Column(
+        String(36), 
+        nullable=True)
+
+    lock_time = Column(
+        DateTime,
+        nullable=True)
+
+    status = Column(
+        Enum('NEW', 'IN_PROGRESS', 'COMPLETED'),
+        nullable=False,
+        default='NEW')
+
 class Workload(Base):
 
     __tablename__ = 'workload'

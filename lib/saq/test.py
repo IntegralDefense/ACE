@@ -282,6 +282,10 @@ def splunk_query(search_string, *args, **kwargs):
 def initialize_test_environment():
     global test_dir
 
+    # indicate that we are unit testing
+    # this changes the behavior of ACE in various places
+    saq.UNIT_TESTING = True
+
     # there is no reason to run anything as root
     if os.geteuid() == 0:
         print("do not run ace as root please")
