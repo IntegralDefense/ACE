@@ -25,6 +25,9 @@ import pytz
 import requests
 import tzlocal
 
+# this is set to True when unit testing, False otherwise
+UNIT_TESTING = False
+
 # disable the verbose logging in the requests module
 logging.getLogger("requests").setLevel(logging.WARNING)
 
