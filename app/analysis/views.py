@@ -3854,6 +3854,7 @@ INPUT_CHECKBOX_REGEX = re.compile(r'^cb_archive_id_([0-9]+)_source_(.+)$')
 def remediate_emails():
 
     action = request.values['action']
+    use_phishfry = request.values['use_phishfry'] == 'true' # string representation of javascript boolean value true
     assert action in [ 'restore', 'remove' ];
 
     # generate our list of archive_ids from the list of checkboxes that were checked
@@ -3904,13 +3905,14 @@ def remediate_emails():
 
     results = []
 
-    from saq.remediation import remediate_emails, unremediate_emails
+    import saq.remediation
+    #from saq.remediation import remediate_emails, unremediate_emails
 
     try:
         if action == 'remove':
-            results = remediate_emails(params)
+            results = saq.remediation.remediate_emails(params, user_id=current_user.id, use_phishfry=use_phishfry)
         elif action == 'restore':
-            results = unremediate_emails(params)
+            results = saq.remediation.unremediate_emails(params, user_id=current_user.id, use_phishfry=use_phishfry)
     except Exception as e:
         logging.error("unable to perform email remediation action {}: {}".format(action, e))
         for target in targets.values():
@@ -3923,25 +3925,6 @@ def remediate_emails():
             if target.message_id == message_id and target.recipient == recipient:
                 target.result_text = '({}) {}'.format(result_code, result_text)
                 target.result_success = str(result_code) == '200'
-
-    # record the results in the remediation table
-    with get_db_connection() as db:
-        c = db.cursor()
-        for target in targets.values():
-            try:
-                c.execute("""INSERT INTO remediation ( `type`, `action`, `user_id`, `key`, 
-                                                       `result`, `comment`, `successful` ) 
-                             VALUES ( 'email', %s, %s, %s, %s, %s, %s )""", (
-                          action,
-                          current_user.id,
-                          target.message_id + ':' + target.recipient,
-                          target.result_text,
-                          str(target.archive_id),
-                          target.result_success))
-            except Exception as e:
-                logging.error("unable to insert into remediation table: {}".format(e))
-
-        db.commit()
 
     # return JSON formatted results
     for key in targets.keys():

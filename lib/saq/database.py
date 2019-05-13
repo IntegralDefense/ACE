@@ -836,10 +836,10 @@ class Alert(RootAnalysis, Base):
 
         sla_now = self._datetime_to_sla_time_zone()
         _converted_insert_date = self._datetime_to_sla_time_zone(dt=self.insert_date)
-        logging.info("Getting business time delta between '{}' and '{}' - CONVERTED: '{}' and '{}' - tzino: {} and {}".format(self.insert_date,
-                                        datetime.datetime.now(), _converted_insert_date, self._datetime_to_sla_time_zone(), _converted_insert_date.tzinfo, sla_now.tzinfo))
+        #logging.debug("Getting business time delta between '{}' and '{}' - CONVERTED: '{}' and '{}' - tzino: {} and {}".format(self.insert_date,
+                                        #datetime.datetime.now(), _converted_insert_date, self._datetime_to_sla_time_zone(), _converted_insert_date.tzinfo, sla_now.tzinfo))
         result = self._bt.businesstimedelta(_converted_insert_date, self._datetime_to_sla_time_zone())
-        logging.info("Got business time delta of '{}'".format(result))
+        #logging.debug("Got business time delta of '{}'".format(result))
         setattr(self, '_business_time', result)
         return result
 
@@ -1448,6 +1448,41 @@ WHERE
         params.extend(alert_uuids)
         c.execute(sql, tuple(params))
         db.commit()
+
+    # TODO - I don't think this should be here
+    # we probably need custom Alert classes, based on the alert type, with overloaded functions
+    from saq.phishme import submit_response
+        
+    for alert in saq.db.query(Alert).filter(and_(Alert.uuid.in_(alert_uuids), 
+                                                 Alert.alert_type == 'mailbox', 
+                                                 Alert.description.like('ACE Mailbox Scanner Detection - [POTENTIAL PHISH]%'))):
+        try:
+            alert.load()
+        except Exception as e:
+            logging.error(f"unable to load alert {alert}: {e}")
+            continue
+
+        if 'email' not in alert.details:
+            logging.error(f"phishme report alert {alert} missing email property in alert details")
+            continue
+
+        if 'from' not in alert.details['email']:
+            logging.error(f"phishme report alert {alert} missing from property in alert email details")
+            continue
+
+        if 'subject' not in alert.details['email']:
+            logging.error(f"phishme report alert {alert} missing subject property in alert email details")
+            continue
+
+        email_from = alert.details['email']['from']
+        email_subject = alert.details['email']['subject'].replace('[POTENTIAL PHISH] ', '')
+
+        try:
+            submit_response(email_from, email_subject, alert.disposition, user_comment)
+        except Exception as e:
+            logging.error(f"unable to submit response to phishme report to {email_from}: {e}")
+            report_exception()
+            continue
 
 class Similarity:
     def __init__(self, uuid, disposition, percent):
