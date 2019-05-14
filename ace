@@ -2040,9 +2040,10 @@ search_archive_parser.set_defaults(func=search_archive)
 
 def remediate_email(args):
     from saq.database import User
-    from saq.remediation import get_remediation_targets, remediate_emails
+    from saq.remediation import get_remediation_targets, load_remediation_system
 
     user_id = saq.db.query(User).filter(User.username == args.user_name).one().id
+    remediation_system = load_remediation_system(args.remediation_system)
 
     if args.message_id_only:
         remediation_targets = get_remediation_targets(args.targets)
@@ -2052,14 +2053,9 @@ def remediate_email(args):
         while targets:
             recipient = targets.pop()
             message_id = targets.pop()
-            remediation_targets.append((message_id, recipient))
+            result = remediation_system.execute_remediation(
+                message_id, recipient, user_id=user_id, comment=args.comment, company_id=saq.COMPANY_ID)
 
-    try:
-        results = remediate_emails(remediation_targets, use_phishfry=args.use_phishfry, user_id=user_id)
-    except Exception as e:
-        logging.error(f"remediation failed: {e}")
-
-    #import pdb; pdb.set_trace()
     sys.exit(0)
 
 remediate_email_parser = subparsers.add_parser('remediate-emails',
@@ -2068,17 +2064,22 @@ remediate_email_parser = subparsers.add_parser('remediate-emails',
     #help="Read the message-ids and recipients from standard input.")
 remediate_email_parser.add_argument('-m', '--message-id-only', required=False, default=False, action='store_true',
     help="Assume all parameters are message-ids. Use email archive database to determine recipients automatically.")
-remediate_email_parser.add_argument('--use-phishfry', required=False, default=False, action='store_true',
-    help="Use the Phishfry library to remove the emails.")
+remediate_email_parser.add_argument('--remediation-system', required=False, default='phishfry', choices=['phishfry'],
+    help="Select which remediation system to use. Defaults to phishfry.")
+remediate_email_parser.add_argument('-c', '--comment', required=False, default=None,
+    help="An optional comment to add to the remediation.")
+remediate_email_parser.add_argument('-u', '--user-name', required=False,
+    help="The username to execute the remediation as. Defaults to the current user name.")
 remediate_email_parser.add_argument('targets', nargs='*',
     help="One or more message-ids to remediate. You can also specify --from-stdin.")
 remediate_email_parser.set_defaults(func=remediate_email)
 
 def unremediate_email(args):
     from saq.database import User
-    from saq.remediation import unremediate_emails, get_restoration_targets
+    from saq.remediation import get_restoration_targets, load_remediation_system
 
     user_id = saq.db.query(User).filter(User.username == args.user_name).one().id
+    remediation_system = load_remediation_system(args.remediation_system)
 
     if args.message_id_only:
         restoration_targets = get_restoration_targets(args.targets)
@@ -2089,12 +2090,8 @@ def unremediate_email(args):
         while targets:
             recipient = targets.pop()
             message_id = targets.pop()
-            restoration_targets.append((message_id, recipient))
-
-    try:
-        results = unremediate_emails(restoration_targets, use_phishfry=args.use_phishfry, user_id=user_id)
-    except Exception as e:
-        logging.error(f"remediation failed: {e}")
+            result = remediation_system.execute_restoration(
+                message_id, recipient, user_id=user_id, comment=args.comment, company_id=saq.COMPANY_ID)
 
     #import pdb; pdb.set_trace()
     sys.exit(0)
@@ -2105,8 +2102,12 @@ unremediate_email_parser = subparsers.add_parser('unremediate-emails',
     #help="Read the message-ids and recipients from standard input.")
 unremediate_email_parser.add_argument('-m', '--message-id-only', required=False, default=False, action='store_true',
     help="Assume all parameters are message-ids.")
-unremediate_email_parser.add_argument('--use-phishfry', required=False, default=False, action='store_true',
-    help="Use the Phishfry library to restore the emails.")
+unremediate_email_parser.add_argument('--remediation-system', required=False, default='phishfry', choices=['phishfry'],
+    help="Select which remediation system to use. Defaults to phishfry.")
+unremediate_email_parser.add_argument('-c', '--comment', required=False, default=None,
+    help="An optional comment to add to the remediation.")
+unremediate_email_parser.add_argument('-u', '--user-name', required=False,
+    help="The username to execute the remediation as. Defaults to the current user name.")
 unremediate_email_parser.add_argument('targets', nargs='*',
     help="One or more message-ids to restore. You can also specify --from-stdin.")
 unremediate_email_parser.set_defaults(func=unremediate_email)

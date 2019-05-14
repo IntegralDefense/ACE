@@ -1047,7 +1047,7 @@ class Engine(object):
         logging.info("started remediation manager")
         while True:
             try:
-                execution_result = self.remediation_manager_execute():
+                execution_result = self.remediation_manager_execute()
             except Exception as e:
                 logging.error(f"remediation_execute() threw an exception: {e}")
                 report_exception()
@@ -1081,7 +1081,7 @@ class Engine(object):
                 result = saq.db.execute(Remediation.__table__.update().values(
                     status=REMEDIATION_STATUS_IN_PROGRESS,
                     lock=self.remediation_uuid).where(and_(
-                    Remediation.id == remediation.id
+                    Remediation.id == remediation.id,
                     Remediation.lock == None)))
 
                 if result.rowcount == 0:

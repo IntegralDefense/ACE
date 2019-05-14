@@ -3,21 +3,31 @@
 #
 # remediation routines
 
+import datetime
+import importlib
 import json
 import logging
-import os.path
+import os, os.path
+import queue
+import queue
 import re
 import smtplib
+import threading
 import time
+import uuid
 
 from configparser import ConfigParser
 
 import saq
-from saq.database import Alert, get_db_connection
+from saq.database import Alert, get_db_connection, Remediation
 from saq.constants import *
+from .constants import *
 from saq.error import report_exception
+from saq.util import *
 
 import requests
+
+from sqlalchemy import asc, func, and_, or_
 
 KEY_ENV_MAIL_FROM = 'env_mail_from'
 KEY_ENV_RCPT_TO = 'env_rcpt_to'
@@ -314,7 +324,7 @@ def _process_email_remediation_results(action, user_id, comment, results):
 
         db.commit()
     
-def remediate_emails(*args, use_phishfry=False, user_id=None, comment=None, **kwargs):
+def remediate_emails(*args, user_id=None, comment=None, **kwargs):
     assert user_id
 
     if use_phishfry:
@@ -363,6 +373,7 @@ def _insert_email_remediation_object(action, message_id, recipient, user_id, com
     saq.db.add(remediation)
     saq.db.commit()
     logging.info(f"user {user_id} added remediation request for message_id {message_id} recipient {recipient}")
+    return True
 
 def request_email_remediation(*args, **kwargs):
     return _insert_email_remediation_object(REMEDIATION_ACTION_REMOVE, *args, **kwargs)
@@ -561,3 +572,262 @@ def unremediate_phish(alerts):
 
     messages.insert(0, 'restored {} out of {} emails from office365'.format(success_count, len(alerts)))
     return messages
+
+class RemediationSystem(object):
+    def __init__(self):
+
+        # set this property to true when doing unit testing
+        self.testing_mode = False
+
+        # the queue that contains the current Remediation object to work on
+        self.queue = None
+
+        # the thread the reads the work to be done and adds it to the queue
+        self.manager_thread = None
+
+        # the list of worker threads that perform the work added to the queue
+        self.worker_threads = []
+
+        # control event to shut the remediation system down (gracefully)
+        self.control_event = None
+
+        # the UUID used to lock remediation items for ownership
+        self.lock = None
+
+    def enable_testing_mode(self):
+        self.testing_mode = True
+
+    def execute_request(self, remediation):
+        raise NotImplementedError()
+
+    def request_remediation(self, *args, **kwargs):
+        return self._insert(*args, action=REMEDIATION_ACTION_REMOVE, **kwargs)
+
+    def request_restoration(self, *args, **kwargs):
+        return self._insert(*args, action=REMEDIATION_ACTION_RESTORE, **kwargs)
+
+    def execute_remediation(self, *args, **kwargs):
+        # create a locked remediation entry so any currently running remediation systems don't grab it
+        remediation_id = self.request_remediation(*args, 
+                                                  lock=str(uuid.uuid4()), 
+                                                  lock_time=datetime.datetime.now(), 
+                                                  **kwargs)
+        self.execute_request(saq.db.query(Remediation).filter(Remediation.id == remediation_id).one())
+        return saq.db.query(Remediation).filter(Remediation.id == remediation_id).one()
+
+    def execute_restoration(self, *args, **kwargs):
+        # create a locked remediation entry so any currently running remediation systems don't grab it
+        remediation_id = self.request_restoration(*args, 
+                                                  lock=str(uuid.uuid4()), 
+                                                  lock_time=datetime.datetime.now(), 
+                                                  **kwargs)
+        self.execute_request(saq.db.query(Remediation).filter(Remediation.id == remediation_id).one())
+        return saq.db.query(Remediation).filter(Remediation.id == remediation_id).one()
+
+    def _insert(self, type, action, user_id, key, company_id, 
+                comment=None, lock=None, lock_time=None, status=REMEDIATION_STATUS_NEW):
+
+        remediation = Remediation(
+            type=type,
+            action=action,
+            user_id=user_id,
+            key=key,
+            comment=comment,
+            company_id=company_id,
+            lock=lock,
+            lock_time=lock_time,
+            status=status)
+
+        saq.db.add(remediation)
+        saq.db.commit()
+        logging.info(f"added remediation request {remediation}")
+        return remediation.id
+
+    #
+    # automation routines
+
+    def start(self):
+        # grab the lock uuid used last time, or, create a new one
+        lock_uuid_path = os.path.join(saq.DATA_DIR, 'var', 'remediation.uuid')
+        if os.path.exists(lock_uuid_path):
+            try:
+                with open(lock_uuid_path) as fp:
+                    self.lock = fp.read()
+                    validate_uuid(self.lock)
+            except Exception as e:
+                logging.warning(f"unable to read {lock_uuid_path} - recreating")
+                self.lock = None
+
+        if self.lock is None:
+            with open(lock_uuid_path, 'w') as fp:
+                self.lock = str(uuid.uuid4())
+                fp.write(self.lock)
+
+        # reset any outstanding work set to this uuid
+        # this would be stuff left over from the last time it shut down
+        saq.db.execute(Remediation.__table__.update().values(
+            status=REMEDIATION_STATUS_NEW,
+            lock=None,
+            lock_time=None).where(and_(
+            Remediation.lock == self.lock,
+            or_(
+                Remediation.status == REMEDIATION_STATUS_NEW, 
+                Remediation.status == REMEDIATION_STATUS_IN_PROGRESS))))
+
+        saq.db.commit()
+        
+        self.queue = queue.Queue(maxsize=1)
+        self.control_event = threading.Event()
+
+        # start the workers first so they can start reading the the queue
+        for index in range(saq.CONFIG['engine'].getint('max_concurrent_remediation_count')):
+            worker_thread = threading.Thread(target=self.worker_loop, name=f"Remediation Worker #{index}")
+            worker_thread.start()
+            self.worker_threads.append(worker_thread)
+
+        self.manager_thread = threading.Thread(target=self.manager_loop, name="Remediation Manager")
+        self.manager_thread.start()
+
+    def stop(self):
+        self.control_event.set()
+        for t in self.worker_threads:
+            logging.debug(f"waiting for {t} to stop...")
+            t.join()
+
+        logging.debug("waiting for {self.manager_thread} to stop...")
+        self.manager_thread.join()
+
+    def sleep(self, seconds):
+        while not self.control_event.is_set() and seconds > 0:
+            seconds -= 1
+            time.sleep(1)
+
+    def manager_loop(self):
+        logging.debug("remediation manager loop started")
+        while not self.control_event.is_set():
+            try:
+                sleep_time = self.manager_execute()
+            except Exception as e:
+                sleep_time = 10 # we'll wait a bit longer if something is broken
+                logging.error(f"uncaught exception {e}")
+                report_exception()
+            finally:
+                # since we are doing SQL operations we need to make sure these
+                # are closed after each iteration
+                saq.db.close()
+
+            self.sleep(sleep_time)
+
+        logging.debug("remediation manager loop exiting")
+
+    def manager_execute(self):
+        # get the next remediation to add to the queue
+        remediation = saq.db.query(Remediation).filter(and_(
+            Remediation.lock == self.lock,
+            Remediation.status == REMEDIATION_STATUS_NEW)).order_by(
+            asc(Remediation.id)).first()
+
+        if remediation is None:
+            # nothing available? go ahead and try to lock something then
+            result = saq.db.execute(Remediation.__table__.update().values(
+                lock=self.lock,
+                lock_time=func.now(),
+                status=REMEDIATION_STATUS_IN_PROGRESS).where(and_(
+                Remediation.company_id == saq.COMPANY_ID,
+                Remediation.lock == None,
+                Remediation.status == REMEDIATION_STATUS_NEW)))
+
+            saq.db.commit()
+
+            if result.rowcount == 0:
+                # execute again but wait a few seconds
+                return 3 # do we need to make this configurable?
+
+            # execute again (don't wait)
+            return 0
+
+        # at this point we have something to put on the queue
+        while not self.control_event.is_set():
+            try:
+                self.queue.put(remediation, block=True, timeout=1)
+                break
+            except queue.Full:
+                continue
+
+        # we added something to the queue -- go back and get the next thing to add
+        return 0
+
+    def worker_loop(self):
+        logging.debug("remediation worker started")
+        while not self.control_event.is_set():
+            try:
+                sleep_time = self.worker_execute()
+            except Exception as e:
+                sleep_time = 30
+                logging.error(f"uncaught exception {e}")
+                report_exception()
+
+            self.sleep(sleep_time)
+
+        logging.debug("remediation worker exited")
+
+    def worker_execute(self):
+        # get the next remediation request from the queue
+        try:
+            remediation = self.queue.get(block=True, timeout=1)
+        except queue.Empty:
+            return 0 # the get on the queue is what blocks
+
+        # execute this remediation
+        self.execute_request(remediation)
+
+class EmailRemediationSystem(RemediationSystem):
+    def request_remediation(self, message_id, recipient, *args, **kwargs):
+        return RemediationSystem.request_remediation(
+            self,
+            *args, 
+            type=REMEDIATION_TYPE_EMAIL, 
+            key=f'{message_id}:{recipient}', 
+            **kwargs)
+
+    def request_restoration(self, message_id, recipient, *args, **kwargs):
+        return RemediationSystem.request_restoration(
+            self,
+            *args, 
+            type=REMEDIATION_TYPE_EMAIL, 
+            key=f'{message_id}:{recipient}', 
+            **kwargs)
+
+def load_remediation_system(name):
+    """Loads the given remediation system by name, as defined in the configuration file."""
+
+    # find the configuration system with this name
+    section_name = f'remediation_system_{name}'
+    if section_name not in saq.CONFIG:
+        logging.error(f"call to load remediation system {name} failed - "
+                      f"configuration section {section_name} does not exist")
+        return None
+    
+    module_name = saq.CONFIG[section_name]['module']
+    try:
+        _module = importlib.import_module(module_name)
+    except Exception as e:
+        logging.error(f"unable to import module {module_name}: {e}")
+        report_exception()
+        return None
+
+    class_name = saq.CONFIG[section_name]['class']
+    try:
+        _class = getattr(_module, class_name)
+    except AttributeError as e:
+        logging.error(f"class {class_name} does not exist in module {module_name} in remediation system {name}")
+        report_exception()
+        return None
+
+    try:
+        logging.debug(f"loading remediation system {name}")
+        return _class()
+    except Exception as e:
+        logging.error("unable to load remediation system {name}: {e}")
+        report_exception()
+        return None

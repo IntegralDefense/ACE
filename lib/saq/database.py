@@ -341,7 +341,7 @@ def get_db_connection(*args, **kwargs):
 # new school database connections
 import logging
 import os.path
-from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, TIMESTAMP, DATE, text, create_engine, Text, Enum, func
 from sqlalchemy.dialects.mysql import BOOLEAN, VARBINARY, BLOB
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates, scoped_session
@@ -1769,7 +1769,7 @@ class Remediation(Base):
     successful = Column(
         BOOLEAN,
         nullable=True,
-        default=False)
+        default=None)
 
     company_id = Column(
         Integer,
