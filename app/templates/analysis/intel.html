@@ -27,6 +27,12 @@
         <td>Modified</td>
         <td>{{analysis.details['modified_time']}}</td>
     </tr>
+    {% for campaign in analysis.details['campaigns'] %}
+    <tr>
+        <td>Campaign</td>
+        <td>{{analysis.details['campaign']}}</td>
+    </tr>
+    {% endfor %}
     <tr>
         <td>Impact / Confidence</td>
         <td>{{analysis.details['impact']}} / {{analysis.details['confidence']}}</td>
