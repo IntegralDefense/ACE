@@ -45,7 +45,7 @@ class IntelAnalysis(Analysis):
                 campaigns = '(no campaign)'
 
         if 'references' in self.details:
-            sources = ','.join([x['source'] for x in self.details['references']])
+            sources = list(set(','.join([x['source'] for x in self.details['references']])))
             if not sources:
                 sources = '(no sources)'
        
