@@ -1008,7 +1008,7 @@ class Analysis(TaggableObject, DetectableObject):
         #if isinstance(observable, YaraRuleObservable):
             #source.add_detection_point("{} matched yara rule {}".format(source.observable, observable.value))
         if isinstance(observable, IndicatorObservable):
-            source.add_detection_point("{} contains crits indicator {}".format(source, observable.value))
+            source.add_detection_point("{} contains indicator {}".format(source, observable.value))
 
     def __str__(self):
         if self.observable is not None:
