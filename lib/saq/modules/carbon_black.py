@@ -139,7 +139,7 @@ class CarbonBlackProcessAnalyzer_v1(AnalysisModule):
                     'path': process.path,
                     'webui_link': process.webui_link
                     })
-            analysis.add_observable(F_PROCESS_GUID, process.id)
+            #analysis.add_observable(F_PROCESS_GUID, process.id)
 
 
         # look for people using skype
