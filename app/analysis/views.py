@@ -1,3 +1,4 @@
+import collections.abc
 import datetime
 import importlib
 import io
@@ -34,6 +35,7 @@ import requests
 from pymongo import MongoClient
 
 import saq
+import saq.analysis
 import saq.intel
 import virustotal
 import vxstreamlib
@@ -3232,6 +3234,35 @@ def index():
     special_tag_names = [tag for tag in saq.CONFIG['tags'].keys() if saq.CONFIG['tags'][tag] == 'special']
     alert_tags = [tag for tag in alert_tags if tag.name not in special_tag_names]
 
+    class DispositionHistory(collections.abc.MutableMapping):
+        def __init__(self, observable):
+            self.observable = observable
+            self.history = {} # key = disposition, value = count
+
+        def __getitem__(self, key):
+            return self.history[key]
+
+        def __setitem__(self, key, value):
+            # we skip the None key which corresponds to alerts that have not been dispositioned yet
+            if key is not None:
+                if key not in VALID_ALERT_DISPOSITIONS:
+                    raise ValueError(f"invalid disposition {key}")
+
+                self.history[key] = value
+
+        def __delitem__(self, key):
+            pass
+
+        def __iter__(self):
+            total = sum([self.history[disp] for disp in self.history.keys()])
+            dispositions = [disposition for disposition in VALID_ALERT_DISPOSITIONS if disposition in self.history]
+            dispositions = sorted(dispositions, key=lambda disposition: (self.history[disposition] / total) * 100.0, reverse=True)
+            for disposition in dispositions:
+                yield disposition, self.history[disposition], (self.history[disposition] / total) * 100.0
+
+        def __len__(self):
+            return len(self.history)
+
     # compute the display tree
     class TreeNode(object):
         def __init__(self, obj, parent=None):
@@ -3273,6 +3304,50 @@ def index():
         def __str__(self):
             return "TreeNode({}, {}, {})".format(self.obj, self.reference_node, self.visible)
 
+        @property
+        def disposition_history(self):
+            """Returns a DispositionHistory object if self.obj is an Observable, None otherwise."""
+            if hasattr(self, '_disposition_history'):
+                return self._disposition_history
+
+            self._disposition_history = None
+            if not isinstance(self.obj, saq.analysis.Observable):
+                return None
+
+            if self.obj.whitelisted:
+                return None
+
+            if self.obj.type == F_FILE:
+                from saq.modules.file_analysis import FileHashAnalysis
+                for child in self.children:
+                    if isinstance(child.obj, FileHashAnalysis):
+                        for grandchild in child.children:
+                            if isinstance(grandchild.obj, saq.analysis.Observable) and grandchild.obj.type == F_SHA256:
+                                self._disposition_history = grandchild.disposition_history
+                                return self._disposition_history
+
+                return None
+
+            self._disposition_history = DispositionHistory(self.obj)
+
+            with get_db_connection() as db:
+                c = db.cursor()
+                c.execute("""
+SELECT 
+    a.disposition, COUNT(*) 
+FROM 
+    observables o JOIN observable_mapping om ON o.id = om.observable_id
+    JOIN alerts a ON om.alert_id = a.id
+WHERE 
+    o.type = %s AND 
+    o.md5 = UNHEX(%s)
+GROUP BY a.disposition""", (self.obj.type, self.obj.md5_hex))
+
+                for row in c:
+                    disposition, count = row
+                    self._disposition_history[disposition] = count
+
+            return self._disposition_history
 
     def find_all_url_domains(analysis):
         assert isinstance(analysis, saq.analysis.Analysis)
