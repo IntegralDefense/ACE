@@ -120,6 +120,11 @@
                 {% endfor %}
                 <span class="observable_display {{observable_node.obj.type}}" title="">{% include observable_node.obj.jinja_template_path %}</span> 
                 {% for tag in observable_node.obj.tags %}{% if tag.level != 'hidden' %}<span class="label {{tag.css_class}}">{{ tag }}</span>{% endif %}{% endfor %}
+                {% if observable_node.disposition_history %}
+                    {% for disposition, count, percentage in observable_node.disposition_history %}
+                        <span class="label label-{{disposition_css_mapping[disposition]}}">{{disposition}} {{percentage | int}}% ({{count}})</span>
+                    {% endfor %}
+                {% endif %}
                 {# XXX hack to refactor out #}
                 {% for tag in observable_node.obj.mapped_tags %}<span class="label {{tag.css_class}}">{{ tag }}</span>{% endfor %}</li>
                 {% if observable_node.reference_node is not none %} 
