@@ -3314,6 +3314,9 @@ def index():
             if not isinstance(self.obj, saq.analysis.Observable):
                 return None
 
+            if self.obj.whitelisted:
+                return None
+
             if self.obj.type == F_FILE:
                 from saq.modules.file_analysis import FileHashAnalysis
                 for child in self.children:
