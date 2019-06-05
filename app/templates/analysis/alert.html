@@ -157,6 +157,9 @@
 {% endmacro %}
 
 {% for entry in email_remediations %}
+    {# sometimes embedded emails do not have the recipient
+       these can't be remediated anyways #}
+    {% if entry.recipient %}
 <div class="panel panel-default">
     <div class="panel-heading">
         <h3 class="panel-title">Email Remediation History - {{entry.message_id}}</h3>
@@ -184,7 +187,7 @@
                         <td>{{history['action']}}</td>
                         <td style="white-space: nowrap">{{history['insert_date']}}</td>
                         <td>{{history['user']}}</td>
-                        <td>{{history['result']}}</td>
+                        <td><pre>{{history['result']}}</pre></td>
                     </tr>
                 {% endfor %}
             {#{% endfor %}#}
@@ -192,6 +195,7 @@
         {% endif %}
     </div>
 </div>
+    {% endif %}
 {% endfor %}
 
 {% if domain_summary_str %}
@@ -217,43 +221,3 @@
         {{ recurse_tree(display_tree) }}
     </div>
 </div>
-
-{% if profile_points | length > 0 %}
-<div class="panel-group" id="pp_accordion" role="tablist" aria-multiselectable="true">
-    <div class="panel panel-default">
-        <div class="panel-heading" role="tab" id="heading_pp_all">
-            <h4 class="panel-title">
-                <a role="button" data-toggle="collapse" data-parent="#pp_accordion" href="#collapse_pp_all" aria-expanded="true" aria-controls="collapse_pp_all">Profile Points</a>
-            </h4>
-        </div>
-        <div id="collapse_pp_all" class="panel-collapse collapse in" role="tabpanel" aria-labelledby="heading_pp_all">
-            <div class="panel-body">
-                {% for profile_point in profile_points %}
-                <li><a target="_blank" href="{{ace_config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-{% for pp_tag in pp_tags %}
-    <div class="panel panel-default">
-        <div class="panel-heading" role="tab" id="heading_pp_{{pp_tag}}">
-            <h4 class="panel-title">
-                <a class="collapsed" role="button" data-toggle="collapse" data-parent="#pp_accordion" href="#collapse_pp_{{pp_tag}}" aria-expanded="false" aria-controls="collapse_pp_{{pp_tag}}">{{pp_tag}} ({{pp_scores[pp_tag]}}/{{pp_counts[pp_tag]}})</a>
-            </h4>
-        </div>
-        <div id="collapse_pp_{{pp_tag}}" class="panel-collapse collapse" role="tabpanel" aria-labelledby="heading_pp_{{pp_tag}}">
-            <div class="panel-body">
-                <ul class="list-group">
-                {% for profile_point in pp_full[pp_tag]['yes'] %}
-                    <li class="list-group-item"><a target="_blank" href="{{ace_config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</li>
-                {% endfor %}
-                {% for profile_point in pp_full[pp_tag]['no'] %}
-                    <li class="list-group-item"><font color="red"><a target="_blank" href="{{ace_config['crits']['url']}}/profile_points/details/{{profile_point.crits_id}}/"><span class="glyphicon glyphicon-link"></span></a> {{profile_point.description}}</font></li>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
-{% endfor %}
-</div>
-{% endif %}
-

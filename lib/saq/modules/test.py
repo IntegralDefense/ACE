@@ -172,6 +172,23 @@ class BasicTestAnalyzer(AnalysisModule):
         time.sleep(3)
         return True
 
+class GenericTestAnalysis(TestAnalysis):
+    def initialize_details(self):
+        return { }
+
+class GenericTestAnalyzer(AnalysisModule):
+    @property
+    def generated_analysis_type(self):
+        return GenericTestAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return VALID_OBSERVABLE_TYPES
+
+    def execute_analysis(self, observable):
+        analysis = self.create_analysis(observable)
+        return True
+
 class PauseAnalysis(TestAnalysis):
     def initialize_details(self):
         self.details = { }
@@ -719,6 +736,40 @@ class NoPriorityAnalyzer(AnalysisModule):
     @property
     def generated_analysis_type(self):
         return NoPriorityAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class GroupedByTimeRangeAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class GroupedByTimeRangeAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return GroupedByTimeRangeAnalysis
+
+    def execute_analysis(self, test):
+        analysis = self.create_analysis(test)
+        return True
+
+class GroupingTargetAnalysis(Analysis):
+    def initialize_details(self):
+        pass
+
+class GroupingTargetAnalyzer(AnalysisModule):
+    @property
+    def valid_observable_types(self):
+        return F_TEST
+
+    @property
+    def generated_analysis_type(self):
+        return GroupingTargetAnalysis
 
     def execute_analysis(self, test):
         analysis = self.create_analysis(test)

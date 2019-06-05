@@ -55,7 +55,6 @@ def use_db(method=None, name=None):
 
     return wrapper
 
-
 def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=False):
     """Executes the given SQL or function (and params) against the given cursor with
        re-attempts up to N times (defaults to 2) on deadlock detection.
@@ -342,8 +341,8 @@ def get_db_connection(*args, **kwargs):
 # new school database connections
 import logging
 import os.path
-from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum
-from sqlalchemy.dialects.mysql import BOOLEAN
+from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum, func
+from sqlalchemy.dialects.mysql import BOOLEAN, VARBINARY, BLOB
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates, scoped_session
 from sqlalchemy.orm.exc import NoResultFound, DetachedInstanceError
@@ -361,18 +360,16 @@ Base = declarative_base()
 # if target is an executable, then *args is to session.execute function
 # if target is a callable, then *args is to the callable function (whatever that is)
 
-def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **kwargs):
+def retry_on_deadlock(targets, *args, attempts=2, commit=False, **kwargs):
     """Executes the given targets, in order. If a deadlock condition is detected, the database session
        is rolled back and the targets are executed in order, again. This can happen up to :param:attempts times
        before the failure is raised as an exception.
 
        :param targets Can be any of the following
-       * A function or callable.
-       * A list of functions or callables.
+       * A callable.
+       * A list of callables.
        * A sqlalchemy.sql.expression.Executable object.
        * A list of sqlalchemy.sql.expression.Executable objects.
-       :param session The session to use for the database operations. If not passed the the default session is used 
-       (see :meth:saq.db)
        :param int attempts The maximum number of times the operations are tried before passing the exception on.
        :param bool commit If set to True then the ``commit`` function is called on the session object before returning
        from the function. If a deadlock occurs during the commit then further attempts are made.
@@ -386,17 +383,8 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
 
        :return This function returns the last operation in the list of targets."""
 
-    # if we don't pass in a session then we just grab the one available
-    # and pass it to the target function as the "session" argument
-    if session is None:
-        session = saq.db()
-        kwargs['session'] = session
-
     if not isinstance(targets, list):
         targets = [ targets ]
-
-    # this doesn't seem to work
-    #session.begin_nested()
 
     current_attempt = 0
     while True:
@@ -404,12 +392,12 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
             last_result = None
             for target in targets:
                 if isinstance(target, Executable) or isinstance(target, str):
-                    session.execute(target, *args, **kwargs)
+                    saq.db.execute(target, *args, **kwargs)
                 elif callable(target):
                     last_result = target(*args, **kwargs)
 
             if commit:
-                session.commit()
+                saq.db.commit()
 
             return last_result
 
@@ -420,7 +408,7 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
                 logging.debug(f"DEADLOCK STATEMENT attempt #{current_attempt + 1} SQL {e.statement} PARAMS {e.params}")
 
                 try:
-                    session.rollback() # rolls back to the begin_nested()
+                    saq.db.rollback() # rolls back to the begin_nested()
                 except Exception as e:
                     logging.error(f"unable to roll back transaction: {e}")
                     report_exception()
@@ -439,16 +427,25 @@ def retry_on_deadlock(targets, session=None, attempts=2, commit=False, *args, **
 
 def retry_function_on_deadlock(function, *args, **kwargs):
     assert callable(function)
-    return retry_on_deadlock(targets=function, *args, **kwargs)
+    return retry_on_deadlock(function, *args, **kwargs)
 
 def retry_sql_on_deadlock(executable, *args, **kwargs):
     assert isinstance(executable, Executable)
-    return retry_on_deadlock(targets=executable, *args, **kwargs)
+    return retry_on_deadlock(executable, *args, **kwargs)
 
 def retry_multi_sql_on_deadlock(executables, *args, **kwargs):
     assert isinstance(executables, list)
     assert all([isinstance(_, Executable) for _ in executables])
-    return retry_on_deadlock(targets=executables, *args, **kwargs)
+    return retry_on_deadlock(executables, *args, **kwargs)
+
+def retry(func, *args, **kwargs):
+    """Executes the wrapped function with retry_on_deadlock."""
+    @functools.wraps(func)
+    def wrapper(*w_args, **w_kwargs):
+        w_kwargs.update(kwargs)
+        return retry_function_on_deadlock(func, *w_args, **w_kwargs)
+
+    return wrapper
 
 class User(UserMixin, Base):
 
@@ -687,7 +684,7 @@ class Threat(Base):
     __tablename__ = 'malware_threat_mapping'
 
     malware_id = Column(Integer, ForeignKey('malware.id'), primary_key=True)
-    type = Column(Enum('UNKNOWN','KEYLOGGER','INFOSTEALER','DOWNLOADER','BOTNET','RAT','RANSOMWARE','ROOTKIT','CLICK_FRAUD'), primary_key=True, nullable=False)
+    type = Column(Enum('UNKNOWN','KEYLOGGER','INFOSTEALER','DOWNLOADER','BOTNET','RAT','RANSOMWARE','ROOTKIT','FRAUD'), primary_key=True, nullable=False)
 
     def __str__(self):
         return self.type
@@ -839,10 +836,10 @@ class Alert(RootAnalysis, Base):
 
         sla_now = self._datetime_to_sla_time_zone()
         _converted_insert_date = self._datetime_to_sla_time_zone(dt=self.insert_date)
-        logging.info("Getting business time delta between '{}' and '{}' - CONVERTED: '{}' and '{}' - tzino: {} and {}".format(self.insert_date,
-                                        datetime.datetime.now(), _converted_insert_date, self._datetime_to_sla_time_zone(), _converted_insert_date.tzinfo, sla_now.tzinfo))
+        #logging.debug("Getting business time delta between '{}' and '{}' - CONVERTED: '{}' and '{}' - tzino: {} and {}".format(self.insert_date,
+                                        #datetime.datetime.now(), _converted_insert_date, self._datetime_to_sla_time_zone(), _converted_insert_date.tzinfo, sla_now.tzinfo))
         result = self._bt.businesstimedelta(_converted_insert_date, self._datetime_to_sla_time_zone())
-        logging.info("Got business time delta of '{}'".format(result))
+        #logging.debug("Got business time delta of '{}'".format(result))
         setattr(self, '_business_time', result)
         return result
 
@@ -1136,66 +1133,6 @@ class Alert(RootAnalysis, Base):
             logging.error("sync_tag_mapping failed: {}".format(e))
             report_exception()
 
-    def sync_profile_points(self):
-        logging.debug("syncing profile points for {}".format(self))
-        with get_db_connection() as db:
-            cursor = db.cursor()
-            # make sure all of our profile points have database IDs stored
-            # also make a list of all the profile_points ids we have
-            current_profile_point_ids = set()
-            for profile_point in self.profile_points:
-                if profile_point.id is None:
-                    cursor.execute("""SELECT id FROM profile_points WHERE description = %s""", (profile_point.description,))
-                    row = cursor.fetchone()
-                    if row is None:
-                        logging.error("unknown profile point {}".format(profile_point))
-                    else:
-                        profile_point.id = row[0]
-                        current_profile_point_ids.add(profile_point.id)
-                        logging.debug("found profile point id {} for {}".format(profile_point.id, profile_point))
-                else:
-                    current_profile_point_ids.add(profile_point.id)
-
-            # check the existing profile point mapping in the database
-            # delete any mappings that no longer exist
-            deleted_profile_point_ids = set()
-            cursor.execute("""
-SELECT pp.description FROM profile_points pp 
-    JOIN pp_alert_mapping ppam ON ppam.profile_point_id = pp.id 
-    JOIN alerts a ON ppam.alert_id = a.id
-WHERE
-    a.id = %s""", (self.id,))
-            for row in cursor:
-                profile_point_id = row[0]
-                if profile_point_id not in current_profile_point_ids:
-                    deleted_profile_point_ids.add(profile_point_id)
-
-            for profile_point in self.profile_points:
-                if profile_point.id is None:
-                    logging.warning("profile point {} does not have a database ID (skipping sync)".format(
-                                    profile_point))
-                    continue
-
-                # have we mapped this alert to this profile point yet?
-                cursor.execute("""SELECT 1 FROM pp_alert_mapping WHERE alert_id = %s AND profile_point_id = %s""",
-                         (self.id, profile_point.id))
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("""INSERT INTO pp_alert_mapping ( alert_id, profile_point_id ) VALUES ( %s, %s )""",
-                             (self.id, profile_point.id))
-                    logging.debug("mapping profile point {} to alert {}".format(profile_point, self))
-                else:
-                    logging.debug("profile point {} already mapped to {}".format(profile_point, self))
-
-            db.commit()
-
-            for profile_point_id in deleted_profile_point_ids:
-                cursor.execute("""DELETE FROM pp_alert_mapping WHERE alert_id = %s AND profile_point_id = %s""",
-                         (self.id, profile_point_id))
-                logging.debug("deleted profile point mapping {} for {}".format(profile_point_id, self.id))
-
-            db.commit()
-
     def sync_tag_mapping(self, tag):
         tag_id = None
 
@@ -1250,55 +1187,16 @@ WHERE
             logging.error("sync_observable_mapping failed: {}".format(e))
             #report_exception()
 
+    @retry
     def sync_observable_mapping(self, observable):
-        observable_id = None
+        assert isinstance(observable, saq.analysis.Observable)
 
-        with get_db_connection() as db:
-            cursor = db.cursor()
-            for _ in range(3): # make sure we don't enter an infinite loop here
-                cursor.execute("SELECT id FROM observables WHERE type = %s AND value = %s", ( observable.type, observable.value ))
-                result = cursor.fetchone()
-                if result:
-                    observable_id = result[0]
-                    break
-                else:
-                    try:
-                        execute_with_retry(db, cursor, "INSERT IGNORE INTO observables ( type, value ) VALUES ( %s, %s )""", 
-                                          ( observable.type, observable.value ))
-                        db.commit()
-                        continue
-                    except pymysql.err.InternalError as e:
-                        if e.args[0] == 1062:
+        existing_observable = sync_observable(observable)
+        assert existing_observable.id is not None
+        saq.db.execute(ObservableMapping.__table__.insert().prefix_with('IGNORE').values(observable_id=existing_observable.id, alert_id=self.id))
+        saq.db.commit()
 
-                            # another process added it just before we did
-                            try:
-                                db.rollback()
-                            except:
-                                pass
-
-                            logging.warning("already tracking {}".format(observable))
-                            # another process added it just before we did
-                            break
-                        else:
-                            raise e
-
-            if not observable_id:
-                logging.error("unable to find observable_id for {}".format(observable))
-                return
-
-            try:
-                execute_with_retry(db, cursor, "INSERT IGNORE INTO observable_mapping ( alert_id, observable_id ) VALUES ( %s, %s )", ( self.id, observable_id ))
-                db.commit()
-                logging.debug("mapped observable {} to {}".format(observable, self))
-            except pymysql.err.InternalError as e:
-                if e.args[0] == 1062: # already mapped
-                    return
-                else:
-                    raise e
-
-    def _save_to_database(self, session):
-        session.add(self)
-
+    @retry
     def sync(self):
         """Saves the Alert to disk and database."""
         assert self.storage_dir is not None # requires a valid storage_dir at this point
@@ -1306,15 +1204,17 @@ WHERE
 
         # XXX is this check still required?
         # newly generated alerts will have a company_name but no company_id
-        # we look that up here if we don't have it yet
-        if self.company_name and not self.company_id:
-            with get_db_connection() as db:
-                c = db.cursor()
-                c.execute("SELECT `id` FROM company WHERE `name` = %s", (self.company_name))
-                row = c.fetchone()
-                if row:
-                    logging.debug("found company_id {} for company_name {}".format(self.company_id, self.company_name))
-                    self.company_id = row[0]
+        # we look that up here if we don't have it yet if self.company_name and not self.company_id:
+        #if self.company_name and not self.company_id:
+            #logging.info("MARKER: I was here")
+            #self.company_id = saq.db.query(Company).filter(Company.name == self.company_name).one().id
+            #with get_db_connection() as db:
+                #c = db.cursor()
+                #c.execute("SELECT `id` FROM company WHERE `name` = %s", (self.company_name))
+                #row = c.fetchone()
+                #if row:
+                    #logging.debug("found company_id {} for company_name {}".format(self.company_id, self.company_name))
+                    #self.company_id = row[0]
 
         # compute number of detection points
         self.detection_count = len(self.all_detection_points)
@@ -1325,14 +1225,8 @@ WHERE
             session = saq.db()
         
         session.add(self)
-        retry_on_deadlock(session.commit, session=session)
+        session.commit()
         self.build_index()
-
-        #try:
-            #self.sync_profile_points()
-        #except Exception as e:
-            #logging.error("unable to sync profile points: {}".format(e))
-            #report_exception()
 
         self.save() # save this alert now that it has the id
 
@@ -1490,6 +1384,24 @@ WHERE
     def node_location(self):
         return self.nodes.location
 
+@retry
+def sync_observable(observable):
+    """Syncs the given observable to the database by inserting a row in the observables table if it does not currently exist.
+       Returns the existing or newly created saq.database.Observable entry for the corresponding row."""
+    existing_observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type == observable.type, 
+                                                                       saq.database.Observable.md5 == func.UNHEX(observable.md5_hex)).first()
+    if existing_observable is None:
+        # XXX assuming all observables are encodable in utf-8 is probably wrong
+        # XXX we could have some kind of binary data, or an intentionally corrupt value
+        # XXX in which case we'd lose the actual value of the data here
+        existing_observable = Observable(type=observable.type, 
+                                         value=observable.value.encode('utf8', errors='ignore'), 
+                                         md5=func.UNHEX(observable.md5_hex))
+        saq.db.add(existing_observable)
+        saq.db.flush()
+
+    return existing_observable
+
 def set_dispositions(alert_uuids, disposition, user_id, user_comment=None):
     """Utility function to the set disposition of many Alerts at once.
        :param alert_uuids: A list of UUIDs of Alert objects to set.
@@ -1536,6 +1448,41 @@ WHERE
         params.extend(alert_uuids)
         c.execute(sql, tuple(params))
         db.commit()
+
+    # TODO - I don't think this should be here
+    # we probably need custom Alert classes, based on the alert type, with overloaded functions
+    from saq.phishme import submit_response
+        
+    for alert in saq.db.query(Alert).filter(and_(Alert.uuid.in_(alert_uuids), 
+                                                 Alert.alert_type == 'mailbox', 
+                                                 Alert.description.like('ACE Mailbox Scanner Detection - [POTENTIAL PHISH]%'))):
+        try:
+            alert.load()
+        except Exception as e:
+            logging.error(f"unable to load alert {alert}: {e}")
+            continue
+
+        if 'email' not in alert.details:
+            logging.error(f"phishme report alert {alert} missing email property in alert details")
+            continue
+
+        if 'from' not in alert.details['email']:
+            logging.error(f"phishme report alert {alert} missing from property in alert email details")
+            continue
+
+        if 'subject' not in alert.details['email']:
+            logging.error(f"phishme report alert {alert} missing subject property in alert email details")
+            continue
+
+        email_from = alert.details['email']['from']
+        email_subject = alert.details['email']['subject'].replace('[POTENTIAL PHISH] ', '')
+
+        try:
+            submit_response(email_from, email_subject, alert.disposition, user_comment)
+        except Exception as e:
+            logging.error(f"unable to submit response to phishme report to {email_from}: {e}")
+            report_exception()
+            continue
 
 class Similarity:
     def __init__(self, uuid, disposition, percent):
@@ -1598,7 +1545,7 @@ class Comment(Base):
     # many to one
     user = relationship('User', backref='comments')
 
-class Observable(saq.analysis.Observable, Base):
+class Observable(Base):
 
     __tablename__ = 'observables'
 
@@ -1610,9 +1557,17 @@ class Observable(saq.analysis.Observable, Base):
         String(64),
         nullable=False)
 
-    value = Column(
-        String(1024),
+    md5 = Column(
+        VARBINARY(16),
         nullable=False)
+
+    value = Column(
+        BLOB,
+        nullable=False)
+
+    @property
+    def display_value(self):
+        return self.value.decode('utf8', errors='ignore')
 
     tags = relationship('saq.database.ObservableTagMapping', passive_deletes=True, passive_updates=True)
 
@@ -1649,6 +1604,75 @@ class ObservableTagMapping(Base):
 
     observable = relationship('saq.database.Observable', backref='observable_tag_mapping')
     tag = relationship('saq.database.Tag', backref='observable_tag_mapping')
+
+def add_observable_tag_mapping(o_type, o_value, o_md5, tag):
+    """Adds the given observable tag mapping specified by type, and md5 (hex string) and the tag you want to map.
+       If the observable does not exist and o_value is provided then the observable is added to the database.
+       Returns True if the mapping was successful, False otherwise."""
+
+    try:
+        tag = saq.db.query(saq.database.Tag).filter(saq.database.Tag.name == tag).one()
+    except NoResultFound as e:
+        saq.db.execute(saq.database.Tag.__table__.insert().values(name=tag))
+        saq.db.commit()
+        tag = saq.db.query(saq.database.Tag).filter(saq.database.Tag.name == tag).one()
+
+    observable = None
+
+    if o_md5 is not None:
+        try:
+            observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type==o_type, 
+                                                                      saq.database.Observable.md5==func.UNHEX(o_md5)).one()
+        except NoResultFound as e:
+            if o_value is None:
+                logging.warning(f"observable type {o_type} md5 {o_md5} cannot be found for mapping")
+                return False
+
+    if observable is None:
+        from saq.observables import create_observable
+        observable = sync_observable(create_observable(o_type, o_value))
+        saq.db.commit()
+
+    try:
+        mapping = saq.db.query(ObservableTagMapping).filter(ObservableTagMapping.observable_id == observable.id,
+                                                            ObservableTagMapping.tag_id == tag.id).one()
+        saq.db.commit()
+        return True
+
+    except NoResultFound as e:
+        saq.db.execute(ObservableTagMapping.__table__.insert().values(observable_id=observable.id, tag_id=tag.id))
+        saq.db.commit()
+        return True
+
+def remove_observable_tag_mapping(o_type, o_value, o_md5, tag):
+    """Removes the given observable tag mapping specified by type, and md5 (hex string) and the tag you want to remove.
+       Returns True if the removal was successful, False otherwise."""
+
+    tag = saq.db.query(saq.database.Tag).filter(saq.database.Tag.name == tag).first()
+    if tag is None:
+        return False
+
+    observable = None
+    if o_md5 is not None:
+        observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type == o_type,
+                                                                  saq.database.Observable.md5 == func.UNHEX(o_md5)).first()
+    
+    if observable is None:
+        if o_value is None:
+            return False
+
+        from saq.observables import create_observable
+        o = create_observable(o_type, o_value)
+        observable = saq.db.query(saq.database.Observable).filter(saq.database.Observable.type == o.type,
+                                                                  saq.database.Observable.md5 == func.UNHEX(o.md5_hex)).first()
+
+    if observable is None:
+        return False
+
+    saq.db.execute(ObservableTagMapping.__table__.delete().where(and_(ObservableTagMapping.observable_id == observable.id,
+                                                                 ObservableTagMapping.tag_id == tag.id)))
+    saq.db.commit()
+    return True
 
 class Tag(saq.analysis.Tag, Base):
     
@@ -1700,56 +1724,6 @@ class TagMapping(Base):
 
     alert = relationship('saq.database.Alert', backref='tag_mapping')
     tag = relationship('saq.database.Tag', backref='tag_mapping')
-
-class ProfilePoint(Base):
-    
-    __tablename__ = 'profile_points'
-    
-    id = Column(
-        Integer,
-        primary_key=True)
-
-    crits_id = Column(
-        String(24),
-        nullable=False)
-
-    description = Column(
-        String(4096),
-        nullable=False)
-
-class ProfilePointTagMapping(Base):
-
-    __tablename__ = 'pp_tag_mapping'
-
-    profile_point_id = Column(
-        Integer,
-        ForeignKey('profile_points.id'),
-        primary_key=True)
-
-    tag_id = Column(
-        Integer,
-        ForeignKey('tags.id'),
-        primary_key=True)
-
-    profile_point = relationship('saq.database.ProfilePoint', backref='tag_mappings')
-    tag = relationship('saq.database.Tag', backref='profile_point_mappings')
-
-class ProfilePointAlertMapping(Base):
-    
-    __tablename__ = 'pp_alert_mapping'
-
-    profile_point_id = Column(
-        Integer,
-        ForeignKey('profile_points.id'),
-        primary_key=True)
-
-    alert_id = Column(
-        Integer,
-        ForeignKey('alerts.id'),
-        primary_key=True)
-
-    profile_point = relationship('saq.database.ProfilePoint', backref='alert_mappings')
-    alerts = relationship('saq.database.Alert', backref='profile_point_mappings')
 
 class Remediation(Base):
 

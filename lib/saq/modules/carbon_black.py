@@ -7,7 +7,8 @@ import saq
 from saq.analysis import Analysis, Observable
 from saq.constants import *
 from saq.error import report_exception
-from saq.modules import AnalysisModule
+from saq.modules import AnalysisModule, SplunkAnalysisModule
+from saq.util import parse_event_time
 
 from cbapi.response import *
 
@@ -164,5 +165,65 @@ class CarbonBlackProcessAnalyzer_v1(AnalysisModule):
                     #analysis.add_observable(F_USER, result['username'].split('\\')[1])
                 #else:
                     #analysis.add_observable(F_USER, result['username'])
+
+        return True
+
+class CarbonBlackNetconnSourceAnalysis(Analysis):
+
+    def initialize_details(self):
+        self.details = []
+
+    def generate_summary(self):
+        if not self.details:
+            return None
+
+        process_paths = [p['process_path'] for p in self.details if 'process_path' in p]
+        if len(process_paths) == 1:
+            return f"Carbonblack Netconn Source Analysis: {process_paths[0]}"
+        else:
+            return f"Carbonblack Netconn Source Analysis: {len(process_paths)} processes"
+
+class CarbonBlackNetconnSourceAnalyzer(SplunkAnalysisModule):
+
+    @property
+    def process_guid_limit(self):
+        return self.config.getint('process_guid_limit')
+
+    @property
+    def generated_analysis_type(self):
+        return CarbonBlackNetconnSourceAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return F_IPV4_FULL_CONVERSATION
+
+    def execute_analysis(self, ipv4_fc):
+        
+        target_time = ipv4_fc.time if ipv4_fc.time else self.root.event_time
+
+        # source -> dest (dest_port)
+        source_dest_json = None
+        self.splunk_query(f"""index=carbonblack event_type=netconn local_ip={ipv4_fc.source} remote_ip={ipv4_fc.dest} remote_port={ipv4_fc.dest_port} | fields *""", target_time)
+        if self.search_results is not None:
+            source_dest_json = self.json()
+
+        # dest -> source (src_port)
+        dest_source_json = None
+        self.splunk_query(f"""index=carbonblack event_type=netconn local_ip={ipv4_fc.dest} remote_ip={ipv4_fc.source} remote_port={ipv4_fc.source_port} | fields *""", target_time)
+        if self.search_results is not None:
+            dest_source_json = self.json()
+
+        if source_dest_json is None and dest_source_json is None:
+            return False
+
+        analysis = self.create_analysis(ipv4_fc)
+        if source_dest_json is not None:
+            analysis.details.extend(source_dest_json)
+        if dest_source_json is not None:
+            analysis.details.extend(dest_source_json)
+
+        procs = [(p['process_guid'], parse_event_time(p['_time'])) for p in analysis.details if 'process_guid' in p]
+        for process_guid, event_time  in procs[:self.process_guid_limit]:
+            process_guid = analysis.add_observable(F_PROCESS_GUID, process_guid, event_time)
 
         return True

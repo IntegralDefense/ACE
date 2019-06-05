@@ -34,6 +34,10 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                     var remediated = data[source][archive_id]['remediated'];
                     var remediation_history = data[source][archive_id]['remediation_history'];
 
+                    // sometimes embedded emails do not have recipient
+                    // and you can't remediated an embedded email anyways
+                    if (recipient == null) continue;
+
                     html += '<tr';
                     if (remediated) {
                         html += ' class="success">';
@@ -61,6 +65,7 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
             $('#email-remediation-body').html(html);
             $('#btn-email-remediation').show();
             $('#btn-email-restore').show();
+            $('#div-cb-use-phishfry').show();
             $('#btn-email-remediation-done').text("Chicken Out");
             $('#email_remediation_label').text("Email Remediation");
 
@@ -71,10 +76,12 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                 });
 
                 request_data['action'] = action;
+                request_data['use_phishfry'] = $('#cb-use-phishfry').is(':checked');
 
                 $('#email-remediation-body').html("Sending request...");
                 $('#btn-email-remediation').hide();
                 $('#btn-email-restore').hide();
+                $('#div-cb-use-phishfry').hide();
                 $('#btn-email-remediation-done').hide();
 
                 $.ajax({
@@ -110,6 +117,7 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                         $('#email-remediation-body').html(html);
                         $('#btn-email-remediation').hide();
                         $('#btn-email-restore').hide();
+                        $('#div-cb-use-phishfry').hide();
                         $('#btn-email-remediation-done').text("Fantastic");
                         $('#btn-email-remediation-done').show();
                         $('#btn-email-remediation').off('click');

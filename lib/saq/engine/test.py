@@ -359,7 +359,7 @@ class TestCase(ACEEngineTestCase):
 
         # TODO kind of annoying I have to edit this every time I add a new module for testing
         # there should be 18 analysis modules loaded
-        self.assertEquals(log_count('loading module '), 18)
+        self.assertEquals(log_count('loading module '), 19)
 
     def test_locally_enabled_modules(self):
         
@@ -408,6 +408,65 @@ class TestCase(ACEEngineTestCase):
         # so this should come back as False
         self.assertTrue(isinstance(observable.get_analysis(BasicTestAnalysis), bool))
         self.assertFalse(observable.get_analysis(BasicTestAnalysis))
+
+    def test_time_range_grouped_analysis(self):
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()))
+        root.storage_dir = storage_dir_from_uuid(root.uuid)
+        root.initialize_storage()
+        observable_1 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 12:00:00'))
+        observable_2 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 12:10:00'))
+        observable_3 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 14:00:00'))
+        observable_4 = root.add_observable(F_TEST, 'test_1', parse_event_time('2019-04-16 10:00:00'))
+        root.analysis_mode = 'test_groups'
+        root.save()
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_grouped_time_range', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(uuid=root.uuid, storage_dir=root.storage_dir)
+        root.load()
+        observable_1 = root.get_observable(observable_1.id)
+        observable_2 = root.get_observable(observable_2.id)
+        observable_3 = root.get_observable(observable_3.id)
+        observable_4 = root.get_observable(observable_4.id)
+
+        from saq.modules.test import GroupedByTimeRangeAnalysis
+        # observations 3 and 4 should have analysis
+        self.assertTrue(bool(observable_3.get_analysis(GroupedByTimeRangeAnalysis)))
+        self.assertTrue(bool(observable_4.get_analysis(GroupedByTimeRangeAnalysis)))
+
+        # either 1 or 2 should have it but not both (logical xor)
+        self.assertTrue(bool(observable_1.get_analysis(GroupedByTimeRangeAnalysis)) ^ bool(observable_2.get_analysis(GroupedByTimeRangeAnalysis)))
+        # and one of these should be a grouping target
+        self.assertTrue(observable_1.grouping_target or observable_2.grouping_target)
+
+        # remember which one was the grouping target
+        grouping_target = observable_1 if observable_1.grouping_target else observable_2
+
+        root.schedule()
+
+        engine = TestEngine()
+        engine.enable_module('analysis_module_grouping_target', 'test_groups')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        root = RootAnalysis(uuid=root.uuid, storage_dir=root.storage_dir)
+        root.load()
+        observable_1 = root.get_observable(observable_1.id)
+        observable_2 = root.get_observable(observable_2.id)
+        grouping_target = root.get_observable(grouping_target.id)
+
+        from saq.modules.test import GroupingTargetAnalysis
+        # either 1 or 2 should have it but not both (logical xor)
+        self.assertTrue(bool(observable_1.get_analysis(GroupingTargetAnalysis)) ^ bool(observable_2.get_analysis(GroupingTargetAnalysis)))
+        # and the one that was previously marked as the grouping target is the one that should have the analysis
+        self.assertTrue(bool(grouping_target.get_analysis(GroupingTargetAnalysis)))
 
     def test_no_analysis_no_return(self):
 
@@ -675,7 +734,7 @@ class TestCase(ACEEngineTestCase):
         engine.wait()
 
         # we should see a warning message about taking up too much memory
-        wait_for_log_count('used too much memory', 1)
+        wait_for_log_count('used too much memory', 1, 10)
 
         # we should NOT see a workload item or a lock left
         self.assertEquals(saq.db.query(Workload.id).count(), 0)
@@ -2567,4 +2626,112 @@ class TestCase(ACEEngineTestCase):
         observable_2 = alert.get_observable(observable_2.id)
         self.assertIsNotNone(observable_2)
         analysis = observable_2.get_analysis('BasicTestAnalysis')
+        self.assertIsNotNone(analysis)
+
+    def test_observable_whitelisting(self):
+
+        from saq.database import add_observable_tag_mapping, remove_observable_tag_mapping
+
+        # add a user-defined whitelisting
+        add_observable_tag_mapping(F_TEST, 'test_1', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_observable = root.add_observable(F_TEST, 'test_1')
+        self.assertTrue(test_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should NOT see any analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        test_observable = root.get_observable(test_observable.id)
+        self.assertIsNotNone(test_observable)
+        self.assertEquals(len(test_observable.analysis), 0)
+
+        # remove the whitelisting
+        remove_observable_tag_mapping(F_TEST, 'test_1', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_observable = root.add_observable(F_TEST, 'test_1')
+        self.assertFalse(test_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_groups': 1})
+        engine.enable_module('analysis_module_basic_test')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should see any one analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        test_observable = root.get_observable(test_observable.id)
+        self.assertIsNotNone(test_observable)
+        self.assertEquals(len(test_observable.analysis), 1)
+
+    def test_file_observable_whitelisting(self):
+
+        from saq.database import add_observable_tag_mapping, remove_observable_tag_mapping
+
+        # add a user-defined whitelisting
+        add_observable_tag_mapping(F_SHA256, '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_file = self.create_test_file(file_content='Hello, world!', root_analysis=root)
+        file_observable = root.add_observable(F_FILE, test_file)
+        self.assertTrue(file_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_single': 1})
+        engine.enable_module('analysis_module_generic_test', 'test_single')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should NOT see any analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        self.assertEquals(len(file_observable.analysis), 0)
+
+        # remove the whitelisting
+        remove_observable_tag_mapping(F_SHA256, '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3', None, 'whitelisted')
+
+        root = create_root_analysis(uuid=str(uuid.uuid4()), analysis_mode='test_single')
+        root.initialize_storage()
+        test_file = self.create_test_file(file_content='Hello, world!', root_analysis=root)
+        file_observable = root.add_observable(F_FILE, test_file)
+        self.assertFalse(file_observable.has_tag('whitelisted'))
+        root.save()
+        root.schedule()
+
+        engine = TestEngine(analysis_pools={'test_single': 1})
+        engine.enable_module('analysis_module_generic_test', 'test_single')
+        engine.controlled_stop()
+        engine.start()
+        engine.wait()
+
+        # we should NOT see any analysis for this observable
+        root = RootAnalysis(storage_dir=root.storage_dir)
+        root.load()
+
+        file_observable = root.get_observable(file_observable.id)
+        self.assertIsNotNone(file_observable)
+        from saq.modules.test import GenericTestAnalysis
+        analysis = file_observable.get_analysis(GenericTestAnalysis)
         self.assertIsNotNone(analysis)

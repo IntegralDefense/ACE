@@ -36,6 +36,7 @@ F_DISPOSITION = 'disposition'
 F_CIDR = 'cidr'
 F_IPV4 = 'ipv4'
 F_IPV4_CONVERSATION = 'ipv4_conversation'
+F_IPV4_FULL_CONVERSATION = 'ipv4_full_conversation'
 F_FQDN = 'fqdn'
 F_HOSTNAME = 'hostname'
 F_HTTP_REQUEST = 'http_request'
@@ -65,6 +66,7 @@ OBSERVABLE_DESCRIPTIONS = {
     F_CIDR: 'IPv4 range in CIDR notation',
     F_IPV4: 'IP address (version 4)',
     F_IPV4_CONVERSATION: 'two F_IPV4 that were communicating formatted as aaa.bbb.ccc.ddd_aaa.bbb.ccc.ddd',
+    F_IPV4_FULL_CONVERSATION: 'two F_IPV4 that were communicating formatted as src_ipv4:src_port:dest_ipv4:dest_port',
     F_FQDN: 'fully qualified domain name',
     F_HOSTNAME: 'host or workstation name',
     F_HTTP_REQUEST: 'a single HTTP request',
@@ -81,7 +83,7 @@ OBSERVABLE_DESCRIPTIONS = {
     F_EMAIL_CONVERSATION: 'a conversation between a source email address (MAIL FROM) and a destination email address (RCPT TO)',
     F_YARA: 'yara scan result *** DEPRECATED (use F_YARA_RULE instead)',
     F_YARA_RULE: 'yara rule name',
-    F_INDICATOR: 'crits indicator object id',
+    F_INDICATOR: 'indicator id',
     F_MD5: 'MD5 hash',
     F_SHA1: 'SHA1 hash',
     F_SHA256: 'SHA256 hash',
@@ -97,6 +99,7 @@ OBSERVABLE_NODE_COLORS = {
     F_CIDR: "#0000FF", # blue
     F_IPV4 : "#0000FF", # blue
     F_IPV4_CONVERSATION : "#0000FF", # blue
+    F_IPV4_FULL_CONVERSATION : "#0000FF", # blue
     F_FQDN : "#D2691E", # chocolate
     F_HOSTNAME : "#87CEFA", # light sky blue
     F_HTTP_REQUEST : "#87CEFA", # light sky blue
@@ -126,6 +129,7 @@ VALID_OBSERVABLE_TYPES = sorted([
     F_CIDR,
     F_IPV4,
     F_IPV4_CONVERSATION,
+    F_IPV4_FULL_CONVERSATION,
     F_FQDN,
     F_HOSTNAME,
     F_HTTP_REQUEST,
@@ -159,6 +163,13 @@ DEPRECATED_OBSERVABLES = sorted([
     F_SUSPECT_FILE,
     F_YARA
 ])
+
+# utility functions to work with F_IPV4_FULL_CONVERSATION types
+def parse_ipv4_full_conversation(f_ipv4_fc):
+    return f_ipv4_fc.split(':', 4)
+
+def create_ipv4_full_conversation(src, src_port, dst, dst_port):
+    return '{}:{}:{}:{}'.format(src, src_port, dst, dst_port)
 
 # utility functions to work with F_IPV4_CONVERSATION types
 def parse_ipv4_conversation(f_ipv4_c):
@@ -257,12 +268,12 @@ IGNORE_ALERT_DISPOSITIONS = [
 
 BENIGN_ALERT_DISPOSITIONS = [
     DISPOSITION_FALSE_POSITIVE,
-    DISPOSITION_GRAYWARE,
-    DISPOSITION_POLICY_VIOLATION,
-    DISPOSITION_RECONNAISSANCE
 ]
 
 MAL_ALERT_DISPOSITIONS = [
+    DISPOSITION_GRAYWARE,
+    DISPOSITION_POLICY_VIOLATION,
+    DISPOSITION_RECONNAISSANCE,
     DISPOSITION_WEAPONIZATION,
     DISPOSITION_DELIVERY,
     DISPOSITION_EXPLOITATION,
@@ -398,6 +409,8 @@ ACTION_FILE_VIEW_VX = 'file_view_vx'
 ACTION_COLLECT_FILE = 'collect_file'
 ACTION_CLEAR_CLOUDPHISH_ALERT = 'clear_cloudphish_alert'
 ACTION_REMEDIATE_EMAIL = 'remediate_email'
+ACTION_WHITELIST = 'whitelist'
+ACTION_UN_WHITELIST = 'un_whitelist'
 
 # recorded metrics
 METRIC_THREAD_COUNT = 'thread_count'
@@ -450,3 +463,7 @@ ANALYSIS_TYPE_BRO_HTTP = 'bro - http'
 ANALYSIS_TYPE_CLOUDPHISH = 'cloudphish'
 ANALYSIS_TYPE_MANUAL = 'manual'
 ANALYSIS_TYPE_FAQUEUE = 'faqueue'
+
+# supported intelligence databases
+INTEL_DB_SIP = 'sip'
+INTEL_DB_CRITS = 'crits'

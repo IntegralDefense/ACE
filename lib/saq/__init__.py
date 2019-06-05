@@ -184,6 +184,7 @@ def initialize(saq_home=None,
     global EXECUTION_THREAD_LONG_TIMEOUT
     global FORCED_ALERTS
     global GLOBAL_SLA_SETTINGS
+    global GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES
     global INSTANCE_TYPE
     global LOCK_TIMEOUT_SECONDS
     global LOG_DIRECTORY
@@ -269,6 +270,9 @@ def initialize(saq_home=None,
 
     # go ahead and try to figure out what text encoding we're using
     DEFAULT_ENCODING = locale.getpreferredencoding()
+
+    # list of observable types we want to exclude from whitelisting (via the GUI)
+    GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES = []
 
     # do we want to force alerts?
     if args:
@@ -379,6 +383,16 @@ def initialize(saq_home=None,
     except Exception as e:
         sys.exit(1)
 
+    GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES = [_.strip() for _ in 
+                                               CONFIG['gui']['whitelist_excluded_observable_types'].split(',')]
+
+    for o_type in GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES:
+        if o_type not in VALID_OBSERVABLE_TYPES:
+            logging.error(f"invalid observable type {o_type} specified in [gui] whitelist_excluded_observable_types")
+
+    # make this a faster lookup
+    GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES = set(GUI_WHITELIST_EXCLUDED_OBSERVABLE_TYPES)
+
     # load global SLA settings
     GLOBAL_SLA_SETTINGS = SLA(None, 
                               CONFIG['SLA'].getboolean('enabled'),
@@ -434,8 +448,8 @@ def initialize(saq_home=None,
         logging.warning(" ****************************************************************** ")
 
     # warn if timezone is not UTC
-    if time.strftime("%z") != "+0000":
-        logging.warning("Timezone is not UTC. All ACE systems in a cluster should be in UTC.")
+    #if time.strftime("%z") != "+0000":
+        #logging.warning("Timezone is not UTC. All ACE systems in a cluster should be in UTC.")
 
     # we can globally disable semaphores with this flag
     SEMAPHORES_ENABLED = CONFIG.getboolean('global', 'enable_semaphores')

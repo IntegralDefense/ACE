@@ -27,6 +27,7 @@ __all__ = [
     'CaselessObservable',
     'IPv4Observable',
     'IPv4ConversationObservable',
+    'IPv4FullConversationObservable',
     'FQDNObservable',
     'HostnameObservable',
     'AssetObservable',
@@ -87,7 +88,8 @@ class IPv4Observable(Observable):
     def jinja_available_actions(self):
         result = []
         if not self.is_managed():
-            result.append(ObservableActionUploadToCrits())
+            result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+            result.extend(super().jinja_available_actions)
 
         return result
 
@@ -128,6 +130,28 @@ class IPv4ConversationObservable(Observable):
     def destination(self):
         return self._dest
 
+class IPv4FullConversationObservable(Observable):
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(F_IPV4_FULL_CONVERSATION, *args, **kwargs)
+        self._source, self._source_port, self._dest, self._dest_port = parse_ipv4_full_conversation(self.value)
+
+    @property
+    def source(self):
+        return self._source
+
+    @property
+    def source_port(self):
+        return self._source_port
+
+    @property
+    def dest(self):
+        return self._dest
+
+    @property   
+    def dest_port(self):
+        return self._dest_port
+
 class FQDNObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_FQDN, *args, **kwargs)
@@ -136,7 +160,8 @@ class FQDNObservable(CaselessObservable):
     def jinja_available_actions(self):
         result = []
         if not self.is_managed():
-            result.append(ObservableActionUploadToCrits())
+            result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+            result.extend(super().jinja_available_actions)
 
         return result
 
@@ -152,10 +177,6 @@ class HostnameObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_HOSTNAME, *args, **kwargs)
 
-    @property
-    def jinja_available_actions(self):
-        return [ ]
-
 class AssetObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_ASSET, *args, **kwargs)
@@ -163,10 +184,6 @@ class AssetObservable(CaselessObservable):
 class UserObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_USER, *args, **kwargs)
-
-    @property
-    def jinja_available_actions(self):
-        return [ ]
 
 class URLObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -193,7 +210,9 @@ class URLObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionClearCloudphishAlert() ]
+        result = [ ObservableActionClearCloudphishAlert(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class FileObservable(Observable):
 
@@ -205,9 +224,9 @@ class FileObservable(Observable):
     def __init__(self, *args, **kwargs):
         super().__init__(F_FILE, *args, **kwargs)
 
-        self.md5_hash = None
-        self.sha1_hash = None
-        self.sha256_hash = None
+        self._md5_hash = None
+        self._sha1_hash = None
+        self._sha256_hash = None
 
         self._mime_type = None
 
@@ -216,6 +235,28 @@ class FileObservable(Observable):
 
         # some directives are inherited by children
         self.add_event_listener(EVENT_RELATIONSHIP_ADDED, self.handle_relationship_added)
+
+    #
+    # in ACE the value of the F_FILE observable is the relative path to the content (inside the storage directory)
+    # so when we want to look up the tag mapping we really want to look up the content
+    # so we use the F_SHA256 value for this purpose instead
+        
+    @property
+    def tag_mapping_type(self):
+        return F_SHA256
+
+    @property
+    def tag_mapping_value(self):
+        return self.sha256_hash
+
+    @property
+    def tag_mapping_md5_hex(self):
+        if self.sha256_hash is None:
+            return None
+
+        md5_hasher = hashlib.md5()
+        md5_hasher.update(self.sha256_hash.encode('utf8', errors='ignore'))
+        return md5_hasher.hexdigest()
 
     @property
     def json(self):
@@ -234,16 +275,34 @@ class FileObservable(Observable):
         Observable.json.fset(self, value)
 
         if FileObservable.KEY_MD5_HASH in value:
-            self.md5_hash = value[FileObservable.KEY_MD5_HASH]
+            self._md5_hash = value[FileObservable.KEY_MD5_HASH]
         if FileObservable.KEY_SHA1_HASH in value:
-            self.sha1_hash = value[FileObservable.KEY_SHA1_HASH]
+            self._sha1_hash = value[FileObservable.KEY_SHA1_HASH]
         if FileObservable.KEY_SHA256_HASH in value:
-            self.sha256_hash = value[FileObservable.KEY_SHA256_HASH]
+            self._sha256_hash = value[FileObservable.KEY_SHA256_HASH]
         if FileObservable.KEY_MIME_TYPE in value:
             self._mime_type = value[FileObservable.KEY_MIME_TYPE]
 
+    @property
+    def md5_hash(self):
+        self.compute_hashes()
+        return self._md5_hash
+
+    @property
+    def sha1_hash(self):
+        self.compute_hashes()
+        return self._sha1_hash
+
+    @property
+    def sha256_hash(self):
+        self.compute_hashes()
+        return self._sha256_hash
+
     def compute_hashes(self):
         """Computes the md5, sha1 and sha256 hashes of the file and stores them as properties."""
+
+        if self._md5_hash is not None and self._sha1_hash is not None and self._sha256_hash is not None:
+            return True
 
         # sanity check
         # you need the root storage_dir to get the correct path
@@ -259,24 +318,30 @@ class FileObservable(Observable):
         sha1_hasher = hashlib.sha1()
         sha256_hasher = hashlib.sha256()
     
-        with open(self.path, 'rb') as fp:
-            while True:
-                data = fp.read(io.DEFAULT_BUFFER_SIZE)
-                if data == b'':
-                    break
+        try:
+            with open(self.path, 'rb') as fp:
+                while True:
+                    data = fp.read(io.DEFAULT_BUFFER_SIZE)
+                    if data == b'':
+                        break
 
-                md5_hasher.update(data)
-                sha1_hasher.update(data)
-                sha256_hasher.update(data)
+                    md5_hasher.update(data)
+                    sha1_hasher.update(data)
+                    sha256_hasher.update(data)
+
+        except Exception as e:
+            # this will happen if a F_FILE observable refers to a file that no longer (or never did) exists
+            logging.debug(f"unable to compute hashes of {self.value}: {e}")
+            return False
         
         md5_hash = md5_hasher.hexdigest()
         sha1_hash = sha1_hasher.hexdigest()
         sha256_hash = sha256_hasher.hexdigest()
         logging.debug("file {} has md5 {} sha1 {} sha256 {}".format(self.path, md5_hash, sha1_hash, sha256_hash))
 
-        self.md5_hash = md5_hash
-        self.sha1_hash = sha1_hash
-        self.sha256_hash = sha256_hash
+        self._md5_hash = md5_hash
+        self._sha1_hash = sha1_hash
+        self._sha256_hash = sha256_hash
 
         return True
 
@@ -363,7 +428,7 @@ class FileObservable(Observable):
             result.append(ObservableActionViewInVt())
             result.append(ObservableActionViewInVx())
             result.append(ObservableActionSeparator())
-
+        result.extend(super().jinja_available_actions)
         return result
 
     @property
@@ -432,7 +497,9 @@ class FilePathObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class FileNameObservable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -440,7 +507,9 @@ class FileNameObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class FileLocationObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -457,7 +526,9 @@ class FileLocationObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionCollectFile() ]
+        result = [ ObservableActionCollectFile(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
     @property
     def jinja_template_path(self):
@@ -476,7 +547,9 @@ class EmailAddressObservable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class YaraRuleObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -484,7 +557,7 @@ class YaraRuleObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ]
+        return []
 
 class IndicatorObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -496,7 +569,7 @@ class IndicatorObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ]
+        return []
 
 class MD5Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -504,7 +577,9 @@ class MD5Observable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class SHA1Observable(CaselessObservable):
     def __init__(self, *args, **kwargs):
@@ -512,7 +587,9 @@ class SHA1Observable(CaselessObservable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class SHA256Observable(Observable):
     def __init__(self, *args, **kwargs):
@@ -524,7 +601,9 @@ class SHA256Observable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionUploadToCrits() ]
+        result = [ ObservableActionUploadToCrits(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class EmailConversationObservable(Observable):
     def __init__(self, *args, **kwargs):
@@ -553,7 +632,9 @@ class MessageIDObservable(Observable):
 
     @property
     def jinja_available_actions(self):
-        return [ ObservableActionRemediateEmail(), ]
+        result = [ ObservableActionRemediateEmail(), ObservableActionSeparator() ]
+        result.extend(super().jinja_available_actions)
+        return result
 
 class ProcessGUIDObservable(Observable): 
     def __init__(self, *args, **kwargs): 
@@ -584,6 +665,7 @@ class TestObservable(Observable):
 _OBSERVABLE_TYPE_MAPPING = {
     F_ASSET: AssetObservable,
     F_IPV4_CONVERSATION: IPv4ConversationObservable,
+    F_IPV4_FULL_CONVERSATION: IPv4FullConversationObservable,
     F_PCAP: FileObservable,
     F_SNORT_SIGNATURE: SnortSignatureObservable,
     F_EMAIL_ADDRESS: EmailAddressObservable,
