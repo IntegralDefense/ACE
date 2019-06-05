@@ -79,10 +79,19 @@
     </tr>
     {% endfor %}
 
+    {% for detection in alert.all_detection_points %}
+    <tr>
+        <td class="col-md-2">Detection</td>
+        <td class="col-md-10">{{detection.description}}</td>
+    </tr>
+    {% endfor %}
+    
+    {#
     <tr>
         <td class="col-md-2">Detections</td>
         <td class="col-md-10">{{alert.all_detection_points | length}} detections</td>
     </tr>
+    #}
 
 </table>
 {% endblock %}
