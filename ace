@@ -3103,6 +3103,28 @@ verify_modules_parsers = subparsers.add_parser('verify-modules',
     help="Executes verify_environment() on all modules that are enabled.")
 verify_modules_parsers.set_defaults(func=verify_modules)
 
+def verify_alerts(args):
+    if args.output_file and os.path.exists(args.output_file):
+        os.remove(args.output_file)
+
+    from saq.database import Alert
+    for alert in saq.db.query(Alert).filter(Alert.company_id == saq.COMPANY_ID).order_by(Alert.id):
+        try:
+            alert.load()
+        except Exception as e:
+            logging.error(f"unable to load {alert.uuid} : {alert.description} ({e})")
+            if args.output_file:
+                with open(args.output_file, 'a') as fp:
+                    fp.write(alert.uuid + '\n')
+
+    sys.exit(0)
+
+verify_alerts_parser = subparsers.add_parser('verify-alerts',
+    help="Load every specified alert and log any error encountered while trying to load it.")
+verify_alerts_parser.add_argument('-o', '--output-file', required=False, default=None,
+    help="Specify a file that contains the list of alert UUIDs that cannot be loaded.")
+verify_alerts_parser.set_defaults(func=verify_alerts)
+
 def set_encryption_password(args):
     from saq.crypto import set_encryption_password
     while True:
