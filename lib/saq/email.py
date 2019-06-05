@@ -7,10 +7,11 @@ import socket
 
 import saq
 from email.utils import parseaddr
+from email.header import decode_header
 from saq.database import get_db_connection
 
 def normalize_email_address(email_address):
-    """Returns a normalized version of email address.  Returns None if the address cannot be normalized."""
+    """Returns a normalized version of email address.  Returns None if the address cannot be parsed."""
     name, address = parseaddr(email_address)
     if address is None:
         return None
@@ -27,6 +28,32 @@ def normalize_email_address(email_address):
         return None
 
     return address.lower()
+
+def decode_rfc2822(header_value):
+    """Returns the value of the rfc2822 decoded header, or the header_value as-is if it's not encoded."""
+    result = []
+    for binary_value, charset in decode_header(header_value):
+        decoded_value = None
+        if isinstance(binary_value, str):
+            result.append(binary_value)
+            continue
+
+        if charset is not None:
+            try:
+                decoded_value = binary_value.decode(charset, errors='ignore')
+            except Exception as e:
+                logging.warning(f"unable to decode for charset {charset}: {e}")
+
+        if decoded_value is None:
+            try:
+                decoded_value = binary_value.decode('utf8', errors='ignore')
+            except Exception as e:
+                logging.warning(f"unable to decode email header at all (defaulting to hex rep): {e}")
+                decoded_value = 'HEX({})'.format(binary_value.hex())
+
+        result.append(decoded_value)
+
+    return ''.join(result)
 
 class EmailArchiveEntry(object):
     def __init__(self, archive_id):

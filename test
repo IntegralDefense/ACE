@@ -26,6 +26,7 @@ then
         saq.collectors.test_http \
         saq.collectors.test_email \
         saq.collectors.test_smtp \
+        saq.test_email \
         saq.test_observables \
         saq.test_crawlphish \
         saq.test_crypto \
@@ -43,10 +44,11 @@ then
         saq.modules.test_http \
         saq.modules.test_hal9000 \
         saq.modules.test_crits \
+        saq.modules.test_intel \
         api.analysis.test \
         api.engine.test \
         api.cloudphish.test \
-	api.events.test \
+        api.events.test \
         test_ace_api \
 
         #saq.collectors.test_cb_binaries \

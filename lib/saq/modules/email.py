@@ -19,12 +19,12 @@ import uuid
 
 import saq
 
-from saq.analysis import Analysis, Observable, ProfilePointTarget, recurse_tree, search_down
+from saq.analysis import Analysis, Observable, recurse_tree, search_down
 from saq.brocess import query_brocess_by_email_conversation, query_brocess_by_source_email
 from saq.constants import *
 from saq.crypto import encrypt, decrypt
 from saq.database import get_db_connection, execute_with_retry, Alert, use_db
-from saq.email import normalize_email_address, search_archive, get_email_archive_sections
+from saq.email import normalize_email_address, search_archive, get_email_archive_sections, decode_rfc2822
 from saq.error import report_exception
 from saq.modules import AnalysisModule, SplunkAnalysisModule, AnalysisModule
 from saq.modules.util import get_email
@@ -1121,25 +1121,6 @@ class EmailAnalysis(Analysis):
         return result
 
     @property
-    def targets(self):
-        if self.received:
-            yield ProfilePointTarget(TARGET_EMAIL_RECEIVED, '\n'.join(self.received))
-        if self.x_mailer:
-            yield ProfilePointTarget(TARGET_EMAIL_XMAILER, self.x_mailer)
-        if self.message_id:
-            yield ProfilePointTarget(TARGET_EMAIL_MESSAGE_ID, self.message_id)
-        if self.env_rcpt_to:
-            for rcpt_to in self.env_rcpt_to:
-                yield ProfilePointTarget(TARGET_EMAIL_RCPT_TO, rcpt_to)
-
-        body = self.body
-        if body:
-            with open(os.path.join(self.storage_dir, body.value), 'rb') as fp:
-                body_content = fp.read()
-
-            yield ProfilePointTarget(TARGET_EMAIL_BODY, body_content)
-
-    @property
     def jinja_template_path(self):
         return "analysis/email_analysis.html"
         
@@ -1330,7 +1311,8 @@ class EmailAnalyzer(AnalysisModule):
         mail_to = None # strt
 
         if 'from' in target_email:
-            email_details[KEY_FROM] = target_email['from']
+            email_details[KEY_FROM] = decode_rfc2822(target_email['from'])
+            
             name, address = email.utils.parseaddr(email_details[KEY_FROM])
             if address != '':
                 mail_from = address
@@ -1353,7 +1335,7 @@ class EmailAnalyzer(AnalysisModule):
         
         email_details[KEY_TO] = target_email.get_all('to', [])
         for addr in email_details[KEY_TO]:
-            name, address = email.utils.parseaddr(addr)
+            name, address = email.utils.parseaddr(decode_rfc2822(addr))
             if address:
 
                 # if we don't know who it was delivered to yet then we grab the first To:
@@ -1373,8 +1355,8 @@ class EmailAnalyzer(AnalysisModule):
                 reply_to = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if reply_to:
                     reply_to.add_tag('reply_to')
-                    if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
+                    #if mail_to:
+                        #analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
 
         if 'return-path' in target_email:
             email_details[KEY_RETURN_PATH] = target_email['return-path']
@@ -1383,8 +1365,8 @@ class EmailAnalyzer(AnalysisModule):
                 return_path = analysis.add_observable(F_EMAIL_ADDRESS, address)
                 if return_path:
                     return_path.add_tag('return_path')
-                    if mail_to:
-                        analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
+                    #if mail_to:
+                        #analysis.add_observable(F_EMAIL_CONVERSATION, create_email_conversation(address, mail_to))
         
         if 'subject' in target_email:
             email_details[KEY_SUBJECT] = target_email['subject']
@@ -1436,24 +1418,7 @@ class EmailAnalyzer(AnalysisModule):
 
         # is the subject rfc2822 encoded?
         if KEY_SUBJECT in email_details:
-            decoded_subject = []
-            for binary_subject, charset in email.header.decode_header(email_details[KEY_SUBJECT]):
-                decoded_part = None
-                if charset is not None:
-                    try:
-                        decoded_part = binary_subject.decode(charset, errors='replace')
-                    except Exception as e:
-                        pass
-
-                if decoded_part is None:
-                    if isinstance(binary_subject, str):
-                        decoded_part = binary_subject
-                    else:
-                        decoded_part = binary_subject.decode('utf8', errors='replace')
-
-                decoded_subject.append(decoded_part)
-
-            email_details[KEY_DECODED_SUBJECT] = ''.join(decoded_subject)
+            email_details[KEY_DECODED_SUBJECT] = decode_rfc2822(email_details[KEY_SUBJECT])
 
         # get the first and last received header values
         last_received = None
@@ -2056,7 +2021,8 @@ class EmailArchiveAction(AnalysisModule):
                     transactions.append(('url', target.value))
 
                 if isinstance(target, FileHashAnalysis):
-                    transactions.append(('content', target.md5))
+                    if target.md5:
+                        transactions.append(('content', target.md5))
                     
             recurse_tree(_file, _callback)
 
@@ -2241,6 +2207,69 @@ class EmailConversationAttachmentAnalyzer(AnalysisModule):
         _file.add_detection_point("An email from a new sender contained a macro.")
 
         analysis = self.create_analysis(_file)
+        return True
+
+class EmailConversationLinkAnalysis(Analysis):
+    """Has someone who has never sent us an email before sent us a potentially malicious link?"""
+    def initialize_details(self):
+        self.details = None # not used
+
+class EmailConversationLinkAnalyzer(AnalysisModule):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # load the list of url patterns we want to alert on
+        self.url_patterns = []
+        for key in self.config.keys():
+            if key.startswith('url_pattern_'):
+                try:
+                    pattern = self.config[key]
+                    self.url_patterns.append(re.compile(pattern))
+                except Exception as e:
+                    logging.error(f"unable to add pattern {self.config[key.value]}: {e}")
+
+    @property
+    def generated_analysis_type(self):
+        return EmailConversationLinkAnalysis
+
+    @property
+    def valid_observable_types(self):
+        return F_URL
+
+    def execute_analysis(self, url):
+
+        # does this URL match one of our patterns?
+        matches = False
+        for pattern in self.url_patterns:
+            if pattern.search(url.value):
+                matches = True
+                break
+
+        if not matches:
+            return False
+
+        # get the email this url came from
+        def _is_email(_file):
+            if isinstance(_file, Observable):
+                if _file.type == F_FILE:
+                    if self.wait_for_analysis(_file, EmailAnalysis):
+                        return True
+
+        email = search_down(url, _is_email)
+        if not email:
+            return False
+
+        email_analysis = email.get_analysis(EmailAnalysis)
+
+        # are any of the email conversations tagged as new sender?
+        for ec in email_analysis.get_observables_by_type(F_EMAIL_CONVERSATION):
+            if self.wait_for_analysis(ec, EmailConversationFrequencyAnalysis):
+                if ec.has_tag('new_sender'):
+                    # this is a url we would crawl AND it's from a new sender
+                    url.add_detection_point("Suspect URL sent from new sender.")
+
+        analysis = self.create_analysis(url)
         return True
 
 # DEPRECATED
@@ -2971,12 +3000,11 @@ class URLEmailPivotAnalyzer(AnalysisModule):
                 c = db.cursor()
                 c.execute("""
 SELECT 
-    COUNT(DISTINCT(asrch.archive_id))
+    COUNT(DISTINCT(archive_id))
 FROM 
-    archive_search asrch JOIN archive a ON asrch.archive_id = a.archive_id
-    JOIN archive_index ai ON a.archive_id = ai.archive_id
+    archive_index 
 WHERE 
-    ai.field = 'url' AND ai.hash = UNHEX(%s)""", ( url_md5, ))
+    field = 'url' AND hash = UNHEX(%s)""", ( url_md5, ))
 
                 # first we check to see how many of these we've got
                 row = c.fetchone()

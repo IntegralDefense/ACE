@@ -30,7 +30,7 @@ import saq
 import saq.analysis
 import saq.database
 
-from saq.analysis import Observable, Analysis, RootAnalysis, ProfilePoint, ProfilePointAnalyzer
+from saq.analysis import Observable, Analysis, RootAnalysis
 from saq.constants import *
 from saq.database import Alert, use_db, release_cached_db_connection, enable_cached_db_connections, \
                          get_db_connection, add_workload, acquire_lock, release_lock, execute_with_retry, \
@@ -681,14 +681,16 @@ class Engine(object):
     @use_db
     def workload_queue_size(self, db, c):
         """Returns the size of the workload queue (for this node.)"""
-        where_clause = [ 'node_id = %s', 'company_id = %s' ]
-        params = [ saq.SAQ_NODE_ID, saq.COMPANY_ID ]
+        where_clause = [ 'node_id = %s' ]
+        params = [ saq.SAQ_NODE_ID ]
 
         if self.is_local:
             where_clause.append('exclusive_uuid = %s')
             params.append(self.exclusive_uuid)
         else:
             where_clause.append('exclusive_uuid IS NULL')
+            where_clause.append('company_id = %s')
+            params.append(saq.COMPANY_ID)
 
         if self.local_analysis_modes:
             where_clause.append('workload.analysis_mode IN ( {} )'.format(','.join(['%s' for _ in self.local_analysis_modes])))
@@ -1835,7 +1837,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
                         try:
                             shutil.rmtree(self.root.storage_dir)
                         except Exception as e:
-                            logging.error("unable to clear {}: {}".format(self.root.storage_dir))
+                            logging.error("unable to clear {}: {}".format(self.root.storage_dir, e))
                     else:
                         logging.debug("not cleaning up {} (found outstanding work))".format(self.root))
 
@@ -2252,6 +2254,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
     
         # MAIN LOOP
         # keep going until there is nothing to analyze
+        logging.info(f"starting analysis on {self.root} with a workload of {len(work_stack)}")
         while not self.cancel_analysis_flag:
             # the current WorkTarget
             work_item = None
@@ -2344,7 +2347,7 @@ LIMIT 16""".format(where_clause=where_clause), tuple(params))
             if work_item.observable:
                 # has this thing been whitelisted?
                 if work_item.observable.whitelisted:
-                    logging.debug("{} was whitelisted -- not analyzing".format(work_item.observable))
+                    logging.info("{} was whitelisted -- not analyzing".format(work_item.observable))
                     if work_item.dependency:
                         work_item.dependency.set_status_failed('whitelisted')
                         work_item.dependency.increment_status()

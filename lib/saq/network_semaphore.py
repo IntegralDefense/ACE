@@ -421,7 +421,7 @@ class NetworkSemaphoreServer(object):
                     logging.debug("attempting to acquire semaphore {0}".format(semaphore_name))
                     semaphore_acquired = semaphore.acquire(blocking=True, timeout=3)
                     if not semaphore_acquired:
-                        logging.debug("{0} waiting for semaphore {1} cumulative waiting time {2}".format(
+                        logging.warning("{0} waiting for semaphore {1} cumulative waiting time {2}".format(
                             remote_connection, semaphore_name, datetime.datetime.now() - request_time))
                         # send a heartbeat message back to the client
                         client_socket.sendall("wait|".encode('ascii'))
