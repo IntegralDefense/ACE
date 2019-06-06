@@ -7,6 +7,7 @@ import math
 import os
 import os.path
 import pymysql
+import pysip
 import random
 import re
 import shutil
@@ -2588,38 +2589,55 @@ def add_email_alert_counts_per_event(events):
     events['# Emails'] = email_counts
 
 
-def generate_intel_tables():
-    mongo_uri = saq.CONFIG.get("crits", "mongodb_uri")
-    mongo_host = mongo_uri[mongo_uri.rfind('://')+3:mongo_uri.rfind(':')]
-    mongo_port = int(mongo_uri[mongo_uri.rfind(':')+1:])
-    client = MongoClient(mongo_host, mongo_port)
-    crits = client.crits
+def generate_intel_tables(sip=True, crits=False):
+    if sip and crits:
+        logging.error("Can only use one intel source at a time.")
+        return False, False
+    if crits:
+        mongo_uri = saq.CONFIG.get("crits", "mongodb_uri")
+        mongo_host = mongo_uri[mongo_uri.rfind('://')+3:mongo_uri.rfind(':')]
+        mongo_port = int(mongo_uri[mongo_uri.rfind(':')+1:])
+        client = MongoClient(mongo_host, mongo_port)
+        crits = client.crits
+    elif sip:
+        sip_host = saq.CONFIG.get("sip", "remote_address")
+        api_key = saq.CONFIG.get("sip", "api_key")
+        sip = pysip.Client(sip_host, api_key, verify=False) 
+    else:
+        logging.warn("No intel source specified.")
+        return None, None
 
     #+ amount of indicators per source
-    intel_sources = crits.source_access.distinct("name")
+    intel_sources = crits.source_access.distinct("name") if crits else None
+    if sip:
+        intel_sources = sip.get('/api/intel/source')
+        intel_sources = [s['value'] for s in intel_sources]
     source_counts = {}
     for source in intel_sources:
-        source_counts[source] = crits.indicators.find( { 'source.name': source }).count()
+        source_counts[source] = crits.indicators.find( { 'source.name': source }).count() if crits else None
+        source_counts[source] = sip.get('/indicators?sources={}&count'.format(source))['count'] if sip else source_counts[source]
     source_cnt_df = pd.DataFrame.from_dict(source_counts, orient='index')
     source_cnt_df.columns = ['count']
     source_cnt_df.name = "Count of Indicators by Intel Sources"
     source_cnt_df.sort_index(inplace=True)
 
     # amount of indicators per status
-    indicator_statuses = crits.indicators.distinct("status")
+    indicator_statuses = crits.indicators.distinct("status") if crits else None
+    if sip:
+        indicator_statuses = sip.get('/api/indicators/status')
+        indicator_statuses = [s['value'] for s in indicator_statuses]
     status_counts = []
-    test = {}
     for status in indicator_statuses:
-        test[status] = crits.indicators.find( { 'status': status }).count()
-        status_counts.append( test[status] )
-    lookscount = pd.DataFrame.from_dict(test, orient='index')
-    lookscount.columns = ['count']
+        count = crits.indicators.find( { 'status': status }).count() if crits else None
+        count = sip.get('/indicators?status={}&count'.format(status))['count'] if sip else count
+        status_counts.append(count)
     # put results in dataframe row
     status_cnt_df = pd.DataFrame(data=[status_counts], columns=indicator_statuses)
     status_cnt_df.name = "Count of Indicators by Status"
     status_cnt_df.rename(index={0: "Count"}, inplace=True)
 
-    client.close()
+    if crits:
+        client.close()
     return source_cnt_df, status_cnt_df 
 
 @analysis.route('/metrics', methods=['GET', 'POST'])
