@@ -1441,55 +1441,51 @@ network_semaphore_test.set_defaults(func=test_network_semaphore)
 # alert management
 #
 
-def resync_alert(args):
-    """Remaps observables and tags to the alert."""
-    from saq.database import Alert, DatabaseSession
-    from saq.error import report_exception
+def rebuild_index(args):
+    """Rebuilds the indexes for the given alerts."""
+    from saq.database import Alert, get_db_connection
 
     storage_dirs = []
     if args.resync_all:
-        for alert in saq.db.query(Alert).with_entities(Alert.storage_dir).filter(Alert.location == saq.SAQ_NODE):
-            storage_dirs.append(alert.storage_dir)
+        with get_db_connection() as db:
+            c = db.cursor()
+            c.execute("""SELECT storage_dir FROM alerts WHERE location = %s""", (saq.SAQ_NODE,))
+            for row in c:
+                storage_dirs.append(row[0])
     else:
         storage_dirs = args.dirs
 
-    logging.info("resyncing {} alerts".format(len(storage_dirs)))
+    logging.info("rebuilding indexes for {} alerts".format(len(storage_dirs)))
 
     for storage_dir in storage_dirs:
-        logging.info("resyncing {}".format(storage_dir))
-        json_path = os.path.join(storage_dir, 'data.json')
-        if not os.path.exists(json_path):
-            logging.error("{} does not exist".format(json_path))
+        logging.info("rebuilding {}".format(storage_dir))
+        alert = saq.db.query(Alert).filter(Alert.storage_dir==storage_dir).first()
+        if alert is None:
+            logging.error(f"missing alert with storage directory {storage_dir}")
             continue
-
-        # load the alert
-        alert = None
-
-        alert = saq.db.query(Alert).filter(Alert.storage_dir==storage_dir).one()
 
         try:
             if not alert.load():
                 logging.error("unable to load {}".format(alert))
                 continue
 
+            alert.rebuild_index()
+
         except Exception as e:
-            logging.error("unable to load alert {}: {}".format(alert, e))
+            logging.error("rebuild failure on {}: {}".format(storage_dir, e))
             continue
 
-        try:
-            alert.rebuild_index()
-            alert.sync()
-        except Exception as e:
-            logging.error("resync failure on {}: {}".format(alert, e))
+        finally:
+            saq.db.commit()
 
     sys.exit(0)
 
-resync_alert_parser = subparsers.add_parser('resync-alerts',
-    help="Remaps observables and tags to the alert.")
-resync_alert_parser.add_argument('--all', default=False, action='store_true', dest='resync_all',
+rebuild_index_parser = subparsers.add_parser('rebuild-index',
+    help="Rebuilds the indexes for the given alerts.")
+rebuild_index_parser.add_argument('--all', default=False, action='store_true', dest='resync_all',
     help="Resyncs all alerts that belong to this node. This can take a long time.")
-resync_alert_parser.add_argument('dirs', nargs='*', default=[], help="One ore more alert directories to resync.")
-resync_alert_parser.set_defaults(func=resync_alert)
+rebuild_index_parser.add_argument('dirs', nargs='*', default=[], help="One ore more alert directories to resync.")
+rebuild_index_parser.set_defaults(func=rebuild_index)
 
 def import_alerts(args):
     """Imports one or more alerts from the given directories."""

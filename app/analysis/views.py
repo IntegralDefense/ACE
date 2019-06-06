@@ -1768,6 +1768,52 @@ def manage():
             filters[FILTER_S_SEARCH_COMPANY].value = 'Core'
             filters[FILTER_CB_USE_SEARCH_COMPANY].value = True
 
+    # are we drilling down into observable disposition history?
+    while 'odh_d' in request.args and 'odh_md5' in request.args:
+        odh_d = request.args['odh_d']
+        odh_md5 = request.args['odh_md5']
+
+        # look up the ID we need to use for this observable by the md5
+        odh_o = db.session.query(Observable).filter(Observable.md5 == func.unhex(odh_md5)).first()
+        if odh_o is None:
+            logging.warning(f"observable md5 {odh_md5} does not exist")
+            break
+
+        # map disposition to key
+        disp_map = {
+            DISPOSITION_FALSE_POSITIVE: FILTER_CB_DIS_FALSE_POSITIVE,
+            DISPOSITION_IGNORE: FILTER_CB_DIS_IGNORE,
+            DISPOSITION_UNKNOWN: FILTER_CB_DIS_UNKNOWN,
+            DISPOSITION_REVIEWED: FILTER_CB_DIS_REVIEWED,
+            DISPOSITION_GRAYWARE: FILTER_CB_DIS_GRAYWARE,
+            DISPOSITION_POLICY_VIOLATION: FILTER_CB_DIS_POLICY_VIOLATION,
+            DISPOSITION_RECONNAISSANCE: FILTER_CB_DIS_RECONNAISSANCE,
+            DISPOSITION_WEAPONIZATION: FILTER_CB_DIS_WEAPONIZATION,
+            DISPOSITION_DELIVERY: FILTER_CB_DIS_DELIVERY,
+            DISPOSITION_EXPLOITATION: FILTER_CB_DIS_EXPLOITATION,
+            DISPOSITION_INSTALLATION: FILTER_CB_DIS_INSTALLATION,
+            DISPOSITION_COMMAND_AND_CONTROL: FILTER_CB_DIS_COMMAND_AND_CONTROL,
+            DISPOSITION_EXFIL: FILTER_CB_DIS_EXFIL,
+            DISPOSITION_DAMAGE: FILTER_CB_DIS_DAMAGE }
+
+        if odh_d not in disp_map:
+            logging.error(f"invalid disposition {odh_d}")
+            break
+
+        # in this case we clear out all other filters except for this observable and disposition
+        filters[FILTER_CB_OPEN].value = False
+        filters[FILTER_CB_UNOWNED].value = False
+
+        key = f'observable_{odh_o.id}'
+        filter_item = SearchFilter(key, FILTER_TYPE_CHECKBOX, False)
+        filters[key] = filter_item
+        filters[key].value = True
+        observable_filter_items.append(filter_item)
+
+        # override setting for target disp
+        filters[disp_map[odh_d]].value = True
+        break
+
     # initialize filter state (passed to the view to set up the form controls)
     filter_state = {filters[f].name: filters[f].state for f in filters}
 
