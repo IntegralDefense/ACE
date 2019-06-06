@@ -31,14 +31,12 @@ def login():
         return response
 
     elif form.validate_on_submit():
-        logging.info(f"MARKER: username = {form.username.data}")
         try:
             user = db.session.query(User).filter_by(username=form.username.data).one()
         except:
             flash('Invalid username or password.')
             return render_template('auth/login.html', form=form)
 
-        logging.info(f"MARKER: password = {form.password.data} verify = {user.verify_password(form.password.data)}")
         if user is not None and user.verify_password(form.password.data):
             login_user(user, form.remember_me.data)
             
