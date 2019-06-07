@@ -1,8 +1,8 @@
--- MySQL dump 10.13  Distrib 5.7.25, for Linux (x86_64)
+-- MySQL dump 10.13  Distrib 5.7.26, for Linux (x86_64)
 --
 -- Host: localhost    Database: ace
 -- ------------------------------------------------------
--- Server version	5.7.25-0ubuntu0.18.04.2
+-- Server version	5.7.26-0ubuntu0.18.04.1
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -348,6 +348,40 @@ CREATE TABLE `malware_threat_mapping` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `message_routing`
+--
+
+DROP TABLE IF EXISTS `message_routing`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `message_routing` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `message_id` bigint(20) NOT NULL,
+  `route` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci NOT NULL COMMENT 'The route (or system) this message is to be delivered too.',
+  `destination` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci NOT NULL COMMENT 'The destination the message should be sent to at the given route. The value of this depends on the routing system.',
+  `lock` varchar(36) CHARACTER SET ascii DEFAULT NULL COMMENT 'Locking UUID.',
+  `lock_time` datetime DEFAULT NULL COMMENT 'When the lock was set for this delivery. Used to time out locks.',
+  PRIMARY KEY (`id`),
+  KEY `idx_message_routing_mrd` (`message_id`,`route`,`destination`),
+  CONSTRAINT `fk_message_routing_message_id` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `messages`
+--
+
+DROP TABLE IF EXISTS `messages`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `messages` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `content` text NOT NULL COMMENT 'The actual content of the message to be delivered.',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `node_modes`
 --
 
@@ -403,6 +437,43 @@ CREATE TABLE `observable_mapping` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `observable_tag_index`
+--
+
+DROP TABLE IF EXISTS `observable_tag_index`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `observable_tag_index` (
+  `observable_id` int(11) NOT NULL,
+  `tag_id` int(11) NOT NULL,
+  `alert_id` int(11) NOT NULL,
+  PRIMARY KEY (`observable_id`,`tag_id`,`alert_id`),
+  KEY `fk_observable_tag_index_tag_idx` (`tag_id`),
+  KEY `fk_observable_tag_index_alert_idx` (`alert_id`),
+  CONSTRAINT `fk_observable_tag_index_alert` FOREIGN KEY (`alert_id`) REFERENCES `alerts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_observable_tag_index_observable` FOREIGN KEY (`observable_id`) REFERENCES `observables` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_observable_tag_index_tag` FOREIGN KEY (`tag_id`) REFERENCES `tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `observable_tag_mapping`
+--
+
+DROP TABLE IF EXISTS `observable_tag_mapping`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `observable_tag_mapping` (
+  `tag_id` int(11) NOT NULL,
+  `observable_id` int(11) NOT NULL,
+  PRIMARY KEY (`tag_id`,`observable_id`),
+  KEY `observable_tag_mapping_ibfk_2` (`observable_id`),
+  CONSTRAINT `fk_observable_tag_mapping_1` FOREIGN KEY (`tag_id`) REFERENCES `tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_observable_tag_mapping_2` FOREIGN KEY (`observable_id`) REFERENCES `observables` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `observables`
 --
 
@@ -428,14 +499,18 @@ DROP TABLE IF EXISTS `remediation`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `remediation` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `type` enum('email') NOT NULL,
+  `type` enum('email','test') NOT NULL,
   `action` enum('remove','restore') NOT NULL DEFAULT 'remove' COMMENT 'The action that was taken, either the time was removed or it was restored.',
   `insert_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'The time the action occured.',
   `user_id` int(11) NOT NULL COMMENT 'The user who performed the action.',
   `key` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci NOT NULL COMMENT 'The key to look up the item.  In the case of emails this is the message_id and the recipient email address.',
   `result` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci COMMENT 'The result of the action.  This is free form data for the analyst to see, usually includes error codes and messages.',
   `comment` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci COMMENT 'Optional comment, additional free form data.',
-  `successful` tinyint(4) DEFAULT '0' COMMENT '1 - remediation worked, 0 - remediation didn’t work',
+  `successful` tinyint(4) DEFAULT NULL COMMENT '1 - remediation worked, 0 - remediation didn’t work',
+  `company_id` int(11) DEFAULT NULL COMMENT 'The company that this remediation belongs to.',
+  `lock` varchar(36) DEFAULT NULL COMMENT 'Set to a UUID when an engine processes it. Defaults to NULL to indicate nothing is working on it.',
+  `lock_time` datetime DEFAULT NULL,
+  `status` enum('NEW','IN_PROGRESS','COMPLETED') NOT NULL DEFAULT 'NEW' COMMENT 'The current status of the remediation.\\\\n\\\\nNEW - needs to be processed\\\\nIN_PROGRESS - entry is locked and currently being processed\\\\nCOMPLETED - entry completed (success or failure)',
   PRIMARY KEY (`id`),
   KEY `i_key` (`key`),
   KEY `fk_user_id_idx` (`user_id`),
@@ -472,23 +547,6 @@ CREATE TABLE `tags` (
   `name` varchar(256) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `observable_tag_mapping`
---
-
-DROP TABLE IF EXISTS `observable_tag_mapping`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `observable_tag_mapping` (
-  `tag_id` int(11) NOT NULL,
-  `observable_id` int(11) NOT NULL,
-  PRIMARY KEY (`tag_id`,`observable_id`),
-  KEY `observable_tag_mapping_ibfk_2` (`observable_id`),
-  CONSTRAINT `fk_observable_tag_mapping_1` FOREIGN KEY (`tag_id`) REFERENCES `tags` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_observable_tag_mapping_2` FOREIGN KEY (`observable_id`) REFERENCES `observables` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -581,4 +639,4 @@ CREATE TABLE `workload` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2019-03-21 14:25:22
+-- Dump completed on 2019-06-07 12:52:52
