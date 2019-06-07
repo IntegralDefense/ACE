@@ -571,6 +571,10 @@ class Event(Base):
                 'DAMAGE':11}
         disposition = None
         for alert_mapping in self.alert_mappings:
+            if alert_mapping.alert.disposition is None:
+                logging.warning(f"alert {alert_mapping.alert} added to event without disposition {alert_mapping.event_id}")
+                continue
+
             if disposition is None or dis_rank[alert_mapping.alert.disposition] > dis_rank[disposition]:
                 disposition = alert_mapping.alert.disposition
         return disposition
