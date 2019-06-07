@@ -1472,7 +1472,7 @@ def rebuild_index(args):
             alert.rebuild_index()
 
         except Exception as e:
-            logging.error("rebuild failure on {}: {}".format(storage_dir, e))
+            logging.error("rebuild failure on {}: {} ({})".format(storage_dir, e, type(e)))
             continue
 
         finally:

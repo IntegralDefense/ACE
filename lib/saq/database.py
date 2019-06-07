@@ -1372,13 +1372,18 @@ class Alert(RootAnalysis, Base):
 
             c.execute(sql, tuple(parameters))
 
-        sql = "INSERT INTO observable_tag_index ( alert_id, observable_id, tag_id ) VALUES "
+        sql = "INSERT IGNORE INTO observable_tag_index ( alert_id, observable_id, tag_id ) VALUES "
         parameters = []
         sql_clause = []
 
         for observable in all_observables:
             for tag in observable.tags:
-                tag_id = tag_mapping[tag.name]
+                try:
+                    tag_id = tag_mapping[tag.name]
+                except KeyError:
+                    logging.debug(f"missing tag mapping for tag {tag.name} in observable {observable} alert {self.uuid}")
+                    continue
+
                 observable_id = observable_mapping[observable.md5_hex.lower()]
 
                 parameters.append(self.id)
