@@ -2902,21 +2902,28 @@ def metrics():
             if not events.empty:
                 tables.append(events)
 
-        # generate CRITS indicator intel tables
+        # generate SIP ;-) indicator intel tables
+        # XXX add support for using CRITS/SIP based on what ACE is configured to use
         if 'indicator_intel' in metric_actions:
             try:
                 indicator_source_table, indicator_status_table = generate_intel_tables()
                 tables.append(indicator_source_table)
                 tables.append(indicator_status_table) 
             except Exception as e:
-                flash("Error generating intel tables. Is 'mongodb_uri' specified in the configuration? : {0}".format(str(e)))
+                flash("Problem generating overall source and status indicator tables : {0}".format(str(e)))
             # Count all created indicators during daterange by their status
-            created_indicators = get_created_OR_modified_indicators_during(daterange_start, daterange_end, created=True)
-            if created_indicators is not False:
-                tables.append(created_indicators)
-            modified_indicators = get_created_OR_modified_indicators_during(daterange_start, daterange_end, modified=True)
-            if modified_indicators is not False:
-                tables.append(modified_indicators)
+            try:
+                created_indicators = get_created_OR_modified_indicators_during(daterange_start, daterange_end, created=True)
+                if created_indicators is not False:
+                    tables.append(created_indicators)
+            except Exception as e:
+                flash("Problem generating created indicator table: {0}".format(str(e)))
+            try:
+                modified_indicators = get_created_OR_modified_indicators_during(daterange_start, daterange_end, modified=True)
+                if modified_indicators is not False:
+                    tables.append(modified_indicators)
+            except Exception as e:
+                flash("Problem generating modified indicator table: {0}".format(str(e)))
 
     if download_results:
         outBytes = io.BytesIO()
