@@ -1,3 +1,4 @@
+import collections.abc
 import datetime
 import importlib
 import io
@@ -7,6 +8,7 @@ import math
 import os
 import os.path
 import pymysql
+import pysip
 import random
 import re
 import shutil
@@ -34,6 +36,8 @@ import requests
 from pymongo import MongoClient
 
 import saq
+import saq.analysis
+import saq.intel
 import virustotal
 import vxstreamlib
 import splunklib
@@ -1765,6 +1769,52 @@ def manage():
             filters[FILTER_S_SEARCH_COMPANY].value = 'Core'
             filters[FILTER_CB_USE_SEARCH_COMPANY].value = True
 
+    # are we drilling down into observable disposition history?
+    while 'odh_d' in request.args and 'odh_md5' in request.args:
+        odh_d = request.args['odh_d']
+        odh_md5 = request.args['odh_md5']
+
+        # look up the ID we need to use for this observable by the md5
+        odh_o = db.session.query(Observable).filter(Observable.md5 == func.unhex(odh_md5)).first()
+        if odh_o is None:
+            logging.warning(f"observable md5 {odh_md5} does not exist")
+            break
+
+        # map disposition to key
+        disp_map = {
+            DISPOSITION_FALSE_POSITIVE: FILTER_CB_DIS_FALSE_POSITIVE,
+            DISPOSITION_IGNORE: FILTER_CB_DIS_IGNORE,
+            DISPOSITION_UNKNOWN: FILTER_CB_DIS_UNKNOWN,
+            DISPOSITION_REVIEWED: FILTER_CB_DIS_REVIEWED,
+            DISPOSITION_GRAYWARE: FILTER_CB_DIS_GRAYWARE,
+            DISPOSITION_POLICY_VIOLATION: FILTER_CB_DIS_POLICY_VIOLATION,
+            DISPOSITION_RECONNAISSANCE: FILTER_CB_DIS_RECONNAISSANCE,
+            DISPOSITION_WEAPONIZATION: FILTER_CB_DIS_WEAPONIZATION,
+            DISPOSITION_DELIVERY: FILTER_CB_DIS_DELIVERY,
+            DISPOSITION_EXPLOITATION: FILTER_CB_DIS_EXPLOITATION,
+            DISPOSITION_INSTALLATION: FILTER_CB_DIS_INSTALLATION,
+            DISPOSITION_COMMAND_AND_CONTROL: FILTER_CB_DIS_COMMAND_AND_CONTROL,
+            DISPOSITION_EXFIL: FILTER_CB_DIS_EXFIL,
+            DISPOSITION_DAMAGE: FILTER_CB_DIS_DAMAGE }
+
+        if odh_d not in disp_map:
+            logging.error(f"invalid disposition {odh_d}")
+            break
+
+        # in this case we clear out all other filters except for this observable and disposition
+        filters[FILTER_CB_OPEN].value = False
+        filters[FILTER_CB_UNOWNED].value = False
+
+        key = f'observable_{odh_o.id}'
+        filter_item = SearchFilter(key, FILTER_TYPE_CHECKBOX, False)
+        filters[key] = filter_item
+        filters[key].value = True
+        observable_filter_items.append(filter_item)
+
+        # override setting for target disp
+        filters[disp_map[odh_d]].value = True
+        break
+
     # initialize filter state (passed to the view to set up the form controls)
     filter_state = {filters[f].name: filters[f].state for f in filters}
 
@@ -2588,38 +2638,55 @@ def add_email_alert_counts_per_event(events):
     events['# Emails'] = email_counts
 
 
-def generate_intel_tables():
-    mongo_uri = saq.CONFIG.get("crits", "mongodb_uri")
-    mongo_host = mongo_uri[mongo_uri.rfind('://')+3:mongo_uri.rfind(':')]
-    mongo_port = int(mongo_uri[mongo_uri.rfind(':')+1:])
-    client = MongoClient(mongo_host, mongo_port)
-    crits = client.crits
+def generate_intel_tables(sip=True, crits=False):
+    if sip and crits:
+        logging.error("Can only use one intel source at a time.")
+        return False, False
+    if crits:
+        mongo_uri = saq.CONFIG.get("crits", "mongodb_uri")
+        mongo_host = mongo_uri[mongo_uri.rfind('://')+3:mongo_uri.rfind(':')]
+        mongo_port = int(mongo_uri[mongo_uri.rfind(':')+1:])
+        client = MongoClient(mongo_host, mongo_port)
+        crits = client.crits
+    elif sip:
+        sip_host = saq.CONFIG.get("sip", "remote_address")
+        api_key = saq.CONFIG.get("sip", "api_key")
+        sip = pysip.Client(sip_host, api_key, verify=False) 
+    else:
+        logging.warn("No intel source specified.")
+        return None, None
 
     #+ amount of indicators per source
-    intel_sources = crits.source_access.distinct("name")
+    intel_sources = crits.source_access.distinct("name") if crits else None
+    if sip:
+        intel_sources = sip.get('/api/intel/source')
+        intel_sources = [s['value'] for s in intel_sources]
     source_counts = {}
     for source in intel_sources:
-        source_counts[source] = crits.indicators.find( { 'source.name': source }).count()
+        source_counts[source] = crits.indicators.find( { 'source.name': source }).count() if crits else None
+        source_counts[source] = sip.get('/indicators?sources={}&count'.format(source))['count'] if sip else source_counts[source]
     source_cnt_df = pd.DataFrame.from_dict(source_counts, orient='index')
     source_cnt_df.columns = ['count']
     source_cnt_df.name = "Count of Indicators by Intel Sources"
     source_cnt_df.sort_index(inplace=True)
 
     # amount of indicators per status
-    indicator_statuses = crits.indicators.distinct("status")
+    indicator_statuses = crits.indicators.distinct("status") if crits else None
+    if sip:
+        indicator_statuses = sip.get('/api/indicators/status')
+        indicator_statuses = [s['value'] for s in indicator_statuses]
     status_counts = []
-    test = {}
     for status in indicator_statuses:
-        test[status] = crits.indicators.find( { 'status': status }).count()
-        status_counts.append( test[status] )
-    lookscount = pd.DataFrame.from_dict(test, orient='index')
-    lookscount.columns = ['count']
+        count = crits.indicators.find( { 'status': status }).count() if crits else None
+        count = sip.get('/indicators?status={}&count'.format(status))['count'] if sip else count
+        status_counts.append(count)
     # put results in dataframe row
     status_cnt_df = pd.DataFrame(data=[status_counts], columns=indicator_statuses)
     status_cnt_df.name = "Count of Indicators by Status"
     status_cnt_df.rename(index={0: "Count"}, inplace=True)
 
-    client.close()
+    if crits:
+        client.close()
     return source_cnt_df, status_cnt_df 
 
 @analysis.route('/metrics', methods=['GET', 'POST'])
@@ -3231,6 +3298,35 @@ def index():
     special_tag_names = [tag for tag in saq.CONFIG['tags'].keys() if saq.CONFIG['tags'][tag] == 'special']
     alert_tags = [tag for tag in alert_tags if tag.name not in special_tag_names]
 
+    class DispositionHistory(collections.abc.MutableMapping):
+        def __init__(self, observable):
+            self.observable = observable
+            self.history = {} # key = disposition, value = count
+
+        def __getitem__(self, key):
+            return self.history[key]
+
+        def __setitem__(self, key, value):
+            # we skip the None key which corresponds to alerts that have not been dispositioned yet
+            if key is not None:
+                if key not in VALID_ALERT_DISPOSITIONS:
+                    raise ValueError(f"invalid disposition {key}")
+
+                self.history[key] = value
+
+        def __delitem__(self, key):
+            pass
+
+        def __iter__(self):
+            total = sum([self.history[disp] for disp in self.history.keys()])
+            dispositions = [disposition for disposition in VALID_ALERT_DISPOSITIONS if disposition in self.history]
+            dispositions = sorted(dispositions, key=lambda disposition: (self.history[disposition] / total) * 100.0, reverse=True)
+            for disposition in dispositions:
+                yield disposition, self.history[disposition], (self.history[disposition] / total) * 100.0
+
+        def __len__(self):
+            return len(self.history)
+
     # compute the display tree
     class TreeNode(object):
         def __init__(self, obj, parent=None):
@@ -3272,6 +3368,50 @@ def index():
         def __str__(self):
             return "TreeNode({}, {}, {})".format(self.obj, self.reference_node, self.visible)
 
+        @property
+        def disposition_history(self):
+            """Returns a DispositionHistory object if self.obj is an Observable, None otherwise."""
+            if hasattr(self, '_disposition_history'):
+                return self._disposition_history
+
+            self._disposition_history = None
+            if not isinstance(self.obj, saq.analysis.Observable):
+                return None
+
+            if self.obj.whitelisted:
+                return None
+
+            if self.obj.type == F_FILE:
+                from saq.modules.file_analysis import FileHashAnalysis
+                for child in self.children:
+                    if isinstance(child.obj, FileHashAnalysis):
+                        for grandchild in child.children:
+                            if isinstance(grandchild.obj, saq.analysis.Observable) and grandchild.obj.type == F_SHA256:
+                                self._disposition_history = grandchild.disposition_history
+                                return self._disposition_history
+
+                return None
+
+            self._disposition_history = DispositionHistory(self.obj)
+
+            with get_db_connection() as db:
+                c = db.cursor()
+                c.execute("""
+SELECT 
+    a.disposition, COUNT(*) 
+FROM 
+    observables o JOIN observable_mapping om ON o.id = om.observable_id
+    JOIN alerts a ON om.alert_id = a.id
+WHERE 
+    o.type = %s AND 
+    o.md5 = UNHEX(%s)
+GROUP BY a.disposition""", (self.obj.type, self.obj.md5_hex))
+
+                for row in c:
+                    disposition, count = row
+                    self._disposition_history[disposition] = count
+
+            return self._disposition_history
 
     def find_all_url_domains(analysis):
         assert isinstance(analysis, saq.analysis.Analysis)
@@ -3696,6 +3836,22 @@ def observable_action():
                 logging.error("unable to mark observable {} for file collection".format(observable))
                 report_exception()
                 return "request failed - check logs", 500
+
+        elif action_id in [ ACTION_SET_SIP_INDICATOR_STATUS_ANALYZED, 
+                            ACTION_SET_SIP_INDICATOR_STATUS_INFORMATIONAL,
+                            ACTION_SET_SIP_INDICATOR_STATUS_NEW ]:
+
+            if action_id == ACTION_SET_SIP_INDICATOR_STATUS_ANALYZED:
+                status = saq.intel.SIP_STATUS_ANALYZED
+            elif action_id == ACTION_SET_SIP_INDICATOR_STATUS_INFORMATIONAL:
+                status = saq.intel.SIP_STATUS_INFORMATIONAL
+            else:
+                status = saq.intel.SIP_STATUS_NEW
+
+            sip_id = int(observable.value[len('sip:'):])
+            logging.info(f"{current_user.username} set sip indicator {sip_id} status to {status}")
+            result = saq.intel.set_sip_indicator_status(sip_id, status)
+            return "OK", 200
 
         return "invalid action_id", 500
 

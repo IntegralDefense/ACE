@@ -3,8 +3,7 @@
 {% if ace_config['gui'].getboolean('hide_intel') %}
     <a>Hidden from public view.</a>
 {% elif _observable.value.startswith('sip:') %}
-    {# XXX need to find the URL for displaying the details of a single indicator in SIP #}
-    {{_observable.value}}
+    {{_observable.value}} status:{{_observable.sip_status}}
 {% else %}
     <a href="{{ace_config.get('crits', 'url')}}/indicators/details/{{_observable.value}}/" target="_blank">{{_observable.value}}</a>
 {% endif %}

@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import uuid
+import warnings
 
 from contextlib import closing, contextmanager
 
@@ -55,7 +56,7 @@ def use_db(method=None, name=None):
 
     return wrapper
 
-def execute_with_retry(db, cursor, sql_or_func, params=None, attempts=2, commit=False):
+def execute_with_retry(db, cursor, sql_or_func, params=(), attempts=2, commit=False):
     """Executes the given SQL or function (and params) against the given cursor with
        re-attempts up to N times (defaults to 2) on deadlock detection.
 
@@ -571,6 +572,10 @@ class Event(Base):
                 'DAMAGE':11}
         disposition = None
         for alert_mapping in self.alert_mappings:
+            if alert_mapping.alert.disposition is None:
+                logging.warning(f"alert {alert_mapping.alert} added to event without disposition {alert_mapping.event_id}")
+                continue
+
             if disposition is None or dis_rank[alert_mapping.alert.disposition] > dis_rank[disposition]:
                 disposition = alert_mapping.alert.disposition
         return disposition
@@ -1292,17 +1297,113 @@ class Alert(RootAnalysis, Base):
             # rebuild the index after we reset the Alert
             self.rebuild_index()
 
-    @track_execution_time
     def build_index(self):
-        """Indexes all Observables and Tags for this Alert."""
-        for tag in self.all_tags:
-            self.sync_tag_mapping(tag)
+        """Rebuilds the data for this Alert in the observables, tags, observable_mapping and tag_mapping tables."""
+        self.rebuild_index()
 
-        for observable in self.all_observables:
-            self.sync_observable_mapping(observable)
+    def rebuild_index(self):
+        """Rebuilds the data for this Alert in the observables, tags, observable_mapping and tag_mapping tables."""
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            with get_db_connection() as db:
+                c = db.cursor()
+                execute_with_retry(db, c, self._rebuild_index)
+
+    def _rebuild_index(self, db, c):
+        logging.info(f"rebuilding indexes for {self}")
+        c.execute("""DELETE FROM observable_mapping WHERE alert_id = %s""", ( self.id, ))
+        c.execute("""DELETE FROM tag_mapping WHERE alert_id = %s""", ( self.id, ))
+        c.execute("""DELETE FROM observable_tag_index WHERE alert_id = %s""", ( self.id, ))
+
+        tag_names = tuple([ tag.name for tag in self.all_tags ])
+        if tag_names:
+            sql = "INSERT IGNORE INTO tags ( name ) VALUES {}".format(','.join(['(%s)' for name in tag_names]))
+            #logging.debug(f"MARKER: sql = {sql}")
+            c.execute(sql, tag_names)
+
+        all_observables = self.all_observables
+
+        observables = []
+        observable_hash_mapping = {} # key = md5, value = observable
+        for observable in all_observables:
+            observables.append(observable.type)
+            observables.append(observable.value)
+            observables.append(observable.md5_hex)
+            observable_hash_mapping[observable.md5_hex] = observable
+
+        observables = tuple(observables)
+
+        if all_observables:
+            sql = "INSERT IGNORE INTO observables ( type, value, md5 ) VALUES {}".format(','.join('(%s, %s, UNHEX(%s))' for o in all_observables))
+            #logging.debug(f"MARKER: sql = {sql}")
+            c.execute(sql, observables)
+
+        tag_mapping = {} # key = tag_name, value = tag_id
+        if tag_names:
+            sql = "SELECT id, name FROM tags WHERE name IN ( {} )".format(','.join(['%s' for name in tag_names]))
+            #logging.debug(f"MARKER: sql = {sql}")
+            c.execute(sql, tag_names)
+
+            for row in c:
+                tag_id, tag_name = row
+                tag_mapping[tag_name] = tag_id
+
+            sql = "INSERT INTO tag_mapping ( alert_id, tag_id ) VALUES {}".format(','.join(['(%s, %s)' for name in tag_mapping.values()]))
+            #logging.debug(f"MARKER: sql = {sql}")
+            parameters = []
+            for tag_id in tag_mapping.values():
+                parameters.append(self.id)
+                parameters.append(tag_id)
+
+            c.execute(sql, tuple(parameters))
+
+        observable_mapping = {} # key = observable_id, value = observable
+        if all_observables:
+            sql = "SELECT id, HEX(md5) FROM observables WHERE md5 IN ( {} )".format(','.join(['UNHEX(%s)' for o in all_observables]))
+            #logging.debug(f"MARKER: sql = {sql}")
+            c.execute(sql, tuple([o.md5_hex for o in all_observables]))
+
+            for row in c:
+                observable_id, md5_hex = row
+                observable_mapping[md5_hex.lower()] = observable_id
+
+            sql = "INSERT INTO observable_mapping ( alert_id, observable_id ) VALUES {}".format(','.join(['(%s, %s)' for o in observable_mapping.keys()]))
+            #logging.debug(f"MARKER: sql = {sql}")
+            parameters = []
+            for observable_id in observable_mapping.values():
+                parameters.append(self.id)
+                parameters.append(observable_id)
+
+            c.execute(sql, tuple(parameters))
+
+        sql = "INSERT IGNORE INTO observable_tag_index ( alert_id, observable_id, tag_id ) VALUES "
+        parameters = []
+        sql_clause = []
+
+        for observable in all_observables:
+            for tag in observable.tags:
+                try:
+                    tag_id = tag_mapping[tag.name]
+                except KeyError:
+                    logging.debug(f"missing tag mapping for tag {tag.name} in observable {observable} alert {self.uuid}")
+                    continue
+
+                observable_id = observable_mapping[observable.md5_hex.lower()]
+
+                parameters.append(self.id)
+                parameters.append(observable_id)
+                parameters.append(tag_id)
+                sql_clause.append('(%s, %s, %s)')
+
+        if sql_clause:
+            sql += ','.join(sql_clause)
+            #logging.debug(f"MARKER: sql = {sql}")
+            c.execute(sql, tuple(parameters))
+
+        db.commit()
         
     @track_execution_time
-    def rebuild_index(self):
+    def rebuild_index_old(self):
         """Rebuilds the data for this Alert in the observables, tags, observable_mapping and tag_mapping tables."""
         logging.debug("updating detailed information for {}".format(self))
 
@@ -1588,6 +1689,8 @@ class ObservableMapping(Base):
     alert = relationship('saq.database.Alert', backref='observable_mappings')
     observable = relationship('saq.database.Observable', backref='observable_mappings')
 
+# this is used to automatically map tags to observables
+# same as the etc/site_tags.csv really, just in the database
 class ObservableTagMapping(Base):
     
     __tablename__ = 'observable_tag_mapping'
@@ -1673,6 +1776,35 @@ def remove_observable_tag_mapping(o_type, o_value, o_md5, tag):
                                                                  ObservableTagMapping.tag_id == tag.id)))
     saq.db.commit()
     return True
+
+# this is used to map what observables had what tags in what alerts
+# not to be confused with ObservableTagMapping (see above)
+# I think this is what I had in mind when I originally created ObservableTagMapping
+# but I was missing the alert_id field
+# that table was later repurposed to automatically map tags to observables
+
+class ObservableTagIndex(Base):
+
+    __tablename__ = 'observable_tag_index'
+
+    observable_id = Column(
+        Integer,
+        ForeignKey('observables.id'),
+        primary_key=True)
+
+    tag_id = Column(
+        Integer,
+        ForeignKey('tags.id'),
+        primary_key=True)
+
+    alert_id = Column(
+        Integer,
+        ForeignKey('alerts.id'),
+        primary_key=True)
+
+    observable = relationship('saq.database.Observable', backref='observable_tag_index')
+    tag = relationship('saq.database.Tag', backref='observable_tag_index')
+    alert = relationship('saq.database.Alert', backref='observable_tag_index')
 
 class Tag(saq.analysis.Tag, Base):
     
