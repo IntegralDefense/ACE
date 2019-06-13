@@ -39,6 +39,9 @@ LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
 # except for the WSGI app which uses Flask
 db = None # (see saq.database.initialize_database)
 
+# the global message system, used to send external messages async
+MESSAGE_SYSTEM = None
+
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
         super().__init__(*args, **kwargs)

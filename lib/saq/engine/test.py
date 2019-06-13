@@ -102,17 +102,6 @@ class TestCase(ACEEngineTestCase):
         except KeyboardInterrupt:
             pass
 
-    def test_remediation_uuid(self):
-    
-        # a remediation uuid will be created for an instance of an engine
-        # this will persist across executions of the engine
-        engine = Engine()
-        current_remediation_uuid = engine.remediation_uuid
-        self.assertIsNotNone(current_remediation_uuid)
-
-        engine = Engine()
-        self.assertEquals(engine.remediation_uuid, current_remediation_uuid)
-
     def test_engine_default_pools(self):
 
         # test starting with no analysis pools defined

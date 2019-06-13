@@ -15,11 +15,13 @@ from saq.remediation import EmailRemediationSystem
 from saq.remediation.constants import *
 
 import EWS
-import EWS.remediation_result
 
 class PhishfryRemediationSystem(EmailRemediationSystem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # set this property to true when doing unit testing
+        self.testing_mode = False
         
         # load the Exchange Web Services accounts
         self.accounts = []
@@ -34,6 +36,9 @@ class PhishfryRemediationSystem(EmailRemediationSystem):
             self.accounts.append(EWS.Account(user, password, server=server, version=version, 
                                              timezone=timezone, proxies=saq.PROXIES))
             logging.info(f"loaded phishfry EWS account user {user} server {server} version {version}")
+
+    def enable_testing_mode(self):
+        self.testing_mode = True
 
     def execute_request(self, remediation):
         logging.info(f"execution remediation {remediation}")
