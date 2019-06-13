@@ -1,7 +1,52 @@
-<pre>
 {% if ace_config['gui'].getboolean('hide_intel') %}
     Hidden from public view.
 {% else %}
+<div class="panel panel-default">
+    <div class="panel-heading">
+        <h3 class="panel-title">SIP Indicator Details</h3>
+    </div>
+    <div class="panel-body">
+    <table class="table table-condensed">
+    <tr>
+        <td>Type</td>
+        <td><b>{{analysis.details['type']}}</b></td>
+    </tr>
+    <tr>
+        <td>Value</td>
+        <td><b>{{analysis.details['value']}}</b></td>
+    </tr>
+    <tr>
+        <td>Status</td>
+        <td><b>{{analysis.details['status']}}</b></td>
+    </tr>
+    <tr>
+        <td>Created</td>
+        <td>{{analysis.details['created_time']}}</td>
+    </tr>
+    <tr>
+        <td>Modified</td>
+        <td>{{analysis.details['modified_time']}}</td>
+    </tr>
+    {% for campaign in analysis.details['campaigns'] %}
+    <tr>
+        <td>Campaign</td>
+        <td>{{analysis.details['campaign']}}</td>
+    </tr>
+    {% endfor %}
+    <tr>
+        <td>Impact / Confidence</td>
+        <td>{{analysis.details['impact']}} / {{analysis.details['confidence']}}</td>
+    </tr>
+    {% for reference in analysis.details['references'] %}
+    <tr>
+        <td>Reference</td>
+        <td><a target="_blank" href="{{reference['reference']}}">{{reference['reference']}}</a> ({{reference['source']}})
+    </tr>
+    {% endfor %}
+    </table>
+    </div>
+</div>
+{#<pre>
     {{analysis.details | pprint}}
+</pre>#}
 {% endif %}
-</pre>

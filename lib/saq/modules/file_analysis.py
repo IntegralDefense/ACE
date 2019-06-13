@@ -2498,6 +2498,16 @@ class YaraScanner_v3_4(AnalysisModule):
                     if m:
                         analysis.add_observable(F_INDICATOR, m.group(1))
 
+            # yara rules can get generated automatically from SIP data using the ace export-sip-yara-rules output_dir command
+            # so if the name of the rule starts with SIP_ then we also want to add indicators as observables
+            if yara_result['rule'].startswith('SIP_'):
+                for string_match in yara_result['strings']:
+                    position, string_id, value = string_match
+                    # example: '0x45cf:$5537d11dbcb87f5c8053ae55: /webstat/image.php?id='
+                    m = re.match(r'^\$sip_([0-9]+)$', string_id)
+                    if m:
+                        analysis.add_observable(F_INDICATOR, 'sip:{}'.format(m.group(1)))
+
             yara_result['context'] = []
             for position, string_id, value in yara_result['strings']:
                 # we want some context around what we matched

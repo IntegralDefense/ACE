@@ -234,10 +234,10 @@ def _execute_phishfry_remediation(action, emails):
     for message_id, recipient in emails:
         found_recipient = False
         for account in load_phishfry_accounts():
-            if recipient.startswith('<'):
-                recipient = recipient[1:]
-            if recipient.endswith('>'):
-                recipient = recipient[:-1]
+            #if recipient.startswith('<'):
+                #recipient = recipient[1:]
+            #if recipient.endswith('>'):
+                #recipient = recipient[:-1]
 
             logging.info(f"attempting to {action} message-id {message_id} for {recipient}")
             if not saq.UNIT_TESTING:
