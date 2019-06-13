@@ -6,6 +6,7 @@ REMEDIATION_STATUS_IN_PROGRESS = 'IN_PROGRESS'
 REMEDIATION_STATUS_COMPLETED = 'COMPLETED'
 
 # possible remediation types
+REMEDIATION_TYPE_TEST = 'test'
 REMEDIATION_TYPE_EMAIL = 'email'
 
 # possible remediation actions

@@ -34,6 +34,9 @@ then
         saq.test_database \
         saq.test_util \
         saq.test_locks \
+        saq.remediation.test \
+        saq.remediation.phishfry.test \
+        saq.messaging.test \
         saq.engine.test \
         saq.modules.test_alerts \
         saq.modules.test_asset \

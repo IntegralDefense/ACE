@@ -564,33 +564,6 @@ class Engine(object):
         # an event to control the management threads
         self.maintenance_control = None # threading.Event()
 
-        # the primary remediation thread (that spawns off the other ones)
-        self.remediation_thread = None
-        # maximum size of the remediation_worker_threads
-        self.max_concurrent_remediation_count = self.config.getint('max_concurrent_remediation_count')
-        # the threads that manage the execution of remediation routines (currently only email)
-        self.remediation_worker_threads = [None for _ in range(self.max_concurrent_remediation_count)]
-        # an event to control the remediation threads
-        self.remediation_control = None # threading.Event()
-        # the queue that contains the next remediation job to be performed
-        self.remediation_queue = None # queue.Queue()
-        # the uuid used to lock remediation items for this engine
-        # this only needs to be created once and can be reused every time the engine runs
-        
-        r_uuid_path = os.path.join(self.runtime_dir, 'remediation.uuid')
-        if os.path.exists(r_uuid_path):
-            with open(r_uuid_path) as fp:
-                self.remediation_uuid = fp.read()
-                # make sure it's a valid UUID
-                validate_uuid(self.remediation_uuid)
-                logging.debug(f"loaded remediation uuid {self.remediation_uuid}")
-        else:
-            # otherwise go ahead and create it
-            self.remediation_uuid = str(uuid.uuid4())
-            with open(r_uuid_path, 'w') as fp:
-                fp.write(self.remediation_uuid)
-            logging.debug(f"created remediation uuid {self.remediation_uuid}")
-
         # how often do we update the nodes database table for this engine (in seconds)
         self.node_status_update_frequency = self.config.getint('node_status_update_frequency')
         # and then when will be the next time we make this update?
@@ -1000,156 +973,6 @@ class Engine(object):
 
 
     #
-    # REMEDIATION
-    # ------------------------------------------------------------------------
-
-    @exclude_if_local
-    def start_remediation_threads(self):
-        try:
-            # first we clear any locks or remediations left in a running state from when we last shut down
-            saq.db.execute(Remediation.__table__.update().values(lock=None, status=REMEDIATION_STATUS_NEW).where(
-                and_(Remediation.company_id == saq.COMPANY_ID,
-                     Remediation.status == REMEDIATION_STATUS_IN_PROGRESS,
-                     Remediation.lock == self.remediation_uuid)))
-
-        except Exception as e:
-            logging.error(f"unable to clear remediation locks: {e}")
-            report_exception()
-        finally:
-            saq.db.close()
-
-        self.remediation_control = threading.Event()
-        self.remediation_queue = queue.Queue(maxsize=1)
-
-        # first start the workers
-        # they will start pulling from the queue which will be empty initially
-        for i in range(len(self.remediation_worker_threads)):
-            self.remediation_worker_threads[i] = threading.Thread(target=self.remediation_worker_loop,
-                                                                  name=f"Remediation Worker {i}")
-            self.remediation_worker_threads[i].start()
-
-        # then start the thread that populates the queue with work
-        self.remediation_thread = threading.Thread(target=self.remediation_manager_loop,
-                                                   name="Remediation Manager")
-        self.remediation_thread.start()
-
-    @exclude_if_local
-    def stop_remediation_threads(self):
-        self.remediation_control.set()
-        logging.info("waiting for remediation manager to exit...")
-        self.remediation_thread.wait()
-
-    def remediation_shutdown(self):
-        """Returns True if the remediation loop should end or if the engine is shutting down."""
-        return self.shutdown or self.remediation_control.is_set()
-
-    def remediation_manager_loop(self):
-        logging.info("started remediation manager")
-        while True:
-            try:
-                execution_result = self.remediation_manager_execute()
-            except Exception as e:
-                logging.error(f"remediation_execute() threw an exception: {e}")
-                report_exception()
-                execution_result = False
-            finally:
-                saq.db.close()
-
-            if self.remediation_shutdown:
-                break
-
-            # if an error occured we'll wait a little bit longer
-            self.remediation_sleep(1 if execution_result else 10)
-
-        logging.info("remediation manager exited")
-
-    def remediation_manager_execute(self):
-        # get the list of remediation items for this company that are ready/available to be processed
-        available_remediations = saq.db.query(Remediation).filter(and_(
-            Remediation.company_id == saq.COMPANY_ID,
-            Remediation.status == REMEDIATION_STATUS_NEW,
-            Remediation.lock == None)).all()
-
-        saq.db.commit()
-
-        if not available_remediations:
-            return False
-
-        for remediation in available_remediations:
-            # try to lock this one
-            try:
-                result = saq.db.execute(Remediation.__table__.update().values(
-                    status=REMEDIATION_STATUS_IN_PROGRESS,
-                    lock=self.remediation_uuid).where(and_(
-                    Remediation.id == remediation.id,
-                    Remediation.lock == None)))
-
-                if result.rowcount == 0:
-                    logging.debug(f"got rowcount 0 for remediation item {remediation.id}")
-                    continue
-
-                saq.db.commit()
-                logging.info(f"locked remediation item {remediation.id} ({remediation.key}) "
-                              "with uuid {self.remediation_uuid}")
-
-                # now with the remediation item locked add it to the queue for one of the workers to grab
-                while not self.remediation_shutdown:
-                    try:
-                        self.remediation_queue.put(remediation, block=True, timeout=1)
-                    except queue.Full:
-                        continue
-
-            except Exception as e:
-                logging.debug(f"unable to lock remediation item {remediation.id}: {e}")
-                return False
-
-    def remediation_worker_loop(self):
-        logging.debug("remediation worker started")
-        while True:
-            try:
-                worker_result = self.remediation_worker_execute()
-            except Exception as e:
-                logging.error(f"remediation worker execution error: {e}")
-                report_exception()
-                worker_result = False
-            finally:
-                saq.db.close()
-                
-            if self.remediation_shutdown:
-                break
-
-        logging.debug("remediation worker exited")
-
-    def remediation_worker_execute(self):
-        # get the next remediation job to execute
-        try:
-            remediation = self.remediation_queue.get(block=True, timeout=1)
-            # execute the job...
-            if remediation.type == REMEDIATION_TYPE_EMAIL:
-                return self.execute_remediation_type_email(remediation)
-            else:
-                logging.error(f"unsupported remediation type {remediation.type}")
-                return False
-        except queue.Empty:
-            return True
-        except Exception as e:
-            logging.error(f"unable to get work from queue: {e}")
-            return False
-
-    def execute_remediation_type_email(self, remediation):
-        message_id, recipient = remediation.key.split(':', 2)
-        result = saq.remediation.remediate_emails((message_id, recipient))
-        return True
-
-    def remediation_sleep(self, seconds):
-        """Utility function to sleep for N seconds without blocking shutdown."""
-        seconds = float(seconds)
-        while not self.remediation_shutdown and seconds > 0:
-            # we also want to support sleeping for less than a second
-            time.sleep(1.0 if seconds > 0 else seconds)
-            seconds -= 1.0
-
-    #
     # MAINTENANCE
     # ------------------------------------------------------------------------
 
@@ -1495,7 +1318,6 @@ class Engine(object):
         self.worker_manager = WorkerManager()
         self.worker_manager.start()
 
-        self.start_remediation_threads()
         self.start_maintenance_threads()
         self.engine_startup_event.set()
         self.initialize_signal_handlers()

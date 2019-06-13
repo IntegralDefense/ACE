@@ -763,6 +763,100 @@ correlation_engine_parser = subparsers.add_parser('correlation-engine',
     help="Start/Stop the ACE correlation analysis engine.")
 correlation_engine_parser.set_defaults(func=correlation_engine)
 
+# ============================================================================
+# Remediation System
+#
+
+def remediation_system(args):
+    from saq.remediation import RemediationSystem
+
+    daemon_name = 'remediation-system'
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info(f"starting daemon {daemon_name}")
+            daemonize(daemon_name)
+        
+        try:
+            system = RemediationSystem()
+
+            def handle_signal(signum, frame):
+                system.stop(wait=False)
+
+            signal.signal(signal.SIGTERM, handle_signal)
+            signal.signal(signal.SIGINT, handle_signal)
+
+            system.start()
+            system.wait()
+
+        except KeyboardInterrupt:
+            system.stop()
+
+        except Exception as e:
+            logging.error(f"uncaught exception {e}")
+            sys.exit(1)
+
+        sys.exit(0)
+
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+remediation_system_parser = subparsers.add_parser('remediation-system',
+    help="Starts/stops the remediation system, responsible for implementing remediation requests in the background.")
+remediation_system_parser.set_defaults(func=remediation_system)
+
+# ============================================================================
+# Message Dispatch System
+#
+
+def message_system(args):
+    from saq.messaging import initialize_message_system, start_message_system, stop_message_system, wait_message_system
+
+    daemon_name = 'message-dispatch-system'
+
+    if args.stop:
+        kill_daemon(daemon_name)
+        sys.exit(0)
+
+    elif args.start:
+        if args.daemon:
+            logging.info(f"starting daemon {daemon_name}")
+            daemonize(daemon_name)
+        
+        try:
+            initialize_message_system()
+
+            def handle_signal(signum, frame):
+                stop_message_system(wait=False)
+
+            signal.signal(signal.SIGTERM, handle_signal)
+            signal.signal(signal.SIGINT, handle_signal)
+
+            start_message_system()
+            wait_message_system()
+
+        except KeyboardInterrupt:
+            stop_message_system()
+
+        except Exception as e:
+            logging.error(f"uncaught exception {e}")
+            sys.exit(1)
+
+        sys.exit(0)
+
+    else:
+        logging.error("You must specify either --start or --stop for this service.")
+        sys.exit(1)
+
+message_system_parser = subparsers.add_parser('message-system',
+    help="Starts/stops the message dispatch system, responsible for dispatching messages to other systems.")
+message_system_parser.set_defaults(func=message_system)
+
 
 # ============================================================================
 # start GUI (non-apache version)
@@ -1795,6 +1889,71 @@ reload_alert_parser.set_defaults(func=reload_alerts)
 # ============================================================================
 # general utility commands
 #
+
+def display_messages(args):
+    from saq.database import Message, MessageRouting
+    from sqlalchemy.orm import joinedload
+    for message in saq.db.query(Message).options(joinedload('routing')).order_by(Message.id):
+        print(message.content)
+        for message_route in message.routing:
+            print(f"\t{message_route.route}\t{message_route.destination}")
+
+    sys.exit(0)
+
+display_messages_parser = subparsers.add_parser('display-messages',
+    help="Displays any queued messages that have not been sent yet.")
+display_messages_parser.set_defaults(func=display_messages)
+
+def send_message(args):
+    from saq.messaging import send_message, initialize_message_system
+    initialize_message_system()
+    send_message(args.message, args.message_type)
+    sys.exit(0)
+
+send_message_parser = subparsers.add_parser('send-message',
+    help="Sends the given message (and type) to the messaging system.")
+send_message_parser.add_argument('message',
+    help="The plain text message to send.")
+send_message_parser.add_argument('-t', '--message-type', required=False, default=None,
+    help="The type of the message (determines the route.) Default sends to all routes.")
+send_message_parser.set_defaults(func=send_message)
+
+def dispatch_messages(args):
+    from saq.messaging import initialize_message_system, start_message_system, wait_message_system
+    initialize_message_system()
+    start_message_system()
+    wait_message_system()
+    sys.exit(0)
+
+dispatch_messages_parser = subparsers.add_parser('dispatch-messages',
+    help="Dispatches all the messages in the message queue.")
+dispatch_messages_parser.set_defaults(func=dispatch_messages)
+
+def clear_messages(args):
+    from saq.database import Message, MessageRouting
+    # if we specified a route then we clear all the messages sent to that route that match the given content
+    if args.route is not None:
+        sql = MessageRouting.__table__.delete().where(MessageRouting.route == args.route)
+        if args.message_content is not None:
+            sql = sql.where(MessageRouting.message_id.in_(saq.db.query(Message.id).filter(Message.content.like('%{}%'.format(args.message_content)))))
+    else:
+        if args.message_content is not None:
+            sql = Message.__table__.delete().where(Message.content.like('%{}%'.format(args.message_content)))
+        else:
+            sql = Message.__table__.delete()
+
+    saq.db.execute(sql)
+    saq.db.execute(Message.__table__.delete().where(Message.id.notin_(saq.db.query(MessageRouting.message_id))))
+    saq.db.commit()
+    sys.exit(0)
+
+clear_messages_parser = subparsers.add_parser('clear-messages',
+    help="Clears all or part of the message queue, depending on the options. By default all messages are cleared out.")
+clear_messages_parser.add_argument('-r', '--route', required=False, default=None,
+    help="Limit to messages sent to the given route.")
+clear_messages_parser.add_argument('-m', '--message-content', required=False, default=None,
+    help="Limit to messages that have content that matches the this option.")
+clear_messages_parser.set_defaults(func=clear_messages)
 
 def submit_failed_submissions(args):
     import saq
