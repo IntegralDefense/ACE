@@ -97,24 +97,19 @@ class PhishfryRemediationSystem(EmailRemediationSystem):
                 if messages:
                     message += '\n' + '\n'.join(messages)
 
-                saq.db.execute(Remediation.__table__.update().values(
-                    result=message,
-                    successful=pf_result[pf_recipient].success and pf_result[pf_recipient].message in [ 'removed', 'restored' ],
-                    status=REMEDIATION_STATUS_COMPLETED).where(
-                    Remediation.id==remediation.id))
-                saq.db.commit()
+                remediation.result = message
+                remediation.successful = pf_result[pf_recipient].success and pf_result[pf_recipient].message in [ 'removed', 'restored' ]
+                remediation.status = REMEDIATION_STATUS_COMPLETED
 
                 # we found the recipient in this EWS acount so we don't need to keep looking in any others ones
                 break
 
         # did we find it?
         if not found_recipient:
-            saq.db.execute(Remediation.__table__.update().values(
-                result="cannot find mailbox",
-                success=False,
-                status=REMEDIATION_STATUS_COMPLETED).where(
-                id=remediation.id))
-            saq.db.commit()
+            remediation.result = "cannot find mailbox"
+            remediation.successful = False
+            remediation.status = REMEDIATION_STATUS_COMPLETED
             logging.warning(f"could not find message-id {message_id} sent to {recipient}")
 
         logging.info("completed remediation request {remediation}")
+        return remediation

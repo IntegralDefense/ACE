@@ -768,7 +768,7 @@ correlation_engine_parser.set_defaults(func=correlation_engine)
 #
 
 def remediation_system(args):
-    from saq.remediation import RemediationSystem
+    from saq.remediation import initialize_remediation_system_manager, start_remediation_system_manager, stop_remediation_system_manager, wait_remediation_system_manager
 
     daemon_name = 'remediation-system'
 
@@ -782,19 +782,19 @@ def remediation_system(args):
             daemonize(daemon_name)
         
         try:
-            system = RemediationSystem()
+            initialize_remediation_system_manager()
 
             def handle_signal(signum, frame):
-                system.stop(wait=False)
+                stop_remediation_system_manager(wait=False)
 
             signal.signal(signal.SIGTERM, handle_signal)
             signal.signal(signal.SIGINT, handle_signal)
 
-            system.start()
-            system.wait()
+            start_remediation_system_manager()
+            wait_remediation_system_manager()
 
         except KeyboardInterrupt:
-            system.stop()
+            stop_remediation_system_manager()
 
         except Exception as e:
             logging.error(f"uncaught exception {e}")
@@ -1886,6 +1886,10 @@ reload_alert_parser.set_defaults(func=reload_alerts)
 # general utility commands
 #
 
+#
+# messaging
+#
+
 def display_messages(args):
     from saq.database import Message, MessageRouting
     from sqlalchemy.orm import joinedload
@@ -2193,12 +2197,73 @@ search_archive_parser.add_argument('search_items', nargs='*',
     help="One or more things to search for.  Each query will be searhed for individually.")
 search_archive_parser.set_defaults(func=search_archive)
 
-def remediate_email(args):
+#
+# remediation
+#
+
+def display_remediation_requests(args):
+    import saq
+    from saq.remediation.constants import REMEDIATION_STATUS_NEW, REMEDIATION_STATUS_IN_PROGRESS
+    from saq.database import Remediation
+
+    #print(['ID', 'STATUS', 'TYPE', 'ACTION', 'DATE', 'TARGET']))
+    row_format = "{:<8}{:<10}{:<8}{:<9}{:<20} {}"
+    print(row_format.format('ID', 'STATUS', 'TYPE', 'ACTION', 'DATE', 'TARGET'))
+    for r in saq.db.query(Remediation).filter(Remediation.company_id == saq.COMPANY_ID,
+                                              Remediation.status.in_([REMEDIATION_STATUS_NEW, 
+                                                                      REMEDIATION_STATUS_IN_PROGRESS]))\
+                                      .order_by(Remediation.id):
+
+        print(row_format.format(r.id, r.status, r.type, r.action, str(r.insert_date), r.key))
+        #print('\t'.join(map(str, [r.id, r.status, r.type, r.action, r.insert_date, r.key])))
+
+    sys.exit(0)
+
+display_remediation_parser = subparsers.add_parser('display-remediation-requests', 
+    help="Displays the remediation requests currently in the queue or in processing.")
+display_remediation_parser.set_defaults(func=display_remediation_requests)
+
+def clear_remediation_request(args):
+    import saq
+    from saq.database import Remediation
+    from saq.remediation import REMEDIATION_STATUS_NEW
+    from sqlalchemy import and_
+
+    if not args.remediation_ids and not args.all:
+        logging.error("no remediation ids were specified and the --all option was not used")
+        sys.exit(1)
+    
+    clause = and_(Remediation.status == REMEDIATION_STATUS_NEW,
+                  Remediation.lock == None,
+                  Remediation.company_id == saq.COMPANY_ID)
+    if not args.all and args.remediation_ids:
+        clause = and_(clause, Remediation.id.in_(args.remediation_ids))
+
+    logging.info("deleted {} requests".format(
+        saq.db.execute(Remediation.__table__.delete().where(clause)).rowcount))
+    
+    saq.db.commit()
+    sys.exit(0)
+
+clear_remediation_request_parser = subparsers.add_parser('clear-remediation-requests',
+    help="Clears one or more remediation requests.")
+clear_remediation_request_parser.add_argument('-a', '--all', action='store_true', default=False,
+    help="Clears all remediation requests that are not locked or have expired locks.")
+clear_remediation_request_parser.add_argument('remediation_ids', nargs=argparse.REMAINDER,
+    help="Zero or more remediation IDs to clear which can be obtained using the display-remediation-request command.")
+clear_remediation_request_parser.set_defaults(func=clear_remediation_request)
+
+def remediate_emails(args):
     from saq.database import User
-    from saq.remediation import get_remediation_targets, load_remediation_system
+    from saq.remediation import get_remediation_targets, initialize_remediation_system_manager, request_remediation, \
+                                REMEDIATION_TYPE_EMAIL, request_restoration
+
+    initialize_remediation_system_manager()
 
     user_id = saq.db.query(User).filter(User.username == args.user_name).one().id
-    remediation_system = load_remediation_system(args.remediation_system)
+
+    if args.from_stdin:
+        args.targets.extend([_.strip() for _ in sys.stdin])
 
     if args.message_id_only:
         remediation_targets = get_remediation_targets(args.targets)
@@ -2208,15 +2273,21 @@ def remediate_email(args):
         while targets:
             recipient = targets.pop()
             message_id = targets.pop()
-            result = remediation_system.execute_remediation(
-                message_id, recipient, user_id=user_id, comment=args.comment, company_id=saq.COMPANY_ID)
+            target_func = request_remediation
+            if args.restore:
+                target_func = request_restoration
+            result = target_func(REMEDIATION_TYPE_EMAIL, message_id, recipient, 
+                                         user_id=user_id, comment=args.comment, company_id=saq.COMPANY_ID)
+            print(f"got result {result}")
 
     sys.exit(0)
 
 remediate_email_parser = subparsers.add_parser('remediate-emails',
     help="Remediate the given emails by message-id and recipient.")
-#remediate_email_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
-    #help="Read the message-ids and recipients from standard input.")
+remediate_email_parser.add_argument('--restore', required=False, action='store_true', default=False,
+    help="Restore the given emails instead of removing them.")
+remediate_email_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
+    help="Read the message-ids and/or recipients from standard input.")
 remediate_email_parser.add_argument('-m', '--message-id-only', required=False, default=False, action='store_true',
     help="Assume all parameters are message-ids. Use email archive database to determine recipients automatically.")
 remediate_email_parser.add_argument('--remediation-system', required=False, default='phishfry', choices=['phishfry'],
@@ -2227,45 +2298,7 @@ remediate_email_parser.add_argument('-u', '--user-name', required=False,
     help="The username to execute the remediation as. Defaults to the current user name.")
 remediate_email_parser.add_argument('targets', nargs='*',
     help="One or more message-ids to remediate. You can also specify --from-stdin.")
-remediate_email_parser.set_defaults(func=remediate_email)
-
-def unremediate_email(args):
-    from saq.database import User
-    from saq.remediation import get_restoration_targets, load_remediation_system
-
-    user_id = saq.db.query(User).filter(User.username == args.user_name).one().id
-    remediation_system = load_remediation_system(args.remediation_system)
-
-    if args.message_id_only:
-        restoration_targets = get_restoration_targets(args.targets)
-        print(restoration_targets)
-    else:
-        targets = args.targets[:]
-        restoration_targets = []
-        while targets:
-            recipient = targets.pop()
-            message_id = targets.pop()
-            result = remediation_system.execute_restoration(
-                message_id, recipient, user_id=user_id, comment=args.comment, company_id=saq.COMPANY_ID)
-
-    #import pdb; pdb.set_trace()
-    sys.exit(0)
-
-unremediate_email_parser = subparsers.add_parser('unremediate-emails',
-    help="Restore the given emails by message-id [ and recipient. ]")
-#remediate_email_parser.add_argument('--from-stdin', required=False, dest='from_stdin', action='store_true', default=False,
-    #help="Read the message-ids and recipients from standard input.")
-unremediate_email_parser.add_argument('-m', '--message-id-only', required=False, default=False, action='store_true',
-    help="Assume all parameters are message-ids.")
-unremediate_email_parser.add_argument('--remediation-system', required=False, default='phishfry', choices=['phishfry'],
-    help="Select which remediation system to use. Defaults to phishfry.")
-unremediate_email_parser.add_argument('-c', '--comment', required=False, default=None,
-    help="An optional comment to add to the remediation.")
-unremediate_email_parser.add_argument('-u', '--user-name', required=False,
-    help="The username to execute the remediation as. Defaults to the current user name.")
-unremediate_email_parser.add_argument('targets', nargs='*',
-    help="One or more message-ids to restore. You can also specify --from-stdin.")
-unremediate_email_parser.set_defaults(func=unremediate_email)
+remediate_email_parser.set_defaults(func=remediate_emails)
 
 def remediate_email_old(args):
     from saq.remediation import _create_remediation_email, _remediate_email_lotus, _remediate_email_o365
