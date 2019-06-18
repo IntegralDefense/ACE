@@ -281,6 +281,13 @@ def splunk_query(search_string, *args, **kwargs):
 
 def initialize_test_environment():
     global test_dir
+    #import saq
+
+    # indicate that we are unit testing
+    # this changes the behavior of ACE in various places
+    #code = compile('saq.UNIT_TESTING = True', '<string>', 'exec')
+    #import dis; import pdb; pdb.set_trace()
+    #saq.UNIT_TESTING = True
 
     # there is no reason to run anything as root
     if os.geteuid() == 0:
@@ -567,9 +574,16 @@ class ACEBasicTestCase(TestCase):
         self.reset_email_archive()
         self.reset_crawlphish()
         self.reset_log_exports()
+        self.reset_var_dir()
 
         # re-enable encryption in case we disabled it
         saq.ENCRYPTION_PASSWORD = get_aes_key('password')
+
+    def reset_var_dir(self):
+        # clears out the var directory
+        shutil.rmtree(os.path.join(saq.DATA_DIR, 'var'))
+        os.mkdir(os.path.join(saq.DATA_DIR, 'var'))
+        os.mkdir(os.path.join(saq.DATA_DIR, 'var', 'tmp'))
 
     def reset_log_exports(self):
         # reset splunk export logs
@@ -676,6 +690,7 @@ class ACEBasicTestCase(TestCase):
         c.execute("INSERT INTO tags ( `id`, `name` ) VALUES ( 1, 'whitelisted' )")
         c.execute("DELETE FROM events")
         c.execute("DELETE FROM remediation")
+        c.execute("DELETE FROM messages")
         c.execute("DELETE FROM company WHERE name != 'default'")
         c.execute("DELETE FROM nodes WHERE is_local = 1")
         c.execute("UPDATE nodes SET is_primary = 0")

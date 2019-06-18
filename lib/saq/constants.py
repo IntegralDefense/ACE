@@ -470,3 +470,4 @@ ANALYSIS_TYPE_FAQUEUE = 'faqueue'
 # supported intelligence databases
 INTEL_DB_SIP = 'sip'
 INTEL_DB_CRITS = 'crits'
+
