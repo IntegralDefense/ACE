@@ -17,7 +17,7 @@ import saq.constants
 from saq.analysis import RootAnalysis
 from saq.error import report_exception
 from saq.performance import track_execution_time
-from saq.util import abs_path
+from saq.util import abs_path, validate_uuid
 
 import pytz
 import businesstime
@@ -342,7 +342,7 @@ def get_db_connection(*args, **kwargs):
 # new school database connections
 import logging
 import os.path
-from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, DATE, text, create_engine, Text, Enum, func
+from sqlalchemy import Column, Integer, BigInteger, String, ForeignKey, DateTime, TIMESTAMP, DATE, text, create_engine, Text, Enum, func
 from sqlalchemy.dialects.mysql import BOOLEAN, VARBINARY, BLOB
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import sessionmaker, relationship, reconstructor, backref, validates, scoped_session
@@ -1866,7 +1866,7 @@ class Remediation(Base):
         primary_key=True)
 
     type = Column(
-        Enum('email'),
+        Enum('email', 'test'), # should use the values in saq.remediation.constants
         nullable=False,
         default='email')
 
@@ -1897,11 +1897,89 @@ class Remediation(Base):
     comment = Column(
         String,
         nullable=True)
+    
+    @property
+    def alert_uuids(self):
+        """If the comment is a comma separated list of alert uuids, then that list is provided here as a property.
+           Otherwise this returns an emtpy list."""
+        result = []
+        if self.comment is None:
+            return result
+
+        for _uuid in self.comment.split(','):
+            try:
+                validate_uuid(_uuid)
+                result.append(_uuid)
+            except ValueError:
+                continue
+
+        return result
 
     successful = Column(
         BOOLEAN,
         nullable=True,
-        default=False)
+        default=None)
+
+    company_id = Column(
+        Integer,
+        ForeignKey('company.id'),
+        nullable=True)
+
+    lock = Column(
+        String(36), 
+        nullable=True)
+
+    lock_time = Column(
+        DateTime,
+        nullable=True)
+
+    status = Column(
+        Enum('NEW', 'IN_PROGRESS', 'COMPLETED'),
+        nullable=False,
+        default='NEW')
+
+class Message(Base):
+
+    __tablename__ = 'messages'
+
+    id = Column(
+        BigInteger,
+        primary_key=True)
+
+    content = Column(
+        String,
+        nullable=False)
+
+class MessageRouting(Base):
+
+    __tablename__ = 'message_routing'
+
+    id = Column(
+        BigInteger,
+        primary_key=True)
+
+    message_id = Column(
+        BigInteger,
+        ForeignKey('messages.id'),
+        nullable=False)
+
+    message = relationship('saq.database.Message', foreign_keys=[message_id], backref='routing')
+
+    route = Column(
+        String,
+        nullable=False)
+
+    destination = Column(
+        String,
+        nullable=False)
+
+    lock = Column(
+        String,
+        nullable=True)
+
+    lock_time = Column(
+        DateTime,
+        nullable=True)
 
 class Workload(Base):
 
