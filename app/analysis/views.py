@@ -1,3 +1,4 @@
+import calendar
 import datetime
 import importlib
 import io
@@ -20,6 +21,7 @@ import zipfile
 
 from collections import defaultdict
 from datetime import timedelta
+from dateutil.relativedelta import relativedelta
 from email.encoders import encode_base64
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -2625,7 +2627,7 @@ def generate_intel_tables(sip=True, crits=False):
     indicator_statuses = crits.indicators.distinct("status") if crits else None
     if sip:
         indicator_statuses = sip.get('/api/indicators/status')
-        indicator_statuses = [s['value'] for s in indicator_statuses]
+        indicator_statuses = [s['value'] for s in indicator_statuses if s['value'] != 'FA']
     status_counts = []
     for status in indicator_statuses:
         count = crits.indicators.find( { 'status': status }).count() if crits else None
@@ -2639,6 +2641,95 @@ def generate_intel_tables(sip=True, crits=False):
     if crits:
         client.close()
     return source_cnt_df, status_cnt_df 
+
+
+def get_month_day_range(date):
+    """
+    For a date 'date' returns the start and end dateitime for the month of 'date'.
+
+    Month with 31 days:
+    >>> date = datetime(2011, 7, 31, 5, 27, 18)
+    >>> get_month_day_range(date)
+    (datetime.datetime(2011, 7, 1, 0, 0), datetime.datetime(2011, 7, 31, 23, 59, 59))
+
+    Month with 28 days:
+    >>> datetime(2011, 2, 15, 17, 8, 45)
+    >>> get_month_day_range(date)
+    (datetime.datetime(2011, 2, 1, 0, 0), datetime.datetime(2011, 2, 28, 23, 59, 59))
+    """
+    start_time = date.replace(day=1, hour=0, minute=0, second=0)
+    last_day = calendar.monthrange(date.year, date.month)[1]
+    end_time = date.replace(day=last_day, hour=23, minute=59, second=59)
+    return start_time, end_time
+
+
+def get_month_ranges(daterange_start, daterange_end):
+    """
+    Take whatever start and end datetime and return a dictionary where the keys are %Y%m
+    formatted and the values are tuples with start and end datetimes respective to the month (key).
+    """
+    month_ranges = {}
+    month = datetime.datetime.strftime(daterange_start, '%Y%m')
+    start_time, end_time = get_month_day_range(daterange_start)
+    if end_time >= daterange_end:
+        # range contained in month
+        month_ranges[month] = (daterange_start, daterange_end)
+        return month_ranges
+
+    if daterange_start != end_time: # edge case
+        month_ranges[month] = (daterange_start, end_time)
+    
+    while True:
+        # move to first second of next month
+        start_time = start_time + relativedelta(months=1)
+        start_time, end_time = get_month_day_range(start_time)
+        month = datetime.datetime.strftime(start_time, '%Y%m')
+
+        if end_time >= daterange_end:
+            # range contained in current month
+            if start_time != daterange_end: # edge case
+                month_ranges[month] = (start_time, daterange_end)
+            return month_ranges
+        else:
+            month_ranges[month] = (start_time, end_time)
+
+
+def get_created_OR_modified_indicators_during(daterange_start, daterange_end, created=False, modified=False):
+    """
+    Use SIP to return a DataFrame table representing the status of all indicators created OR modified during
+    daterange and by the month (%Y%m) they were created in.i
+
+    :param datetime daterange_start: The datetime representing the start time of the daterange
+    :param datetime daterange_end: The datetime representing the end time of the daterange
+    :param bool created: If True, return table of created indicators
+    :param bool modified: If True, return table of modified indicators
+    :return: Pandas DataFrame table
+    """
+    sip_host = saq.CONFIG.get("sip", "remote_address")
+    api_key = saq.CONFIG.get("sip", "api_key")
+    sc = pysip.Client(sip_host, api_key, verify=False) 
+   
+    if created is modified: # they should never be the same
+        logging.warning("Created and Modfied flags both set to '{}'".format(created))
+        return False
+    table_type = "created" if created else "modified" 
+
+    statuses = sc.get('/api/indicators/status')
+    statuses = [s['value'] for s in statuses if s['value'] != 'FA']
+
+    status_by_date = {}
+    month_ranges = get_month_ranges(daterange_start, daterange_end)
+    for month, daterange in month_ranges.items():
+        status_counts = {}
+        for status in statuses:
+            status_counts[status] = sc.get('/indicators?status={0}&{1}_after={2}&{3}_before={4}&count'
+                                           .format(status, table_type, daterange[0], table_type, daterange[1]))['count']
+        status_by_date[month] = status_counts
+
+    status_by_month = pd.DataFrame.from_dict(status_by_date, orient='index')
+    status_by_month.name = "Count of Indicator Status by {} Month".format(table_type.capitalize())
+    return status_by_month
+
 
 @analysis.route('/metrics', methods=['GET', 'POST'])
 @login_required
@@ -2811,15 +2902,28 @@ def metrics():
             if not events.empty:
                 tables.append(events)
 
-        # generate CRITS indicator intel tables
+        # generate SIP ;-) indicator intel tables
+        # XXX add support for using CRITS/SIP based on what ACE is configured to use
         if 'indicator_intel' in metric_actions:
             try:
                 indicator_source_table, indicator_status_table = generate_intel_tables()
                 tables.append(indicator_source_table)
                 tables.append(indicator_status_table) 
             except Exception as e:
-                flash("Error generating intel tables. Is 'mongodb_uri' specified in the configuration? : {0}".format(str(e)))
-
+                flash("Problem generating overall source and status indicator tables : {0}".format(str(e)))
+            # Count all created indicators during daterange by their status
+            try:
+                created_indicators = get_created_OR_modified_indicators_during(daterange_start, daterange_end, created=True)
+                if created_indicators is not False:
+                    tables.append(created_indicators)
+            except Exception as e:
+                flash("Problem generating created indicator table: {0}".format(str(e)))
+            try:
+                modified_indicators = get_created_OR_modified_indicators_during(daterange_start, daterange_end, modified=True)
+                if modified_indicators is not False:
+                    tables.append(modified_indicators)
+            except Exception as e:
+                flash("Problem generating modified indicator table: {0}".format(str(e)))
 
     if download_results:
         outBytes = io.BytesIO()
