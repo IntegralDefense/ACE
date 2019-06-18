@@ -38,6 +38,7 @@ from pymongo import MongoClient
 import saq
 import saq.analysis
 import saq.intel
+import saq.remediation
 import virustotal
 import vxstreamlib
 import splunklib
@@ -3981,10 +3982,11 @@ def query_message_ids():
     return response
 
 class EmailRemediationTarget(object):
-    def __init__(self, archive_id=None, message_id=None, recipient=None):
+    def __init__(self, archive_id=None, message_id=None, recipient=None, company_id=None):
         self.archive_id = archive_id
         self.message_id = message_id
         self.recipient = recipient
+        self.company_id = company_id
         self.result_text = None
         self.result_success = False
 
@@ -3998,8 +4000,16 @@ class EmailRemediationTarget(object):
             'archive_id': self.archive_id,
             'message_id': self.message_id,
             'recipient': self.recipient,
+            'company_id': self.company_id,
             'result_text': self.result_text,
             'result_success': self.result_success }
+
+#
+# XXX
+# remediation is a mess
+# it's gone through a bunch of iterations starting with some custom Lotus Notes nonsense
+# to what it is today
+#
 
 # the archive_id and config sections are encoded in the name of the form element
 # XXX probably a gross security flaw
@@ -4009,19 +4019,36 @@ INPUT_CHECKBOX_REGEX = re.compile(r'^cb_archive_id_([0-9]+)_source_(.+)$')
 @login_required
 def remediate_emails():
 
+    alert_uuids = []
+    if 'alert_uuids' in request.values:
+        alert_uuids = json.loads(request.values['alert_uuids'])
+
     action = request.values['action']
-    use_phishfry = request.values['use_phishfry'] == 'true' # string representation of javascript boolean value true
+
+    # if this is set to True then we issue the request now and wait for the response
+    # if this is false then the remediation request is sent to the remediation system
+    do_it_now = request.values['do_it_now'] == 'true' # string representation of javascript boolean value true
+
     assert action in [ 'restore', 'remove' ];
 
     # generate our list of archive_ids from the list of checkboxes that were checked
-    archive_ids = { }
+    archive_ids = { } # key = source (email_archive_blah) which corresponds to database_email_archive_blah
+    archive_company_id = { } # key = same as above, value = company_id for that email archive source
     for key in request.values.keys():
         if key.startswith('cb_archive_id_'):
             m = INPUT_CHECKBOX_REGEX.match(key)
             if m:
                 archive_id, source = m.groups()
+                section_key = f'database_{source}'
+                if section_key not in saq.CONFIG:
+                    logging.error(f"missing config section {section_key}")
+                    continue
+
                 if source not in archive_ids:
                     archive_ids[source] = []
+                    # look up what company_id this email archive source is
+                    archive_company_id[source] = saq.CONFIG[section_key].getint('company_id', fallback=saq.COMPANY_ID)
+                    logging.debug(f"got company_id {archive_company_id[source]} for {source}")
 
                 archive_ids[source].append(m.group(1))
 
@@ -4042,7 +4069,7 @@ def remediate_emails():
             for row in c:
                 archive_id, field, value = row
                 if archive_id not in targets:
-                    targets[archive_id] = EmailRemediationTarget(archive_id=archive_id)
+                    targets[archive_id] = EmailRemediationTarget(archive_id=archive_id, company_id=archive_company_id[db_name])
 
                 if field == 'message_id':
                     targets[archive_id].message_id = value.decode(errors='ignore')
@@ -4061,26 +4088,62 @@ def remediate_emails():
 
     results = []
 
-    import saq.remediation
-    #from saq.remediation import remediate_emails, unremediate_emails
-
     try:
         if action == 'remove':
-            results = saq.remediation.remediate_emails(params, user_id=current_user.id, use_phishfry=use_phishfry)
+            if not do_it_now:
+                for target in targets.values():
+                    try:
+                        r_id = saq.remediation.request_remediation(saq.remediation.constants.REMEDIATION_TYPE_EMAIL,
+                                                                   target.message_id,
+                                                                   target.recipient,
+                                                                   user_id=current_user.id,
+                                                                   company_id=target.company_id,
+                                                                   comment=','.join(alert_uuids))
+
+                        target.result_text = f"request remediation (id {r_id})"
+                        target.result_success = True
+
+                    except Exception as e:
+                        target.result_text = str(e)
+                        target.result_success = False
+            else:
+                # TODO refactor this to use the classes of the new system
+                results = saq.remediation.remediate_emails(params, user_id=current_user.id)
+
         elif action == 'restore':
-            results = saq.remediation.unremediate_emails(params, user_id=current_user.id, use_phishfry=use_phishfry)
+            if not do_it_now:
+                for target in targets.values():
+                    try:
+                        r_id = saq.remediation.request_restoration(saq.remediation.constants.REMEDIATION_TYPE_EMAIL,
+                                                                   target.message_id,
+                                                                   target.recipient,
+                                                                   user_id=current_user.id,
+                                                                   company_id=target.company_id,
+                                                                   comment=','.join(alert_uuids))
+
+                        target.result_text = f"request restoration (id {r_id})"
+                        target.result_success = True
+
+                    except Exception as e:
+                        target.result_text = str(e)
+                        target.result_success = False
+            else:
+                # TODO refactor this to use the classes of the new system
+                results = saq.remediation.unremediate_emails(params, user_id=current_user.id)
+
     except Exception as e:
         logging.error("unable to perform email remediation action {}: {}".format(action, e))
         for target in targets.values():
             target.result_text = str(e)
             target.result_success = False
 
-    for result in results:
-        message_id, recipient, result_code, result_text = result
-        for target in targets.values():
-            if target.message_id == message_id and target.recipient == recipient:
-                target.result_text = '({}) {}'.format(result_code, result_text)
-                target.result_success = str(result_code) == '200'
+    if do_it_now:
+        for result in results:
+            message_id, recipient, result_code, result_text = result
+            for target in targets.values():
+                if target.message_id == message_id and target.recipient == recipient:
+                    target.result_text = '({}) {}'.format(result_code, result_text)
+                    target.result_success = str(result_code) == '200'
 
     # return JSON formatted results
     for key in targets.keys():

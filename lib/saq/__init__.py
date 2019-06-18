@@ -17,7 +17,9 @@ from getpass import getpass
 
 import ace_api
 from saq.constants import *
+from saq.messaging import initialize_message_system
 from saq.network_semaphore import initialize_fallback_semaphores
+from saq.remediation import initialize_remediation_system_manager
 from saq.sla import SLA
 from saq.util import create_directory
 
@@ -563,5 +565,9 @@ def initialize(saq_home=None,
     # are we running as a daemon?
     if args:
         DAEMON_MODE = args.daemon
+
+    # initialize other systems
+    initialize_remediation_system_manager()
+    initialize_message_system()
 
     logging.debug("SAQ initialized")
