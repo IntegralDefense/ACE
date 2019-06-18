@@ -318,44 +318,46 @@ def _process_email_remediation_results(action, user_id, comment, results):
             result_text = '({}) {}'.format(result_code, result_text)
             result_success = str(result_code) == '200'
             c.execute("""INSERT INTO remediation ( `type`, `action`, `user_id`, `key`, 
-                                                   `result`, `comment`, `successful` ) 
-                         VALUES ( 'email', %s, %s, %s, %s, %s, %s )""", (
+                                                   `result`, `comment`, `successful`, `status` ) 
+                         VALUES ( 'email', %s, %s, %s, %s, %s, %s, %s )""", (
                       action,
                       user_id,
                       f'{message_id}:{recipient}',
                       result_text,
                       comment,
-                      result_success))
+                      result_success,
+                      REMEDIATION_STATUS_COMPLETED))
 
         db.commit()
     
 def remediate_emails(*args, user_id=None, comment=None, **kwargs):
     assert user_id
 
-    if use_phishfry:
-        results = _execute_phishfry_remediation(ACTION_REMEDIATE, *args, **kwargs)
-    else:
-        results = _remediate_email_o365_EWS(*args, **kwargs)
+    #if use_phishfry:
+        #results = _execute_phishfry_remediation(ACTION_REMEDIATE, *args, **kwargs)
+    #else:
+        #results = _remediate_email_o365_EWS(*args, **kwargs)
 
-    #_process_email_remediation_results(ACTION_REMEDIATE, user_id, comment, results)
+    results = _remediate_email_o365_EWS(*args, **kwargs)
+    _process_email_remediation_results(ACTION_REMEDIATE, user_id, comment, results)
     return results
 
-def unremediate_emails(*args, use_phishfry=False, user_id=None, comment=None, **kwargs):
+def unremediate_emails(*args, user_id=None, comment=None, **kwargs):
     assert user_id
 
-    if use_phishfry:
-        results = _execute_phishfry_remediation(ACTION_RESTORE, *args, **kwargs)
-    else:
-        results = _unremediate_email_o365_EWS(*args, **kwargs)
+    #if use_phishfry:
+        #results = _execute_phishfry_remediation(ACTION_RESTORE, *args, **kwargs)
+    #else:
 
-    #_process_email_remediation_results(ACTION_RESTORE, user_id, comment, results)
+    results = _unremediate_email_o365_EWS(*args, **kwargs)
+    _process_email_remediation_results(ACTION_RESTORE, user_id, comment, results)
     return results
 
 def execute_remediation(remediation):
     from saq.database import Remediation
 
     message_id, recipient = remediation.key.split(':', 2)
-    results = remediate_emails((message_id, recipient), use_phishfry=True, user_id=remediation.user_id, comment=remediation.comment)
+    results = remediate_emails((message_id, recipient), user_id=remediation.user_id, comment=remediation.comment)
     for result in results:
         message_id, recipient, result_code, result_text = result
         result_text = '({}) {}'.format(result_code, result_text)
@@ -925,11 +927,24 @@ class RemediationSystem(object):
             if remediation_result is None:
                 raise RuntimeError("forgot to return remediation object in execute_request")
 
-            if self.message_on_success:
+            alert_references = []
+            for alert_uuid in remediation_result.alert_uuids:
+                alert_references.append("referencing alert: {}analysis?direct={}".format(saq.CONFIG['gui']['base_uri'], alert_uuid))
+
+            if alert_references:
+                alert_references = '\n' + '\n'.join(alert_references)
+            else:
+                alert_references = ""
+
+            if remediation_result.successful and self.message_on_success:
                 try:
-                    saq.db.commit()
-                    remediation = saq.db.query(Remediation).filter(Remediation.id == remediation.id).one()
-                    send_message(f"remediation for {remediation.key} completed: {remediation.result}", MESSAGE_TYPE_REMEDIATION_SUCCESS)
+                    send_message(f"remediation for {remediation_result.key} completed: {remediation_result.result}{alert_references}", MESSAGE_TYPE_REMEDIATION_SUCCESS)
+                except Exception as e:
+                    logging.error(f"unable to send completed message: {e}")
+
+            elif not remediation_result.successful and self.message_on_error:
+                try:
+                    send_message(f"<!channel> :rotating_light: remediation for {remediation_result.key} failed:\n{remediation_result.result}{alert_references}", MESSAGE_TYPE_REMEDIATION_SUCCESS)
                 except Exception as e:
                     logging.error(f"unable to send completed message: {e}")
 
@@ -953,7 +968,7 @@ class RemediationSystem(object):
                 saq.db.commit()
 
                 if self.message_on_error:
-                    send_message(f"attempt to execute remediation {remediation.key} failed: {e}", MESSAGE_TYPE_REMEDIATION_FAILURE)
+                    send_message(f"<!channel> :rotating_light: attempt to execute remediation {remediation.key} failed:\n{e}{alert_references}", MESSAGE_TYPE_REMEDIATION_FAILURE)
                     
             except Exception as e:
                 logging.error(f"unable to record error for remediation item {remediation.id}: {e}")

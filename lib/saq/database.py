@@ -17,7 +17,7 @@ import saq.constants
 from saq.analysis import RootAnalysis
 from saq.error import report_exception
 from saq.performance import track_execution_time
-from saq.util import abs_path
+from saq.util import abs_path, validate_uuid
 
 import pytz
 import businesstime
@@ -1897,6 +1897,23 @@ class Remediation(Base):
     comment = Column(
         String,
         nullable=True)
+    
+    @property
+    def alert_uuids(self):
+        """If the comment is a comma separated list of alert uuids, then that list is provided here as a property.
+           Otherwise this returns an emtpy list."""
+        result = []
+        if self.comment is None:
+            return result
+
+        for _uuid in self.comment.split(','):
+            try:
+                validate_uuid(_uuid)
+                result.append(_uuid)
+            except ValueError:
+                continue
+
+        return result
 
     successful = Column(
         BOOLEAN,
