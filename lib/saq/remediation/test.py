@@ -104,6 +104,40 @@ class TestCase(ACEBasicTestCase):
         self.assertTrue(manager.systems['test'].remediation_executed.is_set())
         self.assertEquals(len(saq.db.query(Remediation).filter(Remediation.id == remediation_id, Remediation.status == REMEDIATION_STATUS_COMPLETED).all()), 1)
 
+    def test_worker_loop(self):
+
+        # test that a single worker can work two items
+        
+        # create a single worker
+        saq.CONFIG['engine']['max_concurrent_remediation_count'] = '1'
+
+        manager = initialize_remediation_system_manager()
+        start_remediation_system_manager()
+
+        remediation_id_1 = request_remediation(REMEDIATION_TYPE_TEST, '<message_id_1>', '<recipient_1@localhost>', 
+                                             user_id=saq.test.UNITTEST_USER_ID, company_id=saq.COMPANY_ID)
+
+        wait_for(
+            lambda: len(saq.db.query(Remediation).filter(
+                Remediation.id == remediation_id_1, 
+                Remediation.status == REMEDIATION_STATUS_COMPLETED).all()) > 0,
+            1, 5)
+
+        remediation_id_2 = request_remediation(REMEDIATION_TYPE_TEST, '<message_id_2>', '<recipient_2@localhost>', 
+                                             user_id=saq.test.UNITTEST_USER_ID, company_id=saq.COMPANY_ID)
+
+        wait_for(
+            lambda: len(saq.db.query(Remediation).filter(
+                Remediation.id == remediation_id_2, 
+                Remediation.status == REMEDIATION_STATUS_COMPLETED).all()) > 0,
+            1, 5)
+
+        saq.db.commit()
+        self.assertEquals(len(saq.db.query(Remediation).filter(Remediation.id == remediation_id_1, Remediation.status == REMEDIATION_STATUS_COMPLETED).all()), 1)
+        self.assertEquals(len(saq.db.query(Remediation).filter(Remediation.id == remediation_id_2, Remediation.status == REMEDIATION_STATUS_COMPLETED).all()), 1)
+
+        stop_remediation_system_manager()
+
     def test_automation_failure(self):
         manager = initialize_remediation_system_manager()
         start_remediation_system_manager()
