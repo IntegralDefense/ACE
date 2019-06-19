@@ -34,6 +34,14 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                     var remediated = data[source][archive_id]['remediated'];
                     var remediation_history = data[source][archive_id]['remediation_history'];
 
+                    var in_progress = false;
+                    if (remediation_history.length > 0) {
+                        var last_status = remediation_history[remediation_history.length - 1]['status'];
+                        if (last_status == 'IN_PROGRESS' || last_status == 'NEW') {
+                            in_progress = true;
+                        }
+                    }
+
                     // sometimes embedded emails do not have recipient
                     // and you can't remediated an embedded email anyways
                     if (recipient == null) continue;
@@ -41,6 +49,8 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                     html += '<tr';
                     if (remediated) {
                         html += ' class="success">';
+                    } else if (in_progress) {
+                        html += ' class="warning">';
                     } else {
                         html += '>';
                     }
@@ -49,7 +59,7 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
     <td><input type="checkbox" ';
 
                         // if the email has not been remediated then we default to it being selected
-                        if (! remediated) 
+                        if (! remediated && ! in_progress) 
                             html += ' checked ';
 
                         html += 'id="cb_archive_id_' + archive_id + '_source_' + source + '"></td>\
@@ -65,7 +75,7 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
             $('#email-remediation-body').html(html);
             $('#btn-email-remediation').show();
             $('#btn-email-restore').show();
-            $('#div-cb-use-phishfry').show();
+            $('#div-cb-do-it-now').show();
             $('#btn-email-remediation-done').text("Chicken Out");
             $('#email_remediation_label').text("Email Remediation");
 
@@ -76,12 +86,13 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                 });
 
                 request_data['action'] = action;
-                request_data['use_phishfry'] = $('#cb-use-phishfry').is(':checked');
+                request_data['do_it_now'] = $('#cb-do-it-now').is(':checked');
+                request_data['alert_uuids'] = JSON.stringify(alert_uuids);
 
                 $('#email-remediation-body').html("Sending request...");
                 $('#btn-email-remediation').hide();
                 $('#btn-email-restore').hide();
-                $('#div-cb-use-phishfry').hide();
+                $('#div-cb-do-it-now').hide();
                 $('#btn-email-remediation-done').hide();
 
                 $.ajax({
@@ -117,7 +128,7 @@ function remediate_emails(alert_uuids=null, message_ids=null) {
                         $('#email-remediation-body').html(html);
                         $('#btn-email-remediation').hide();
                         $('#btn-email-restore').hide();
-                        $('#div-cb-use-phishfry').hide();
+                        $('#div-cb-do-int-now').hide();
                         $('#btn-email-remediation-done').text("Fantastic");
                         $('#btn-email-remediation-done').show();
                         $('#btn-email-remediation').off('click');

@@ -2,11 +2,13 @@
 #
 # utility functions and constants for intel (SIP) support
 
+import json
 import logging
 import os
 import os.path
-import saq
 import sqlite3
+
+import saq
 
 indicator_type_mapping = None
 observable_type_mapping = None
@@ -345,3 +347,31 @@ def update_local_cache():
     logging.info("done")
     logging.debug("loaded {} indicators".format(c))
     return True
+
+# curl -k -H "Authorization: Bearer blah" https://sip.local:4443/api/indicators/status
+SIP_STATUS_ANALYZED = 'Analyzed'
+SIP_STATUS_DEPRECATED = 'Deprecated'
+SIP_STATUS_FA = 'FA'
+SIP_STATUS_IN_PROGRESS = 'In Progress'
+SIP_STATUS_INFORMATIONAL = 'Informational'
+SIP_STATUS_NEW = 'New'
+
+def query_sip_indicator(indicator_id):
+    """Queries SIP for indicator details. Returns the dictionary containing the information 
+       (see the SIP documenation for dictionary schema.)"""
+    assert isinstance(indicator_id, int)
+
+    import pysip
+
+    sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
+    return sip_client.get(f'indicators/{indicator_id}')
+
+def set_sip_indicator_status(indicator_id, status):
+    """Sets the given indicator to the given status. Returns True if the operation succeeded."""
+    assert isinstance(indicator_id, int)
+    assert isinstance(status, str)
+
+    import pysip
+
+    sip_client = pysip.Client(saq.CONFIG['sip']['remote_address'], saq.CONFIG['sip']['api_key'], verify=False)
+    return sip_client.put(f'indicators/{indicator_id}', data={"status" : status})

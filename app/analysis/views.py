@@ -1,3 +1,4 @@
+import collections.abc
 import calendar
 import datetime
 import importlib
@@ -37,6 +38,9 @@ import requests
 from pymongo import MongoClient
 
 import saq
+import saq.analysis
+import saq.intel
+import saq.remediation
 import virustotal
 import vxstreamlib
 import splunklib
@@ -1768,6 +1772,52 @@ def manage():
             filters[FILTER_S_SEARCH_COMPANY].value = 'Core'
             filters[FILTER_CB_USE_SEARCH_COMPANY].value = True
 
+    # are we drilling down into observable disposition history?
+    while 'odh_d' in request.args and 'odh_md5' in request.args:
+        odh_d = request.args['odh_d']
+        odh_md5 = request.args['odh_md5']
+
+        # look up the ID we need to use for this observable by the md5
+        odh_o = db.session.query(Observable).filter(Observable.md5 == func.unhex(odh_md5)).first()
+        if odh_o is None:
+            logging.warning(f"observable md5 {odh_md5} does not exist")
+            break
+
+        # map disposition to key
+        disp_map = {
+            DISPOSITION_FALSE_POSITIVE: FILTER_CB_DIS_FALSE_POSITIVE,
+            DISPOSITION_IGNORE: FILTER_CB_DIS_IGNORE,
+            DISPOSITION_UNKNOWN: FILTER_CB_DIS_UNKNOWN,
+            DISPOSITION_REVIEWED: FILTER_CB_DIS_REVIEWED,
+            DISPOSITION_GRAYWARE: FILTER_CB_DIS_GRAYWARE,
+            DISPOSITION_POLICY_VIOLATION: FILTER_CB_DIS_POLICY_VIOLATION,
+            DISPOSITION_RECONNAISSANCE: FILTER_CB_DIS_RECONNAISSANCE,
+            DISPOSITION_WEAPONIZATION: FILTER_CB_DIS_WEAPONIZATION,
+            DISPOSITION_DELIVERY: FILTER_CB_DIS_DELIVERY,
+            DISPOSITION_EXPLOITATION: FILTER_CB_DIS_EXPLOITATION,
+            DISPOSITION_INSTALLATION: FILTER_CB_DIS_INSTALLATION,
+            DISPOSITION_COMMAND_AND_CONTROL: FILTER_CB_DIS_COMMAND_AND_CONTROL,
+            DISPOSITION_EXFIL: FILTER_CB_DIS_EXFIL,
+            DISPOSITION_DAMAGE: FILTER_CB_DIS_DAMAGE }
+
+        if odh_d not in disp_map:
+            logging.error(f"invalid disposition {odh_d}")
+            break
+
+        # in this case we clear out all other filters except for this observable and disposition
+        filters[FILTER_CB_OPEN].value = False
+        filters[FILTER_CB_UNOWNED].value = False
+
+        key = f'observable_{odh_o.id}'
+        filter_item = SearchFilter(key, FILTER_TYPE_CHECKBOX, False)
+        filters[key] = filter_item
+        filters[key].value = True
+        observable_filter_items.append(filter_item)
+
+        # override setting for target disp
+        filters[disp_map[odh_d]].value = True
+        break
+
     # initialize filter state (passed to the view to set up the form controls)
     filter_state = {filters[f].name: filters[f].state for f in filters}
 
@@ -3353,6 +3403,35 @@ def index():
     special_tag_names = [tag for tag in saq.CONFIG['tags'].keys() if saq.CONFIG['tags'][tag] == 'special']
     alert_tags = [tag for tag in alert_tags if tag.name not in special_tag_names]
 
+    class DispositionHistory(collections.abc.MutableMapping):
+        def __init__(self, observable):
+            self.observable = observable
+            self.history = {} # key = disposition, value = count
+
+        def __getitem__(self, key):
+            return self.history[key]
+
+        def __setitem__(self, key, value):
+            # we skip the None key which corresponds to alerts that have not been dispositioned yet
+            if key is not None:
+                if key not in VALID_ALERT_DISPOSITIONS:
+                    raise ValueError(f"invalid disposition {key}")
+
+                self.history[key] = value
+
+        def __delitem__(self, key):
+            pass
+
+        def __iter__(self):
+            total = sum([self.history[disp] for disp in self.history.keys()])
+            dispositions = [disposition for disposition in VALID_ALERT_DISPOSITIONS if disposition in self.history]
+            dispositions = sorted(dispositions, key=lambda disposition: (self.history[disposition] / total) * 100.0, reverse=True)
+            for disposition in dispositions:
+                yield disposition, self.history[disposition], (self.history[disposition] / total) * 100.0
+
+        def __len__(self):
+            return len(self.history)
+
     # compute the display tree
     class TreeNode(object):
         def __init__(self, obj, parent=None):
@@ -3394,6 +3473,50 @@ def index():
         def __str__(self):
             return "TreeNode({}, {}, {})".format(self.obj, self.reference_node, self.visible)
 
+        @property
+        def disposition_history(self):
+            """Returns a DispositionHistory object if self.obj is an Observable, None otherwise."""
+            if hasattr(self, '_disposition_history'):
+                return self._disposition_history
+
+            self._disposition_history = None
+            if not isinstance(self.obj, saq.analysis.Observable):
+                return None
+
+            if self.obj.whitelisted:
+                return None
+
+            if self.obj.type == F_FILE:
+                from saq.modules.file_analysis import FileHashAnalysis
+                for child in self.children:
+                    if isinstance(child.obj, FileHashAnalysis):
+                        for grandchild in child.children:
+                            if isinstance(grandchild.obj, saq.analysis.Observable) and grandchild.obj.type == F_SHA256:
+                                self._disposition_history = grandchild.disposition_history
+                                return self._disposition_history
+
+                return None
+
+            self._disposition_history = DispositionHistory(self.obj)
+
+            with get_db_connection() as db:
+                c = db.cursor()
+                c.execute("""
+SELECT 
+    a.disposition, COUNT(*) 
+FROM 
+    observables o JOIN observable_mapping om ON o.id = om.observable_id
+    JOIN alerts a ON om.alert_id = a.id
+WHERE 
+    o.type = %s AND 
+    o.md5 = UNHEX(%s)
+GROUP BY a.disposition""", (self.obj.type, self.obj.md5_hex))
+
+                for row in c:
+                    disposition, count = row
+                    self._disposition_history[disposition] = count
+
+            return self._disposition_history
 
     def find_all_url_domains(analysis):
         assert isinstance(analysis, saq.analysis.Analysis)
@@ -3819,6 +3942,22 @@ def observable_action():
                 report_exception()
                 return "request failed - check logs", 500
 
+        elif action_id in [ ACTION_SET_SIP_INDICATOR_STATUS_ANALYZED, 
+                            ACTION_SET_SIP_INDICATOR_STATUS_INFORMATIONAL,
+                            ACTION_SET_SIP_INDICATOR_STATUS_NEW ]:
+
+            if action_id == ACTION_SET_SIP_INDICATOR_STATUS_ANALYZED:
+                status = saq.intel.SIP_STATUS_ANALYZED
+            elif action_id == ACTION_SET_SIP_INDICATOR_STATUS_INFORMATIONAL:
+                status = saq.intel.SIP_STATUS_INFORMATIONAL
+            else:
+                status = saq.intel.SIP_STATUS_NEW
+
+            sip_id = int(observable.value[len('sip:'):])
+            logging.info(f"{current_user.username} set sip indicator {sip_id} status to {status}")
+            result = saq.intel.set_sip_indicator_status(sip_id, status)
+            return "OK", 200
+
         return "invalid action_id", 500
 
     except Exception as e:
@@ -3947,10 +4086,11 @@ def query_message_ids():
     return response
 
 class EmailRemediationTarget(object):
-    def __init__(self, archive_id=None, message_id=None, recipient=None):
+    def __init__(self, archive_id=None, message_id=None, recipient=None, company_id=None):
         self.archive_id = archive_id
         self.message_id = message_id
         self.recipient = recipient
+        self.company_id = company_id
         self.result_text = None
         self.result_success = False
 
@@ -3964,8 +4104,16 @@ class EmailRemediationTarget(object):
             'archive_id': self.archive_id,
             'message_id': self.message_id,
             'recipient': self.recipient,
+            'company_id': self.company_id,
             'result_text': self.result_text,
             'result_success': self.result_success }
+
+#
+# XXX
+# remediation is a mess
+# it's gone through a bunch of iterations starting with some custom Lotus Notes nonsense
+# to what it is today
+#
 
 # the archive_id and config sections are encoded in the name of the form element
 # XXX probably a gross security flaw
@@ -3975,19 +4123,36 @@ INPUT_CHECKBOX_REGEX = re.compile(r'^cb_archive_id_([0-9]+)_source_(.+)$')
 @login_required
 def remediate_emails():
 
+    alert_uuids = []
+    if 'alert_uuids' in request.values:
+        alert_uuids = json.loads(request.values['alert_uuids'])
+
     action = request.values['action']
-    use_phishfry = request.values['use_phishfry'] == 'true' # string representation of javascript boolean value true
+
+    # if this is set to True then we issue the request now and wait for the response
+    # if this is false then the remediation request is sent to the remediation system
+    do_it_now = request.values['do_it_now'] == 'true' # string representation of javascript boolean value true
+
     assert action in [ 'restore', 'remove' ];
 
     # generate our list of archive_ids from the list of checkboxes that were checked
-    archive_ids = { }
+    archive_ids = { } # key = source (email_archive_blah) which corresponds to database_email_archive_blah
+    archive_company_id = { } # key = same as above, value = company_id for that email archive source
     for key in request.values.keys():
         if key.startswith('cb_archive_id_'):
             m = INPUT_CHECKBOX_REGEX.match(key)
             if m:
                 archive_id, source = m.groups()
+                section_key = f'database_{source}'
+                if section_key not in saq.CONFIG:
+                    logging.error(f"missing config section {section_key}")
+                    continue
+
                 if source not in archive_ids:
                     archive_ids[source] = []
+                    # look up what company_id this email archive source is
+                    archive_company_id[source] = saq.CONFIG[section_key].getint('company_id', fallback=saq.COMPANY_ID)
+                    logging.debug(f"got company_id {archive_company_id[source]} for {source}")
 
                 archive_ids[source].append(m.group(1))
 
@@ -4008,7 +4173,7 @@ def remediate_emails():
             for row in c:
                 archive_id, field, value = row
                 if archive_id not in targets:
-                    targets[archive_id] = EmailRemediationTarget(archive_id=archive_id)
+                    targets[archive_id] = EmailRemediationTarget(archive_id=archive_id, company_id=archive_company_id[db_name])
 
                 if field == 'message_id':
                     targets[archive_id].message_id = value.decode(errors='ignore')
@@ -4027,26 +4192,62 @@ def remediate_emails():
 
     results = []
 
-    import saq.remediation
-    #from saq.remediation import remediate_emails, unremediate_emails
-
     try:
         if action == 'remove':
-            results = saq.remediation.remediate_emails(params, user_id=current_user.id, use_phishfry=use_phishfry)
+            if not do_it_now:
+                for target in targets.values():
+                    try:
+                        r_id = saq.remediation.request_remediation(saq.remediation.constants.REMEDIATION_TYPE_EMAIL,
+                                                                   target.message_id,
+                                                                   target.recipient,
+                                                                   user_id=current_user.id,
+                                                                   company_id=target.company_id,
+                                                                   comment=','.join(alert_uuids))
+
+                        target.result_text = f"request remediation (id {r_id})"
+                        target.result_success = True
+
+                    except Exception as e:
+                        target.result_text = str(e)
+                        target.result_success = False
+            else:
+                # TODO refactor this to use the classes of the new system
+                results = saq.remediation.remediate_emails(params, user_id=current_user.id)
+
         elif action == 'restore':
-            results = saq.remediation.unremediate_emails(params, user_id=current_user.id, use_phishfry=use_phishfry)
+            if not do_it_now:
+                for target in targets.values():
+                    try:
+                        r_id = saq.remediation.request_restoration(saq.remediation.constants.REMEDIATION_TYPE_EMAIL,
+                                                                   target.message_id,
+                                                                   target.recipient,
+                                                                   user_id=current_user.id,
+                                                                   company_id=target.company_id,
+                                                                   comment=','.join(alert_uuids))
+
+                        target.result_text = f"request restoration (id {r_id})"
+                        target.result_success = True
+
+                    except Exception as e:
+                        target.result_text = str(e)
+                        target.result_success = False
+            else:
+                # TODO refactor this to use the classes of the new system
+                results = saq.remediation.unremediate_emails(params, user_id=current_user.id)
+
     except Exception as e:
         logging.error("unable to perform email remediation action {}: {}".format(action, e))
         for target in targets.values():
             target.result_text = str(e)
             target.result_success = False
 
-    for result in results:
-        message_id, recipient, result_code, result_text = result
-        for target in targets.values():
-            if target.message_id == message_id and target.recipient == recipient:
-                target.result_text = '({}) {}'.format(result_code, result_text)
-                target.result_success = str(result_code) == '200'
+    if do_it_now:
+        for result in results:
+            message_id, recipient, result_code, result_text = result
+            for target in targets.values():
+                if target.message_id == message_id and target.recipient == recipient:
+                    target.result_text = '({}) {}'.format(result_code, result_text)
+                    target.result_success = str(result_code) == '200'
 
     # return JSON formatted results
     for key in targets.keys():
