@@ -944,7 +944,7 @@ class RemediationSystem(object):
 
             elif not remediation_result.successful and self.message_on_error:
                 try:
-                    send_message(f"<!channel> :rotating_light: remediation for {remediation_result.key} failed:\n{remediation_result.result}{alert_references}", MESSAGE_TYPE_REMEDIATION_SUCCESS)
+                    send_message(f"<!channel> :rotating_light: remediation for {remediation_result.key} failed:\n{remediation_result.result}{alert_references}", MESSAGE_TYPE_REMEDIATION_FAILURE)
                 except Exception as e:
                     logging.error(f"unable to send completed message: {e}")
 
