@@ -203,6 +203,9 @@ class MessageDispatchSystem(object):
                     logging.error(f"unable to close db connection: {e}")
                     report_exception()
 
+            if sleep_time is None:
+                sleep_time = 0
+
             self.control_event.wait(sleep_time)
                 
         logging.info(f"stopped {self.name}")
