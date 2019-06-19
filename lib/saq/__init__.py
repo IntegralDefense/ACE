@@ -17,13 +17,18 @@ from getpass import getpass
 
 import ace_api
 from saq.constants import *
+from saq.messaging import initialize_message_system
 from saq.network_semaphore import initialize_fallback_semaphores
+from saq.remediation import initialize_remediation_system_manager
 from saq.sla import SLA
 from saq.util import create_directory
 
 import pytz
 import requests
 import tzlocal
+
+# this is set to True when unit testing, False otherwise
+UNIT_TESTING = False
 
 # disable the verbose logging in the requests module
 logging.getLogger("requests").setLevel(logging.WARNING)
@@ -35,6 +40,9 @@ LOCAL_TIMEZONE = pytz.timezone(tzlocal.get_localzone().zone)
 # this object is used to get Session objects by ACE throughout the application
 # except for the WSGI app which uses Flask
 db = None # (see saq.database.initialize_database)
+
+# the global message system, used to send external messages async
+MESSAGE_SYSTEM = None
 
 class CustomFileHandler(logging.StreamHandler):
     def __init__(self, log_dir=None, filename_format=None, *args, **kwargs):
@@ -557,5 +565,9 @@ def initialize(saq_home=None,
     # are we running as a daemon?
     if args:
         DAEMON_MODE = args.daemon
+
+    # initialize other systems
+    initialize_remediation_system_manager()
+    initialize_message_system()
 
     logging.debug("SAQ initialized")

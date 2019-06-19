@@ -427,6 +427,15 @@ class Engine(object):
         # directory to store statistical runtime information
         self.stats_dir = os.path.join(saq.MODULE_STATS_DIR, self.name)
 
+        # directory to store various runtime information
+        self.runtime_dir = os.path.join(saq.DATA_DIR, 'var', 'engine', self.name)
+        if not os.path.exists(self.runtime_dir):
+            try:
+                os.makedirs(self.runtime_dir)
+            except Exception as e:
+                logging.critical(f"unable to create engine runtime dir {self.runtime_dir}: {e}")
+                raise e
+
         # controlled shutdown event - shut down ACE by allowing all existing jobs to complete
         self.control_event = Event()
 
@@ -961,6 +970,7 @@ class Engine(object):
         for mode in self.analysis_mode_mapping.keys():
             for _module in self.analysis_mode_mapping[mode]:
                 logging.info("mode {} activated module {}".format(mode, _module))
+
 
     #
     # MAINTENANCE
