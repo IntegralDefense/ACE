@@ -945,6 +945,9 @@ class RemediationSystem(object):
             else:
                 alert_references = ""
 
+            # XXX quick hack to remove this -- not useful
+            alert_references = ""
+
             if remediation_result.successful and self.message_on_success:
                 try:
                     send_message(f"remediation for {remediation_result.key} completed: {remediation_result.result}{alert_references}", MESSAGE_TYPE_REMEDIATION_SUCCESS)
