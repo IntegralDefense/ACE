@@ -760,6 +760,7 @@ class RemediationSystem(object):
     # automation routines
 
     def start(self):
+        logging.info("starting remediation system")
         # grab the lock uuid used last time, or, create a new one
         lock_uuid_path = os.path.join(saq.DATA_DIR, 'var', 'remediation.uuid')
         if os.path.exists(lock_uuid_path):
@@ -813,7 +814,7 @@ class RemediationSystem(object):
             logging.debug(f"waiting for {t} to stop...")
             t.join()
 
-        logging.debug("waiting for {self.manager_thread} to stop...")
+        logging.debug(f"waiting for {self.manager_thread} to stop...")
         self.manager_thread.join()
 
     def manager_loop(self):
@@ -860,6 +861,7 @@ class RemediationSystem(object):
             while not self.control_event.is_set():
                 try:
                     self.queue.put(remediation, block=True, timeout=1)
+                    logging.info(f"added {remediation} to the queue @ {id(self.queue)}")
                     break
                 except queue.Full:
                     continue
@@ -910,6 +912,9 @@ class RemediationSystem(object):
             finally:
                 saq.db.close()
 
+            if sleep_time is None:
+                sleep_time = 0
+
             self.control_event.wait(sleep_time)
 
         logging.debug("remediation worker exited")
@@ -921,11 +926,15 @@ class RemediationSystem(object):
         except queue.Empty:
             return 0 # the get on the queue is what blocks
 
+        logging.info(f"got remediation item {remediation}")
+
         # execute this remediation
         try:
             remediation_result = self.execute_request(remediation)
             if remediation_result is None:
                 raise RuntimeError("forgot to return remediation object in execute_request")
+
+            logging.info(f"completed remediation item {remediation}")
 
             alert_references = []
             for alert_uuid in remediation_result.alert_uuids:
@@ -973,8 +982,6 @@ class RemediationSystem(object):
             except Exception as e:
                 logging.error(f"unable to record error for remediation item {remediation.id}: {e}")
                 report_exception()
-
-            return
 
 class EmailRemediationSystem(RemediationSystem):
     @property
