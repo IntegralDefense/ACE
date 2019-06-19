@@ -1784,21 +1784,17 @@ class EmailAnalyzer(AnalysisModule):
                         #m = RE_EMAIL_HEADER.match(line)
                         #if m:
                             #header_count += 1
-                            ##logging.info("MARKER: header")
                             #continue
 
                         ## have we reached the end of the headers?
                         #if line.strip() == '':
-                            ##logging.info("MARKER: headers end")
                             #break
 
                         #m = RE_EMAIL_HEADER_CONTINUE.match(line)
                         #if m:
-                            ##logging.info("MARKER: header continuation")
                             #continue
 
                         ## we read some non-email header content
-                        ##logging.info("MARKER: non header: [{}]".format(line.strip()))
                         #header_count = 0
                         #break
 
@@ -1988,21 +1984,37 @@ class EmailArchiveAction(AnalysisModule):
 
             transactions = []
 
+            def _normalize_email_address(addrs):
+                if not isinstance(addrs, list):
+                    addrs = [ addrs ]
+
+                for address in addrs:
+                    _name, _address = email.utils.parseaddr(decode_rfc2822(address))
+                    if _address:
+                        yield _address
+                    else:
+                        yield address
+
             #env_from = normalize_email_address(email_analysis.env_mail_from)
             #if env_from:
                 #transactions.append(('env_from', env_from))
 
             if email_analysis.env_rcpt_to:
-                env_to = normalize_email_address(email_analysis.env_rcpt_to[0])
-                if env_to:
+                for env_to in _normalize_email_address(email_analysis.env_rcpt_to[0]):
                     transactions.append(('env_to', env_to))
+                    
+                #env_to = _normalize_email_address(email_analysis.env_rcpt_to[0])
+                #if env_to:
+                    #transactions.append(('env_to', env_to))
 
-            body_from = normalize_email_address(email_analysis.mail_from)
-            if body_from:
+            for body_from in _normalize_email_address(email_analysis.mail_from):
+            #body_from = _normalize_email_address(email_analysis.mail_from)
+            #if body_from:
                 transactions.append(('body_from', body_from))
 
-            body_to = normalize_email_address(email_analysis.mail_to)
-            if body_to:
+            for body_to in _normalize_email_address(email_analysis.mail_to):
+            #body_to = _normalize_email_address(email_analysis.mail_to)
+            #if body_to:
                 transactions.append(('body_to', body_to))
 
             if email_analysis.subject:
