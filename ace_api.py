@@ -44,6 +44,8 @@ import urllib3
 import uuid
 import warnings
 
+from configparser import ConfigParser
+
 # set up the argument parsing as we define the functions
 # so we can keep them grouped together
 parser = argparse.ArgumentParser(description="ACE API Command Line Wrapper")
@@ -1348,9 +1350,52 @@ update_event_status_parser.add_argument('--status', help="Event status", require
 update_event_status_parser.set_defaults(func=_cli_update_event_status)
 
 
+
+def load_config():
+    """Load ace_api configuration. Configuration files are looked for in the following locations::
+        /opt/ace/etc/ace_api.local.ini
+        ~/<current-user>/.ace/api.ini
+
+    Configuration items found in later config files take presendence over earlier ones.
+    """
+    config = ConfigParser()
+    config_paths = []
+    # default
+    config_paths.append('/opt/ace/etc/ace_api.local.ini')
+    # user specific
+    config_paths.append(os.path.join(os.path.expanduser("~"),'.ace','api.ini'))
+    finds = []
+    for cp in config_paths:
+        if os.path.exists(cp):
+            logging.debug("Found config file at {}.".format(cp))
+            finds.append(cp)
+    if not finds:
+        logging.debug("Didn't find any config files defined at these paths: {}".format(config_paths))
+        return False
+
+    config.read(finds)
+    return config
+
 def main():
 
+    config = load_config()
+    if config:
+        ace_instances = [ sec for sec in config.sections() if sec != 'global' ]
+        parser.add_argument('-e', '--environment', action="store", default=None, 
+                            help="specify an ACE environment to work with.", choices=ace_instances)
+
     args = parser.parse_args()
+
+    if config and args.environment is not None:
+        if config.has_option(args.environment, 'disable_proxy'):
+            args.disable_proxy = config[args.environment].getboolean('disable_proxy')
+        if config.has_option(args.environment, 'ssl_verification'):
+            if os.path.exists(config[args.environment]['ssl_verification']):
+                args.ssl_verification = config[args.environment]['ssl_verification']
+            else:
+                args.ssl_verification = config[args.environment].getboolean('ssl_verification')
+        if config.has_option(args.environment, 'remote_host'):
+            args.remote_host = config[args.environment]['remote_host']
 
     if args.disable_proxy:
         for env_var in [ 'http_proxy', 'https_proxy', 'ftp_proxy' ]:
